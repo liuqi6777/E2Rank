@@ -1,4 +1,5 @@
 import logging
+import json
 import os
 import pathlib
 import sys
@@ -14,6 +15,50 @@ from ranking_data import RankingDataCollator, RankingDataset
 
 
 logger = logging.getLogger(__name__)
+
+
+def get_deepspeed_zero_stage(deepspeed_config) -> int | None:
+    if deepspeed_config is None:
+        return None
+
+    if isinstance(deepspeed_config, dict):
+        config = deepspeed_config
+    elif isinstance(deepspeed_config, str):
+        if os.path.isfile(deepspeed_config):
+            with open(deepspeed_config, "r", encoding="utf-8") as fp:
+                config = json.load(fp)
+        else:
+            try:
+                config = json.loads(deepspeed_config)
+            except json.JSONDecodeError:
+                return None
+    else:
+        return None
+
+    zero_optimization = config.get("zero_optimization")
+    if not isinstance(zero_optimization, dict):
+        return None
+
+    stage = zero_optimization.get("stage")
+    return int(stage) if stage is not None else None
+
+
+def resolve_gradient_checkpointing_kwargs(training_args: TrainingArguments, lora_args: LoraArguments) -> dict:
+    gradient_checkpointing_kwargs = dict(training_args.gradient_checkpointing_kwargs or {})
+    zero_stage = get_deepspeed_zero_stage(training_args.deepspeed)
+
+    if lora_args.lora_enabled and zero_stage == 3:
+        if gradient_checkpointing_kwargs.get("use_reentrant") is not True:
+            logger.warning(
+                "Detected DeepSpeed ZeRO-3 with LoRA and gradient checkpointing; "
+                "overriding use_reentrant=True because use_reentrant=False can trigger "
+                "torch.utils.checkpoint.CheckpointError with empty ZeRO-3 parameter shards."
+            )
+        gradient_checkpointing_kwargs["use_reentrant"] = True
+    else:
+        gradient_checkpointing_kwargs.setdefault("use_reentrant", False)
+
+    return gradient_checkpointing_kwargs
 
 
 def save_model_for_trainer(trainer: HFTrainer, output_dir: str) -> None:
@@ -127,8 +172,13 @@ def main() -> None:
     model.train()
 
     if training_args.gradient_checkpointing:
-        model.enable_input_require_grads()
-        training_args.gradient_checkpointing_kwargs = {"use_reentrant": False}
+        training_args.gradient_checkpointing_kwargs = resolve_gradient_checkpointing_kwargs(
+            training_args=training_args,
+            lora_args=lora_args,
+        )
+        if training_args.gradient_checkpointing_kwargs.get("use_reentrant", True):
+            model.enable_input_require_grads()
+        logger.info("Gradient checkpointing kwargs %s", training_args.gradient_checkpointing_kwargs)
 
     class Trainer(HFTrainer):
         train_metric_names = (

@@ -377,6 +377,8 @@ bash ./scripts/train_rl_0.6b.sh
 
 The script launches `src/train.py` with LoRA + ZeRO3 and uses the same Stage II ranking dataset format as the supervised training pipeline. The updated E2Rank integration no longer mixes InfoNCE with RL: it optimizes GRPO on the original query branch and/or the listwise prompt branch, depending on `--rl_mode`.
 
+When `--gradient_checkpointing` is enabled together with LoRA + DeepSpeed ZeRO-3, `src/train.py` automatically switches gradient checkpointing to `use_reentrant=True`. This avoids the `torch.utils.checkpoint.CheckpointError` where ZeRO-3 recomputes parameter shards as empty tensors during the backward pass.
+
 The training script reports to Weights & Biases by default. Override the project name if needed:
 
 ```bash
