@@ -346,6 +346,12 @@ cd E2Rank
 pip install -r requirements.txt
 ```
 
+If you want to track training in Weights & Biases, log in once before launching training:
+
+```bash
+wandb login
+```
+
 ## Training
 
 This repository now keeps the RL Stage II training and the evaluation code needed for the RL checkpoints. The released embedding-only checkpoints on [Huggingface](https://huggingface.co/collections/Alibaba-NLP/e2rank) are still the starting point for training.
@@ -371,6 +377,14 @@ bash ./scripts/train_rl_0.6b.sh
 
 The script launches `src/train.py` with LoRA + ZeRO3 and uses the same Stage II ranking dataset format as the supervised training pipeline. The updated E2Rank integration no longer mixes InfoNCE with RL: it optimizes GRPO on the original query branch and/or the listwise prompt branch, depending on `--rl_mode`.
 
+The training script reports to Weights & Biases by default. Override the project name if needed:
+
+```bash
+WANDB_PROJECT=my-e2rank-project bash ./scripts/train_rl_0.6b.sh
+```
+
+Besides the standard `Trainer` logs, the run also tracks GRPO-specific metrics such as `query_loss`, `listwise_loss`, `query_reward`, `listwise_reward`, `query_sigma`, and `listwise_sigma`.
+
 You can also invoke the entrypoint directly:
 
 ```bash
@@ -378,6 +392,8 @@ python src/train.py \
   --model_name_or_path Alibaba-NLP/E2Rank-0.6B-Embedding-Only \
   --data_path data/train.jsonl \
   --output_dir checkpoints/E2Rank-Full-GRPO-0.6B \
+  --report_to wandb \
+  --run_name E2Rank-Full-GRPO-0.6B \
   --rl_mode dual \
   --group_size 8 \
   --sigma 0.05 \

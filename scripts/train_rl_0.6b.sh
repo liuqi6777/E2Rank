@@ -5,6 +5,7 @@ set -e
 export FORCE_TORCHRUN=1
 export NNODES=1
 export NODE_RANK=8
+export WANDB_PROJECT=${WANDB_PROJECT:-E2Rank-RL}
 
 
 model_name_or_path=Alibaba-NLP/E2Rank-0.6B-Embedding-Only
@@ -30,6 +31,8 @@ torchrun \
   --num_train_epochs 1 \
   --logging_strategy "steps" \
   --logging_steps 1 \
+  --report_to "wandb" \
+  --run_name $model_name \
   --save_strategy "steps" \
   --save_steps 200 \
   --overwrite_output_dir \
