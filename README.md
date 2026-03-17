@@ -344,14 +344,11 @@ cd E2Rank
 
 # Install requirements
 pip install -r requirements.txt
-
-# for evaluation, we also use LLM4Ranking framework
-pip install git@github.com:liuqi6777/llm4ranking.git
 ```
 
 ## Training
 
-We provide the training scripts for the 2nd stage training (training from the existing embedding model), and the checkpoints of embedding-only model used in the paper are released on [Huggingface](https://huggingface.co/collections/Alibaba-NLP/e2rank). You can directly download and use them for the next stage of training the full E2Rank model. If you want to re-train the embedding-only model, please refer to the paper for more details.
+This repository now keeps the RL Stage II training and the evaluation code needed for the RL checkpoints. The released embedding-only checkpoints on [Huggingface](https://huggingface.co/collections/Alibaba-NLP/e2rank) are still the starting point for training.
 
 **Download the Datasets**
 
@@ -364,47 +361,47 @@ hf download Alibaba-NLP/E2Rank_ranking_datasets train.jsonl --local-dir ./data/ 
 
 For more details about the datasets, please refer to the original paper.
 
-**Train E2Rank-0.6B**
+**Train E2Rank-Full-GRPO-0.6B**
 
-To train the E2Rank-0.6B model, run the following script (see `scripts/train_e2rank_0.6b.sh` for more details):
+To run the GRPO-based RL stage on top of the released embedding-only checkpoint, use the new pure-GRPO Stage II training entrypoint:
 
 ```bash
-bash ./scripts/train_e2rank_0.6b.sh
+bash ./scripts/train_rl_0.6b.sh
 ```
 
-For training E2Rank-4B and E2Rank-8B models, the training process is similar. The checkpoints will be saved in the `checkpoints/` directory.
+The script launches `src/train.py` with LoRA + ZeRO3 and uses the same Stage II ranking dataset format as the supervised training pipeline. The updated E2Rank integration no longer mixes InfoNCE with RL: it optimizes GRPO on the original query branch and/or the listwise prompt branch, depending on `--rl_mode`.
+
+You can also invoke the entrypoint directly:
+
+```bash
+python src/train.py \
+  --model_name_or_path Alibaba-NLP/E2Rank-0.6B-Embedding-Only \
+  --data_path data/train.jsonl \
+  --output_dir checkpoints/E2Rank-Full-GRPO-0.6B \
+  --rl_mode dual \
+  --group_size 8 \
+  --sigma 0.05 \
+  --query_reward_ndcg_k 10 \
+  --listwise_reward_ndcg_k 16 \
+  --query_relevance_scheme binary \
+  --listwise_relevance_scheme graded
+```
+
+The RL-specific arguments exposed by `src/train.py` are:
+
+- `--rl_mode`: `query_only`, `listwise_only`, or `dual`
+- `--group_size`
+- `--sigma`
+- `--sigma_learnable`
+- `--query_reward_ndcg_k`
+- `--listwise_reward_ndcg_k`
+- `--listwise_loss_weight`
+- `--advantage_norm`
+- `--query_relevance_scheme`
+- `--listwise_relevance_scheme`
 
 
 ## Evaluation
-
-### Reranking Benchmarks (TREC DL, BEIR and BRIGHT)
-
-The implementation of evaluation on reranking benchmarks are based on [LLM4Ranking](https://github.com/liuqi6777/llm4ranking) framework. To evaluate the model's reranking performance on BEIR and BRIGHT benchmarks, run the following script:
-
-```bash
-export VLLM_USE_MODELSCOPE=False
-
-model_name="Alibaba-NLP/E2Rank-0.6B"
-datasets="dl19 dl20"
-retriever="bm25"
-
-python src/eval.py \
-    --model ${model_name} \
-    --rank-method listwise \
-    --datasets ${datasets} \
-    --retriever ${retriever} \
-    --topk 100 \
-    --save-to "./results/rerank/all_results.jsonl"
-```
-
-- `model_name`: Path or name of the model weights file (e.g., "Alibaba-NLP/E2Rank-0.6B").
-- `datasets`: A list of the names of datasets to be evaluated (e.g., `dl19 dl20 covid ...`). For full dataset names, please refer to `src/eval.py`.
-- `retriever`: The retriever used to retrieve the initial candidate documents (Supports `bm25` (for all datasets), `reasonir` (for BRIGHT), et, al, see [this huggingface repo](https://huggingface.co/datasets/liuqi6777/retrieval_results) for all released first-stage retrieval results).
-- `save-to`: The jsonl file to save the evaluation results. The trec-format running file will also be stored in the dictory of `outputs`.
-
-> **Note**:
-> - Due to the differences in the hardware (e.g., the type and the number of GPUs used) and software environments, the evaluation results may vary slightly from those reported in the paper, which is normal.
-
 
 ### MTEB
 
@@ -414,8 +411,8 @@ To evaluate the model on MTEB benchmark, run the following script:
 bash eval_mteb/scripts/run_mteb.sh ${model_path} ${model_name} ${benchmark_name}
 ```
 
-- `model_path`: Path or name of the model weights file (e.g., "Alibaba-NLP/E2Rank-0.6B").
-- `model_name`: Name of the model, used for naming the result directory (e.g., "Alibaba-NLP/E2Rank-0.6B").
+- `model_path`: Path or name of the model weights file (e.g., "./checkpoints/E2Rank-Full-GRPO-0.6B").
+- `model_name`: Name of the model, used for naming the result directory (e.g., "E2Rank-Full-GRPO-0.6B").
 - `benchmark_name`: Name of the benchmark (e.g., "MTEB(eng, v1)" or "MTEB(eng, v2)").
 
 Evaluation results will be saved in the directory: `results/mteb/`. Each task's results will be stored in a separate JSON file.
@@ -427,6 +424,7 @@ python3 eval_mteb/summary.py results/mteb/${model_name}/${model_name}/no_version
 ```
 
 The implementation of evaluation on MTEB are modified from [Qwen3-Embedding](https://github.com/QwenLM/Qwen3-Embedding/blob/main/evaluation/README.md). Sincere thanks for their efforts.
+RL checkpoints produced by `src/train.py` can be evaluated with the same MTEB command.
 
 ## 🚩 Citation
 
