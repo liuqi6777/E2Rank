@@ -108,10 +108,10 @@ By default the training config enables:
 - gradient checkpointing
 - Weights & Biases reporting
 
-If you need to override the W&B project name:
+To enable the W&B login:
 
 ```bash
-WANDB_PROJECT=my-project bash ./scripts/train_rl_0.6b.sh configs/train_rl_0.6b.yaml
+wandb login
 ```
 
 ## Evaluation
