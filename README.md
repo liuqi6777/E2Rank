@@ -1,407 +1,62 @@
-<div align="center">
-<h1>E2Rank: Your Text Embedding can Also be an Effective and Efficient Listwise Reranker</h1>
+# RL Training and Evaluation
 
-<a href="https://Alibaba-NLP.github.io/E2Rank/">🤖 Website</a> | 
-<a href="https://arxiv.org/abs/2510.22733">📄 Arxiv Paper</a> | 
-<a href="https://huggingface.co/collections/Alibaba-NLP/e2rank">🤗 Huggingface Collection</a> |
-<a href="https://github.com/Alibaba-NLP/E2Rank?tab=readme-ov-file#-citation">🚩 Citation</a>
+This repository keeps the RL training pipeline and evaluation scripts for ranking-oriented embedding checkpoints.
 
-</div>
+Current scope:
 
-# 📌 Introduction
+- GRPO-based RL training in [`src/train.py`](src/train.py)
+- Config-driven experiments in [`configs/`](configs)
+- Shell launcher in [`scripts/train_rl_0.6b.sh`](scripts/train_rl_0.6b.sh)
+- MTEB/BEIR-style evaluation in [`eval_mteb/`](eval_mteb)
 
-We introduce $\textrm{E}^2\text{Rank}$, 
-meaning **E**fficient **E**mbedding-based **Rank**ing
-(also meaning **Embedding-to-Rank**), 
-which extends a single text embedding model
-to perform both high-quality retrieval and listwise reranking,
-thereby achieving strong effectiveness with remarkable efficiency. 
+## Environment Setup
 
-By applying cosine similarity between the query and
-document embeddings as a unified ranking function, the listwise ranking prompt,
-which is constructed from the original query and its candidate documents, serves
-as an enhanced query enriched with signals from the top-K documents, akin to
-pseudo-relevance feedback (PRF) in traditional retrieval models. This design 
-preserves the efficiency and representational quality of the base embedding model
-while significantly improving its reranking performance. 
-
-Empirically, E2Rank achieves state-of-the-art results on the BEIR reranking benchmark 
-and demonstrates competitive performance on the reasoning-intensive BRIGHT benchmark,
-with very low reranking latency. We also show that the ranking training process
-improves embedding performance on the MTEB benchmark. 
-Our findings indicate that a single embedding model can effectively unify retrieval and reranking,
-offering both computational efficiency and competitive ranking accuracy.
-
-**Our work highlights the potential of single embedding models to serve as unified retrieval-reranking engines, offering a practical, efficient, and accurate alternative to complex multi-stage ranking systems.**
-
-
-<div align="center">
-    <img src="assets/cover.png" width="90%" height="auto" />
-    <p style="width: 70%; margin-left: auto; margin-right: auto">
-        <b>(a)</b> Overview of E2Rank. <b>(b)</b> Average reranking performance on the BEIR benchmark, E2Rank outperforms other baselines. <b>(c)</b> Reranking latency per query on the Covid dataset, E2Rank can achieve several times the acceleration compared with RankQwen3.
-    </p>
-</div>
-
-# 🚀 Quick Start
-
-## Model List
-
-| Supported Task              | Model Name           | Size | Layers | Sequence Length | Embedding Dimension | Instruction Aware |
-|-----------------------------|----------------------|------|--------|-----------------|---------------------|-------------------|
-| **Embedding + Reranking**   | [Alibaba-NLP/E2Rank-0.6B](https://huggingface.co/Alibaba-NLP/E2Rank-0.6B) | 0.6B | 28     | 32K             | 1024                | Yes            |
-| **Embedding + Reranking**   | [Alibaba-NLP/E2Rank-4B](https://huggingface.co/Alibaba-NLP/E2Rank-4B)     | 4B   | 36     | 32K             | 2560                | Yes            |
-| **Embedding + Reranking**   | [Alibaba-NLP/E2Rank-8B](https://huggingface.co/Alibaba-NLP/E2Rank-8B)     | 8B   | 36     | 32K             | 4096                | Yes            |
-| Embedding Only              | [Alibaba-NLP/E2Rank-0.6B-Embedding-Only](https://huggingface.co/Alibaba-NLP/E2Rank-0.6B-Embedding-Only) | 0.6B | 28     | 32K             | 1024                | Yes         |
-| Embedding Only              | [Alibaba-NLP/E2Rank-0.6B-Embedding-Only](https://huggingface.co/Alibaba-NLP/E2Rank-4B-Embedding-Only)   | 4B   | 36     | 32K             | 2560                | Yes         |
-| Embedding Only              | [Alibaba-NLP/E2Rank-0.6B-Embedding-Only](https://huggingface.co/Alibaba-NLP/E2Rank-8B-Embedding-Only)   | 8B   | 36     | 32K             | 4096                | Yes         |
-
-
-> **Note**:
-> - `Embedding Only` indicates that the model is trained only with the constrative learning and support embedding tasks, while `Embedding + Reranking` indicates the **full E2Rank model** trained with both embedding and reranking objectives (for more detals, please refer to the [paper](https://arxiv.org/abs/2510.22733)). 
-> - `Instruction Aware` notes whether the model supports customizing the input instruction according to different tasks.
-
-## Usage
-
-### Embedding Model
-
-The usage of E2Rank as an embedding model is similar to [Qwen3-Embedding](https://github.com/QwenLM/Qwen3-Embedding). The only difference is that Qwen3-Embedding will automatically append an EOS token, while E2Rank requires users to manually append the special token `<|endoftext|>` at the end of each input text.
-
-
-**vLLM Usage (recommended)**
-
-```python
-# Requires vllm>=0.8.5
-import torch
-import vllm
-from vllm import LLM
-from vllm.config import PoolerConfig
-
-def get_detailed_instruct(task_description: str, query: str) -> str:
-    return f'Instruct: {task_description}\nQuery:{query}'
-
-# Each query must come with a one-sentence instruction that describes the task
-task = 'Given a web search query, retrieve relevant passages that answer the query'
-
-queries = [
-    get_detailed_instruct(task, 'What is the capital of China?'),
-    get_detailed_instruct(task, 'Explain gravity')
-]
-# No need to add instruction for retrieval documents
-documents = [
-    "The capital of China is Beijing.",
-    "Gravity is a force that attracts two bodies towards each other. It gives weight to physical objects and is responsible for the movement of planets around the sun."
-]
-input_texts = queries + documents
-input_texts = [t + "<|endoftext|>" for t in input_texts]
-
-model = LLM(
-    model="Alibaba-NLP/E2Rank-0.6B",
-    task="embed", 
-    override_pooler_config=PoolerConfig(pooling_type="LAST", normalize=True)
-)
-
-outputs = model.embed(input_texts)
-embeddings = torch.tensor([o.outputs.embedding for o in outputs])
-scores = (embeddings[:2] @ embeddings[2:].T)
-print(scores.tolist())
-# [[0.5958386659622192, 0.030148349702358246], [0.060259245336055756, 0.5595865249633789]]
-```
-
-<details>
-<summary><b>Transformers Usage</b></summary>
-
-```python
-# Requires transformers>=4.51.0
-import torch
-import torch.nn.functional as F
-
-from torch import Tensor
-from transformers import AutoTokenizer, AutoModel
-
-
-def last_token_pool(last_hidden_states: Tensor, attention_mask: Tensor) -> Tensor:
-    left_padding = (attention_mask[:, -1].sum() == attention_mask.shape[0])
-    if left_padding:
-        return last_hidden_states[:, -1]
-    else:
-        sequence_lengths = attention_mask.sum(dim=1) - 1
-        batch_size = last_hidden_states.shape[0]
-        return last_hidden_states[torch.arange(batch_size, device=last_hidden_states.device), sequence_lengths]
-
-
-def get_detailed_instruct(task_description: str, query: str) -> str:
-    return f'Instruct: {task_description}\nQuery:{query}'
-
-# Each query must come with a one-sentence instruction that describes the task
-task = 'Given a web search query, retrieve relevant passages that answer the query'
-
-queries = [
-    get_detailed_instruct(task, 'What is the capital of China?'),
-    get_detailed_instruct(task, 'Explain gravity')
-]
-# No need to add instruction for retrieval documents
-documents = [
-    "The capital of China is Beijing.",
-    "Gravity is a force that attracts two bodies towards each other. It gives weight to physical objects and is responsible for the movement of planets around the sun."
-]
-input_texts = queries + documents
-input_texts = [t + "<|endoftext|>" for t in input_texts]
-
-tokenizer = AutoTokenizer.from_pretrained('Alibaba-NLP/E2Rank-0.6B', padding_side='left')
-model = AutoModel.from_pretrained('Alibaba-NLP/E2Rank-0.6B')
-
-max_length = 8192
-
-# Tokenize the input texts
-batch_dict = tokenizer(
-    input_texts,
-    padding=True,
-    truncation=True,
-    max_length=max_length,
-    return_tensors="pt",
-)
-batch_dict.to(model.device)
-with torch.no_grad():
-    outputs = model(**batch_dict)
-    embeddings = last_token_pool(outputs.last_hidden_state, batch_dict['attention_mask'])
-
-    # normalize embeddings
-    embeddings = F.normalize(embeddings, p=2, dim=1)
-    scores = (embeddings[:2] @ embeddings[2:].T)
-
-print(scores.tolist())
-# [[0.5950675010681152, 0.030417663976550102], [0.061970409005880356, 0.562691330909729]]
-```
-</details>
-
-
-### Reranking
-
-For using E2Rank as a reranker, you only need to perform additional processing on the query by adding (part of) the docs that needs to be reranked to the *listwise prompt*, while the rest is the same as using the embedding model.
-
-**vLLM Usage (recommended)**
-
-```python
-# Requires vllm>=0.8.5
-import torch
-import vllm
-from vllm import LLM
-from vllm.config import PoolerConfig
-
-model = LLM(
-    model="./checkpoints/E2Rank-0.6B",
-    task="embed", 
-    override_pooler_config=PoolerConfig(pooling_type="LAST", normalize=True)
-)
-tokenizer = model.get_tokenizer()
-
-def get_listwise_prompt(task_description: str, query: str, documents: list[str], num_input_docs: int = 20) -> str:
-    input_docs = documents[:num_input_docs]
-    input_docs = "\n".join([f"[{i}] {doc}" for i, doc in enumerate(input_docs, start=1)])
-    messages = [{
-        "role": "user", 
-        "content": f'{task_description}\nDocuments:\n{input_docs}Search Query:{query}'
-    }]
-    text = tokenizer.apply_chat_template(
-        messages,
-        tokenize=False,
-        add_generation_prompt=True,
-        enable_thinking=False,
-    )
-    return text
-
-task = 'Given a web search query and some relevant documents, rerank the documents that answer the query:'
-
-queries = [
-    'What is the capital of China?',
-    'Explain gravity'
-]
-
-# No need to add instruction for retrieval documents
-documents = [
-    "The capital of China is Beijing.",
-    "Gravity is a force that attracts two bodies towards each other. It gives weight to physical objects and is responsible for the movement of planets around the sun."
-]
-documents = [doc + "<|endoftext|>" for doc in documents]
-
-pseudo_queries = [
-    get_listwise_prompt(task, queries[0], documents),
-    get_listwise_prompt(task, queries[1], documents)
-]  # no need to add the EOS token here
-
-input_texts = pseudo_queries + documents
-
-outputs = model.embed(input_texts)
-embeddings = torch.tensor([o.outputs.embedding for o in outputs])
-scores = (embeddings[:2] @ embeddings[2:].T)
-print(scores.tolist())
-# [[0.8516960144042969, 0.24043934047222137], [0.33099934458732605, 0.7905282974243164]]
-```
-
-<details>
-<summary><b>Transformers Usage</b></summary>
-
-```python
-# Requires transformers>=4.51.0
-import torch
-import torch.nn.functional as F
-
-from torch import Tensor
-from transformers import AutoTokenizer, AutoModel
-
-
-tokenizer = AutoTokenizer.from_pretrained('./checkpoints/E2Rank-0.6B', padding_side='left')
-model = AutoModel.from_pretrained('./checkpoints/E2Rank-0.6B')
-
-
-def last_token_pool(last_hidden_states: Tensor, attention_mask: Tensor) -> Tensor:
-    left_padding = (attention_mask[:, -1].sum() == attention_mask.shape[0])
-    if left_padding:
-        return last_hidden_states[:, -1]
-    else:
-        sequence_lengths = attention_mask.sum(dim=1) - 1
-        batch_size = last_hidden_states.shape[0]
-        return last_hidden_states[torch.arange(batch_size, device=last_hidden_states.device), sequence_lengths]
-
-
-def get_listwise_prompt(task_description: str, query: str, documents: list[str], num_input_docs: int = 20) -> str:
-    input_docs = documents[:num_input_docs]
-    input_docs = "\n".join([f"[{i}] {doc}" for i, doc in enumerate(input_docs, start=1)])
-    messages = [{
-        "role": "user", 
-        "content": f'{task_description}\nDocuments:\n{input_docs}Search Query:{query}'
-    }]
-    text = tokenizer.apply_chat_template(
-        messages,
-        tokenize=False,
-        add_generation_prompt=True,
-        enable_thinking=False,
-    )
-    return text
-
-task = 'Given a web search query and some relevant documents, rerank the documents that answer the query:'
-
-queries = [
-    'What is the capital of China?',
-    'Explain gravity'
-]
-
-# No need to add instruction for retrieval documents
-documents = [
-    "The capital of China is Beijing.",
-    "Gravity is a force that attracts two bodies towards each other. It gives weight to physical objects and is responsible for the movement of planets around the sun."
-]
-documents = [doc + "<|endoftext|>" for doc in documents]
-
-pseudo_queries = [
-    get_listwise_prompt(task, queries[0], documents),
-    get_listwise_prompt(task, queries[1], documents)
-]  # no need to add the EOS token here
-
-input_texts = pseudo_queries + documents
-
-
-max_length = 8192
-# Tokenize the input texts
-batch_dict = tokenizer(
-    input_texts,
-    padding=True,
-    truncation=True,
-    max_length=max_length,
-    return_tensors="pt",
-)
-batch_dict.to(model.device)
-with torch.no_grad():
-    outputs = model(**batch_dict)
-    embeddings = last_token_pool(outputs.last_hidden_state, batch_dict['attention_mask'])
-
-    # normalize embeddings
-    embeddings = F.normalize(embeddings, p=2, dim=1)
-    scores = (embeddings[:2] @ embeddings[2:].T)
-
-print(scores.tolist())
-# [[0.8513513207435608, 0.24268491566181183], [0.33154672384262085, 0.7923378944396973]]
-```
-</details>
-
-### End-to-end search
-
-Since E2Rank extends a single text embedding model to perform both high-quality retrieval and listwise reranking, you can directly use it to build an end-to-end search system. By reusing the embeddings computed during the retrieval stage, E2Rank only need to compute the pseudo query's embedding and can efficiently rerank the retrieved documents with minimal additional computational overhead.
-
-Example code is coming soon.
-
-
-# 🛠 Reproducibility
-
-We provide detailed instructions in this section for reproducing the training and evaluation results of our models in the paper.
-
-## Dependencies
+This project uses `uv` and targets Python `3.10` (`.python-version` is already included).
 
 ```bash
-conda create -n e2rank python=3.10
-git clone https://github.com/Alibaba-NLP/E2Rank.git
-cd E2Rank
-
-# Install requirements
-pip install -r requirements.txt
+uv python install 3.10
+uv sync
 ```
 
-If you want to track training in Weights & Biases, log in once before launching training:
+If you want to log training metrics to Weights & Biases:
 
 ```bash
-wandb login
+uv run wandb login
 ```
+
+## Data Preparation
+
+Training expects a JSONL file at `data/train.jsonl`.
+
+You can download the prepared dataset with:
+
+```bash
+mkdir -p data
+hf download \
+  Alibaba-NLP/E2Rank_ranking_datasets \
+  train.jsonl \
+  --local-dir ./data \
+  --repo-type dataset
+```
+
+Each sample should contain the fields used by [`src/ranking_data.py`](src/ranking_data.py):
+
+- `query`
+- `document`
+- `ranking`
+- `source` (optional, used to choose task prompts)
 
 ## Training
 
-This repository now keeps the RL Stage II training and the evaluation code needed for the RL checkpoints. The released embedding-only checkpoints on [Huggingface](https://huggingface.co/collections/Alibaba-NLP/e2rank) are still the starting point for training.
-
-**Download the Datasets**
-
-You can download the pre-processed and labeled datasets from [here](https://huggingface.co/datasets/Alibaba-NLP/E2Rank_ranking_datasets) and place them in the `data/` directory:
+The recommended entrypoint is the shell wrapper plus an explicit config path:
 
 ```bash
-mkdir data
-hf download Alibaba-NLP/E2Rank_ranking_datasets train.jsonl --local-dir ./data/ --repo-type dataset 
+bash ./scripts/run.sh configs/exp/train_rl_0.6b_ndcg.yaml
 ```
 
-For more details about the datasets, please refer to the original paper.
+The top-level config currently resolves to `configs/exp/train_rl_0.6b_ndcg.yaml`.
 
-**Train E2Rank-Full-GRPO-0.6B**
-
-To run the GRPO-based RL stage on top of the released embedding-only checkpoint, use the new pure-GRPO Stage II training entrypoint:
-
-```bash
-bash ./scripts/train_rl_0.6b.sh
-```
-
-The script now reads its training arguments from `configs/exp/train_rl_0.6b.yaml`, then launches `src/train.py` with LoRA + ZeRO3. It uses the same Stage II ranking dataset format as the supervised training pipeline. The updated E2Rank integration no longer mixes InfoNCE with RL: it optimizes GRPO on the original query branch and/or the listwise prompt branch, depending on `rl_mode`.
-
-When `--gradient_checkpointing` is enabled together with LoRA + DeepSpeed ZeRO-3, `src/train.py` automatically switches gradient checkpointing to `use_reentrant=True`. This avoids the `torch.utils.checkpoint.CheckpointError` where ZeRO-3 recomputes parameter shards as empty tensors during the backward pass.
-
-The training script reports to Weights & Biases by default. Override the project name if needed:
-
-```bash
-WANDB_PROJECT=my-e2rank-project bash ./scripts/train_rl_0.6b.sh
-```
-
-To use a different training config:
-
-```bash
-bash ./scripts/train_rl_0.6b.sh configs/exp/train_rl_0.6b.yaml
-```
-
-Besides the standard `Trainer` logs, the run also tracks GRPO-specific metrics such as `query_loss`, `listwise_loss`, `query_reward`, `listwise_reward`, `query_sigma`, and `listwise_sigma`.
-
-You can also invoke the entrypoint directly with a YAML config:
-
-```bash
-python src/train.py configs/exp/train_rl_0.6b.yaml
-```
-
-`src/train.py` now supports loading `.json`, `.yaml`, and `.yml` config files. YAML configs can declare `_base_` to inherit and merge other config files. Relative `_base_` paths are resolved relative to the current config file. If you still prefer direct CLI arguments, the original `--xxx` style remains available.
-
-The recommended config layout is:
+The config layout is:
 
 ```text
 configs/
@@ -411,111 +66,82 @@ configs/
   exp/
 ```
 
-For example, `configs/exp/train_rl_0.6b.yaml` currently composes:
+Example inheritance:
 
 ```yaml
 _base_:
   - ../base/train.yaml
   - ../model/e2rank_0.6b_embedding_only.yaml
   - ../reward/ndcg.yaml
+
+data_path: data/train.jsonl
+output_dir: checkpoints/E2Rank-Full-GRPO-0.6B
+run_name: E2Rank-Full-GRPO-0.6B
 ```
 
-You can keep shared settings in `base/`, model-specific settings in `model/`, reward definitions in `reward/`, and leave only experiment-specific overrides in `exp/`.
+Important RL-related fields exposed by [`src/config.py`](src/config.py):
 
-The repository now includes ready-to-use reward presets:
+- `rl_mode`: `query_only`, `listwise_only`, or `dual`
+- `group_size`
+- `sigma`
+- `sigma_learnable`
+- `query_reward_type`
+- `listwise_reward_type`
+- `query_reward_ndcg_k`
+- `listwise_reward_ndcg_k`
+- `listwise_loss_weight`
+- `advantage_norm`
+- `query_relevance_scheme`
+- `listwise_relevance_scheme`
 
-- `configs/reward/ndcg.yaml`
-- `configs/reward/mixed.yaml`
-- `configs/reward/contrastive.yaml`
-- `configs/reward/mrr.yaml`
+Supported reward presets in [`configs/reward/`](configs/reward):
 
-And matching experiment templates:
+- `ndcg.yaml`
+- `mixed.yaml`
+- `contrastive.yaml`
+- `mrr.yaml`
 
-- `configs/exp/train_rl_0.6b.yaml`
-- `configs/exp/train_rl_0.6b_mixed.yaml`
-- `configs/exp/train_rl_0.6b_contrastive.yaml`
-- `configs/exp/train_rl_0.6b_mrr.yaml`
+By default the training config enables:
 
-Examples:
+- LoRA
+- DeepSpeed ZeRO-3
+- gradient checkpointing
+- Weights & Biases reporting
+
+If you need to override the W&B project name:
 
 ```bash
-bash ./scripts/train_rl_0.6b.sh configs/exp/train_rl_0.6b_mixed.yaml
-bash ./scripts/train_rl_0.6b.sh configs/exp/train_rl_0.6b_contrastive.yaml
+WANDB_PROJECT=my-project bash ./scripts/train_rl_0.6b.sh configs/train_rl_0.6b.yaml
 ```
-
-The RL-specific fields exposed by `src/train.py` are:
-
-- `--rl_mode`: `query_only`, `listwise_only`, or `dual`
-- `--group_size`
-- `--sigma`
-- `--sigma_learnable`
-- `--query_reward_type`
-- `--listwise_reward_type`
-- `--query_reward_ndcg_k`
-- `--listwise_reward_ndcg_k`
-- `--query_mixed_contrastive_weight`
-- `--query_mixed_ndcg_weight`
-- `--listwise_mixed_contrastive_weight`
-- `--listwise_mixed_ndcg_weight`
-- `--query_contrastive_use_in_batch_negatives`
-- `--listwise_contrastive_use_in_batch_negatives`
-- `--listwise_loss_weight`
-- `--advantage_norm`
-- `--query_relevance_scheme`
-- `--listwise_relevance_scheme`
-
-Supported reward types are `ndcg`, `contrastive`, `mrr`, and `mixed`. The `mixed` reward uses
-`contrastive_weight * contrastive_reward + ndcg_weight * ndcg_reward`, while the contrastive reward
-can optionally mine additional in-batch negatives from the top-ranked document of other samples.
-
 
 ## Evaluation
 
-### MTEB
+The wrapper script runs retrieval evaluation with the settings currently baked into [`eval_mteb/scripts/run_mteb.sh`](eval_mteb/scripts/run_mteb.sh), including:
 
-To evaluate the model on MTEB benchmark, run the following script:
+- `--benchmark MTEB(eng, v1)`
+- `--langs eng`
+- `--batch_size 16`
 
-```bash
-bash eval_mteb/scripts/run_mteb.sh ${model_path} ${model_name} ${benchmark_name}
-```
-
-- `model_path`: Path or name of the model weights file (e.g., "./checkpoints/E2Rank-Full-GRPO-0.6B").
-- `model_name`: Name of the model, used for naming the result directory (e.g., "E2Rank-Full-GRPO-0.6B").
-- `benchmark_name`: Name of the benchmark (e.g., "MTEB(eng, v1)" or "MTEB(eng, v2)").
-
-Evaluation results will be saved in the directory: `results/mteb/`. Each task's results will be stored in a separate JSON file.
-
-For summarizing experimental results, run the following script:
+Run evaluation with:
 
 ```bash
-python3 eval_mteb/summary.py results/mteb/${model_name}/${model_name}/no_version_available ${benchmark_name}
+uv run bash eval_mteb/scripts/run_mteb.sh \
+  checkpoints/E2Rank-Full-GRPO-0.6B \
+  E2Rank-Full-GRPO-0.6B
 ```
 
-The implementation of evaluation on MTEB are modified from [Qwen3-Embedding](https://github.com/QwenLM/Qwen3-Embedding/blob/main/evaluation/README.md). Sincere thanks for their efforts.
-RL checkpoints produced by `src/train.py` can be evaluated with the same MTEB command.
+Results are written under `results/mteb/<model_name>/`.
 
-## 🚩 Citation
+To summarize scores:
 
-If this work is helpful, please kindly cite as:
-
-```bibtext
-@misc{liu2025e2rank,
-      title={E2Rank: Your Text Embedding can Also be an Effective and Efficient Listwise Reranker}, 
-      author={Qi Liu and Yanzhao Zhang and Mingxin Li and Dingkun Long and Pengjun Xie and Jiaxin Mao},
-      year={2025},
-      eprint={2510.22733},
-      archivePrefix={arXiv},
-      primaryClass={cs.CL},
-      url={https://arxiv.org/abs/2510.22733}, 
-}
+```bash
+python eval_mteb/summary.py \
+  results/mteb/E2Rank-Full-GRPO-0.6B/E2Rank-Full-GRPO-0.6B/no_version_available \
+  "MTEB(eng, v1)"
 ```
 
-If you have any questions, feel free to contact us via qiliu6777[AT]gmail.com or create an issue.
+If you need custom evaluation arguments, call the Python entrypoint directly:
 
-<!-- ## Star History
-
-<div align="center">
-
-[![Star History Chart](https://api.star-history.com/svg?repos=Alibaba-NLP/E2Rank&type=Date)](https://www.star-history.com/#Alibaba-NLP/WebAgent&Date)
-
-</div> -->
+```bash
+python eval_mteb/run_mteb.py --help
+```
