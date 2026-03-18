@@ -399,6 +399,8 @@ python src/train.py \
   --rl_mode dual \
   --group_size 8 \
   --sigma 0.05 \
+  --query_reward_type ndcg \
+  --listwise_reward_type ndcg \
   --query_reward_ndcg_k 10 \
   --listwise_reward_ndcg_k 16 \
   --query_relevance_scheme binary \
@@ -411,12 +413,24 @@ The RL-specific arguments exposed by `src/train.py` are:
 - `--group_size`
 - `--sigma`
 - `--sigma_learnable`
+- `--query_reward_type`
+- `--listwise_reward_type`
 - `--query_reward_ndcg_k`
 - `--listwise_reward_ndcg_k`
+- `--query_mixed_contrastive_weight`
+- `--query_mixed_ndcg_weight`
+- `--listwise_mixed_contrastive_weight`
+- `--listwise_mixed_ndcg_weight`
+- `--query_contrastive_use_in_batch_negatives`
+- `--listwise_contrastive_use_in_batch_negatives`
 - `--listwise_loss_weight`
 - `--advantage_norm`
 - `--query_relevance_scheme`
 - `--listwise_relevance_scheme`
+
+Supported reward types are `ndcg`, `contrastive`, `mrr`, and `mixed`. The `mixed` reward uses
+`contrastive_weight * contrastive_reward + ndcg_weight * ndcg_reward`, while the contrastive reward
+can optionally mine additional in-batch negatives from the top-ranked document of other samples.
 
 
 ## Evaluation

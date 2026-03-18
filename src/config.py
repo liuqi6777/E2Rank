@@ -78,13 +78,45 @@ class RLArguments:
         default=False,
         metadata={"help": "Learn a global sigma scalar for each GRPO branch"},
     )
+    query_reward_type: str = field(
+        default="ndcg",
+        metadata={"help": "Reward for the query-side branch: ndcg, contrastive, mrr, or mixed"},
+    )
+    listwise_reward_type: str = field(
+        default="ndcg",
+        metadata={"help": "Reward for the listwise branch: ndcg, contrastive, mrr, or mixed"},
+    )
     query_reward_ndcg_k: int = field(
         default=10,
-        metadata={"help": "nDCG cutoff used by the query-side GRPO branch"},
+        metadata={"help": "Ranking cutoff used by the query-side nDCG/MRR reward component"},
     )
     listwise_reward_ndcg_k: int = field(
         default=16,
-        metadata={"help": "nDCG cutoff used by the listwise-side GRPO branch"},
+        metadata={"help": "Ranking cutoff used by the listwise nDCG/MRR reward component"},
+    )
+    query_mixed_contrastive_weight: float = field(
+        default=1.0,
+        metadata={"help": "Contrastive reward weight when query_reward_type=mixed"},
+    )
+    query_mixed_ndcg_weight: float = field(
+        default=1.0,
+        metadata={"help": "nDCG reward weight when query_reward_type=mixed"},
+    )
+    listwise_mixed_contrastive_weight: float = field(
+        default=1.0,
+        metadata={"help": "Contrastive reward weight when listwise_reward_type=mixed"},
+    )
+    listwise_mixed_ndcg_weight: float = field(
+        default=1.0,
+        metadata={"help": "nDCG reward weight when listwise_reward_type=mixed"},
+    )
+    query_contrastive_use_in_batch_negatives: bool = field(
+        default=False,
+        metadata={"help": "Use positives from other samples as extra negatives for query-side contrastive reward"},
+    )
+    listwise_contrastive_use_in_batch_negatives: bool = field(
+        default=False,
+        metadata={"help": "Use positives from other samples as extra negatives for listwise contrastive reward"},
     )
     listwise_loss_weight: float = field(
         default=1.0,

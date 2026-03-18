@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import torch
+import torch.nn.functional as F
+
+
+SUPPORTED_REWARD_TYPES = {"ndcg", "contrastive", "mrr", "mixed"}
 
 
 def build_relevance_labels(
@@ -34,27 +38,119 @@ def build_relevance_labels(
     return relevance
 
 
-def compute_ndcg_reward(
+def _normalize_inputs(
     query_embeddings: torch.Tensor,
     candidate_embeddings: torch.Tensor,
-    relevance_labels: torch.Tensor,
-    k: int = 10,
-) -> torch.Tensor:
+) -> tuple[torch.Tensor, torch.Tensor]:
+    if query_embeddings.dim() != 2:
+        raise ValueError(
+            f"query_embeddings must be 2D, got shape {tuple(query_embeddings.shape)}"
+        )
     if candidate_embeddings.dim() != 3:
         raise ValueError(
             f"candidate_embeddings must be 3D, got shape {tuple(candidate_embeddings.shape)}"
         )
+    if query_embeddings.shape[0] != candidate_embeddings.shape[0]:
+        raise ValueError(
+            "query_embeddings and candidate_embeddings batch size must match, "
+            f"got queries={tuple(query_embeddings.shape)} candidates={tuple(candidate_embeddings.shape)}"
+        )
+    if query_embeddings.shape[-1] != candidate_embeddings.shape[-1]:
+        raise ValueError(
+            "query_embeddings and candidate_embeddings embedding dim must match, "
+            f"got queries={tuple(query_embeddings.shape)} candidates={tuple(candidate_embeddings.shape)}"
+        )
+    return (
+        F.normalize(query_embeddings, dim=-1),
+        F.normalize(candidate_embeddings, dim=-1),
+    )
+
+
+def _validate_relevance_labels(
+    relevance_labels: torch.Tensor,
+    candidate_embeddings: torch.Tensor,
+) -> None:
     if relevance_labels.shape != candidate_embeddings.shape[:2]:
         raise ValueError(
             "relevance_labels shape must match candidate_embeddings[:2], "
             f"got labels={tuple(relevance_labels.shape)} candidates={tuple(candidate_embeddings.shape)}"
         )
 
+
+def _compute_scores(
+    query_embeddings: torch.Tensor,
+    candidate_embeddings: torch.Tensor,
+) -> torch.Tensor:
+    normalized_queries, normalized_candidates = _normalize_inputs(
+        query_embeddings=query_embeddings,
+        candidate_embeddings=candidate_embeddings,
+    )
+    return torch.matmul(normalized_candidates, normalized_queries.unsqueeze(-1)).squeeze(-1)
+
+
+def _row_max_or_default(values: torch.Tensor, default: float = 0.0) -> torch.Tensor:
+    max_values = values.max(dim=-1).values
+    default_values = torch.full_like(max_values, fill_value=default)
+    return torch.where(torch.isfinite(max_values), max_values, default_values)
+
+
+def compute_contrastive_reward(
+    query_embeddings: torch.Tensor,
+    candidate_embeddings: torch.Tensor,
+    relevance_labels: torch.Tensor,
+    use_in_batch_negatives: bool = False,
+) -> torch.Tensor:
+    _validate_relevance_labels(relevance_labels, candidate_embeddings)
+    scores = _compute_scores(
+        query_embeddings=query_embeddings,
+        candidate_embeddings=candidate_embeddings,
+    )
+
+    positive_indices = relevance_labels.argmax(dim=-1, keepdim=True)
+    positive_scores = scores.gather(dim=1, index=positive_indices).squeeze(1)
+
+    negative_scores = scores.masked_fill(
+        F.one_hot(positive_indices.squeeze(-1), num_classes=scores.size(1)).bool(),
+        float("-inf"),
+    )
+    hardest_negative_scores = _row_max_or_default(negative_scores)
+
+    if use_in_batch_negatives and query_embeddings.size(0) > 1:
+        _, normalized_candidates = _normalize_inputs(
+            query_embeddings=query_embeddings,
+            candidate_embeddings=candidate_embeddings,
+        )
+        positive_embeddings = normalized_candidates.gather(
+            dim=1,
+            index=positive_indices.unsqueeze(-1).expand(-1, 1, normalized_candidates.size(-1)),
+        ).squeeze(1)
+        normalized_queries = F.normalize(query_embeddings, dim=-1)
+        in_batch_scores = torch.matmul(normalized_queries, positive_embeddings.transpose(0, 1))
+        in_batch_scores.fill_diagonal_(float("-inf"))
+        hardest_negative_scores = torch.maximum(
+            hardest_negative_scores,
+            _row_max_or_default(in_batch_scores),
+        )
+
+    return positive_scores - hardest_negative_scores
+
+
+def compute_ndcg_reward(
+    query_embeddings: torch.Tensor,
+    candidate_embeddings: torch.Tensor,
+    relevance_labels: torch.Tensor,
+    k: int = 10,
+) -> torch.Tensor:
+    _validate_relevance_labels(relevance_labels, candidate_embeddings)
+
     cutoff = min(k, candidate_embeddings.size(1))
     if cutoff <= 0:
         return torch.zeros(query_embeddings.size(0), device=query_embeddings.device, dtype=query_embeddings.dtype)
 
-    scores = torch.matmul(candidate_embeddings, query_embeddings.unsqueeze(-1)).squeeze(-1)
+    scores = _compute_scores(
+        query_embeddings=query_embeddings,
+        candidate_embeddings=candidate_embeddings,
+    )
     topk_indices = scores.topk(k=cutoff, dim=-1).indices
     topk_relevance = relevance_labels.gather(dim=1, index=topk_indices)
 
@@ -66,3 +162,114 @@ def compute_ndcg_reward(
     ideal_relevance = relevance_labels.topk(k=cutoff, dim=-1).values
     idcg = (((2.0 ** ideal_relevance) - 1.0) * discounts.unsqueeze(0)).sum(dim=-1)
     return torch.where(idcg > 0, dcg / idcg, torch.zeros_like(dcg))
+
+
+def compute_mrr_reward(
+    query_embeddings: torch.Tensor,
+    candidate_embeddings: torch.Tensor,
+    relevance_labels: torch.Tensor,
+    k: int | None = None,
+) -> torch.Tensor:
+    _validate_relevance_labels(relevance_labels, candidate_embeddings)
+
+    cutoff = candidate_embeddings.size(1) if k is None else min(k, candidate_embeddings.size(1))
+    if cutoff <= 0:
+        return torch.zeros(query_embeddings.size(0), device=query_embeddings.device, dtype=query_embeddings.dtype)
+
+    scores = _compute_scores(
+        query_embeddings=query_embeddings,
+        candidate_embeddings=candidate_embeddings,
+    )
+    ranked_indices = scores.topk(k=cutoff, dim=-1).indices
+    ranked_relevance = relevance_labels.gather(dim=1, index=ranked_indices)
+    relevant_mask = ranked_relevance > 0
+
+    reciprocal_ranks = relevant_mask.to(query_embeddings.dtype) / torch.arange(
+        1,
+        cutoff + 1,
+        device=query_embeddings.device,
+        dtype=query_embeddings.dtype,
+    ).unsqueeze(0)
+    return reciprocal_ranks.max(dim=-1).values
+
+
+def compute_mixed_reward(
+    query_embeddings: torch.Tensor,
+    candidate_embeddings: torch.Tensor,
+    relevance_labels: torch.Tensor,
+    k: int = 10,
+    contrastive_weight: float = 1.0,
+    ndcg_weight: float = 1.0,
+    contrastive_use_in_batch_negatives: bool = False,
+) -> torch.Tensor:
+    if contrastive_weight == 0 and ndcg_weight == 0:
+        raise ValueError("At least one mixed reward weight must be non-zero")
+
+    reward = torch.zeros(
+        query_embeddings.size(0),
+        device=query_embeddings.device,
+        dtype=query_embeddings.dtype,
+    )
+    if contrastive_weight != 0:
+        reward = reward + contrastive_weight * compute_contrastive_reward(
+            query_embeddings=query_embeddings,
+            candidate_embeddings=candidate_embeddings,
+            relevance_labels=relevance_labels,
+            use_in_batch_negatives=contrastive_use_in_batch_negatives,
+        )
+    if ndcg_weight != 0:
+        reward = reward + ndcg_weight * compute_ndcg_reward(
+            query_embeddings=query_embeddings,
+            candidate_embeddings=candidate_embeddings,
+            relevance_labels=relevance_labels,
+            k=k,
+        )
+    return reward
+
+
+def compute_reward(
+    query_embeddings: torch.Tensor,
+    candidate_embeddings: torch.Tensor,
+    relevance_labels: torch.Tensor,
+    reward_type: str = "ndcg",
+    k: int = 10,
+    mixed_contrastive_weight: float = 1.0,
+    mixed_ndcg_weight: float = 1.0,
+    contrastive_use_in_batch_negatives: bool = False,
+) -> torch.Tensor:
+    reward_type = reward_type.lower()
+    if reward_type not in SUPPORTED_REWARD_TYPES:
+        raise ValueError(
+            f"Unsupported reward type: {reward_type}. Supported types: {sorted(SUPPORTED_REWARD_TYPES)}"
+        )
+
+    if reward_type == "ndcg":
+        return compute_ndcg_reward(
+            query_embeddings=query_embeddings,
+            candidate_embeddings=candidate_embeddings,
+            relevance_labels=relevance_labels,
+            k=k,
+        )
+    if reward_type == "contrastive":
+        return compute_contrastive_reward(
+            query_embeddings=query_embeddings,
+            candidate_embeddings=candidate_embeddings,
+            relevance_labels=relevance_labels,
+            use_in_batch_negatives=contrastive_use_in_batch_negatives,
+        )
+    if reward_type == "mrr":
+        return compute_mrr_reward(
+            query_embeddings=query_embeddings,
+            candidate_embeddings=candidate_embeddings,
+            relevance_labels=relevance_labels,
+            k=k,
+        )
+    return compute_mixed_reward(
+        query_embeddings=query_embeddings,
+        candidate_embeddings=candidate_embeddings,
+        relevance_labels=relevance_labels,
+        k=k,
+        contrastive_weight=mixed_contrastive_weight,
+        ndcg_weight=mixed_ndcg_weight,
+        contrastive_use_in_batch_negatives=contrastive_use_in_batch_negatives,
+    )

@@ -9,7 +9,7 @@ from torch import Tensor, nn
 from transformers import PreTrainedModel
 from transformers.file_utils import ModelOutput
 
-from rewards import build_relevance_labels, compute_ndcg_reward
+from rewards import SUPPORTED_REWARD_TYPES, build_relevance_labels, compute_reward
 
 
 def pool_last_token_embedding(
@@ -50,20 +50,33 @@ class GRPO(nn.Module):
         group_size: int = 8,
         sigma: float = 0.05,
         sigma_learnable: bool = False,
+        reward_type: str = "ndcg",
         reward_ndcg_k: int = 10,
+        mixed_contrastive_weight: float = 1.0,
+        mixed_ndcg_weight: float = 1.0,
+        contrastive_use_in_batch_negatives: bool = False,
         advantage_norm: bool = True,
         relevance_scheme: str = "graded",
     ):
         super().__init__()
+        reward_type = reward_type.lower()
         if group_size < 2:
             raise ValueError("group_size must be at least 2 for GRPO")
         if sigma <= 0:
             raise ValueError("sigma must be positive")
         if relevance_scheme not in {"graded", "binary"}:
             raise ValueError(f"Unsupported relevance scheme: {relevance_scheme}")
+        if reward_type not in SUPPORTED_REWARD_TYPES:
+            raise ValueError(
+                f"Unsupported reward type: {reward_type}. Supported types: {sorted(SUPPORTED_REWARD_TYPES)}"
+            )
 
         self.group_size = group_size
+        self.reward_type = reward_type
         self.reward_ndcg_k = reward_ndcg_k
+        self.mixed_contrastive_weight = mixed_contrastive_weight
+        self.mixed_ndcg_weight = mixed_ndcg_weight
+        self.contrastive_use_in_batch_negatives = contrastive_use_in_batch_negatives
         self.advantage_norm = advantage_norm
         self.relevance_scheme = relevance_scheme
         self.sigma_learnable = sigma_learnable
@@ -112,11 +125,15 @@ class GRPO(nn.Module):
         rewards = []
         for sample_idx in range(self.group_size):
             rewards.append(
-                compute_ndcg_reward(
+                compute_reward(
                     query_embeddings=sampled_embeddings[sample_idx],
                     candidate_embeddings=document_embeddings,
                     relevance_labels=relevance_labels,
+                    reward_type=self.reward_type,
                     k=self.reward_ndcg_k,
+                    mixed_contrastive_weight=self.mixed_contrastive_weight,
+                    mixed_ndcg_weight=self.mixed_ndcg_weight,
+                    contrastive_use_in_batch_negatives=self.contrastive_use_in_batch_negatives,
                 )
             )
         rewards = torch.stack(rewards, dim=0)
@@ -139,8 +156,16 @@ class GRPOModel(nn.Module):
         group_size: int = 8,
         sigma: float = 0.05,
         sigma_learnable: bool = False,
+        query_reward_type: str = "ndcg",
+        listwise_reward_type: str = "ndcg",
         query_reward_ndcg_k: int = 10,
         listwise_reward_ndcg_k: int = 16,
+        query_mixed_contrastive_weight: float = 1.0,
+        query_mixed_ndcg_weight: float = 1.0,
+        listwise_mixed_contrastive_weight: float = 1.0,
+        listwise_mixed_ndcg_weight: float = 1.0,
+        query_contrastive_use_in_batch_negatives: bool = False,
+        listwise_contrastive_use_in_batch_negatives: bool = False,
         listwise_loss_weight: float = 1.0,
         advantage_norm: bool = True,
         query_relevance_scheme: str = "binary",
@@ -161,7 +186,11 @@ class GRPOModel(nn.Module):
                 group_size=group_size,
                 sigma=sigma,
                 sigma_learnable=sigma_learnable,
+                reward_type=query_reward_type,
                 reward_ndcg_k=query_reward_ndcg_k,
+                mixed_contrastive_weight=query_mixed_contrastive_weight,
+                mixed_ndcg_weight=query_mixed_ndcg_weight,
+                contrastive_use_in_batch_negatives=query_contrastive_use_in_batch_negatives,
                 advantage_norm=advantage_norm,
                 relevance_scheme=query_relevance_scheme,
             )
@@ -173,7 +202,11 @@ class GRPOModel(nn.Module):
                 group_size=group_size,
                 sigma=sigma,
                 sigma_learnable=sigma_learnable,
+                reward_type=listwise_reward_type,
                 reward_ndcg_k=listwise_reward_ndcg_k,
+                mixed_contrastive_weight=listwise_mixed_contrastive_weight,
+                mixed_ndcg_weight=listwise_mixed_ndcg_weight,
+                contrastive_use_in_batch_negatives=listwise_contrastive_use_in_batch_negatives,
                 advantage_norm=advantage_norm,
                 relevance_scheme=listwise_relevance_scheme,
             )
