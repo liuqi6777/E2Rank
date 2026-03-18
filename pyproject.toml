@@ -1,0 +1,20 @@
+[project]
+name = "e2rank"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "accelerate>=1.13.0",
+    "datasets==3.6.0",
+    "deepspeed>=0.18.8",
+    "flash>=1.0.3",
+    "mteb==1.38.32",
+    "peft>=0.18.1",
+    "tabulate>=0.10.0",
+    "torch==2.6.0",
+    "torchaudio==2.6.0",
+    "torchvision==0.21.0",
+    "transformers==4.52.3",
+    "wandb>=0.25.1",
+]
