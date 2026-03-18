@@ -1,0 +1,24 @@
+bf16: true
+tf32: true
+per_device_train_batch_size: 4
+gradient_checkpointing: true
+gradient_accumulation_steps: 8
+learning_rate: 1.0e-6
+warmup_ratio: 0.03
+lr_scheduler_type: linear
+num_train_epochs: 1
+logging_strategy: steps
+logging_steps: 1
+report_to: wandb
+save_strategy: steps
+save_steps: 200
+overwrite_output_dir: true
+
+lora_enabled: true
+lora_r: 64
+
+rl_mode: dual
+group_size: 8
+sigma: 0.05
+listwise_loss_weight: 1.0
+advantage_norm: true

@@ -375,7 +375,7 @@ To run the GRPO-based RL stage on top of the released embedding-only checkpoint,
 bash ./scripts/train_rl_0.6b.sh
 ```
 
-The script launches `src/train.py` with LoRA + ZeRO3 and uses the same Stage II ranking dataset format as the supervised training pipeline. The updated E2Rank integration no longer mixes InfoNCE with RL: it optimizes GRPO on the original query branch and/or the listwise prompt branch, depending on `--rl_mode`.
+The script now reads its training arguments from `configs/exp/train_rl_0.6b.yaml`, then launches `src/train.py` with LoRA + ZeRO3. It uses the same Stage II ranking dataset format as the supervised training pipeline. The updated E2Rank integration no longer mixes InfoNCE with RL: it optimizes GRPO on the original query branch and/or the listwise prompt branch, depending on `rl_mode`.
 
 When `--gradient_checkpointing` is enabled together with LoRA + DeepSpeed ZeRO-3, `src/train.py` automatically switches gradient checkpointing to `use_reentrant=True`. This avoids the `torch.utils.checkpoint.CheckpointError` where ZeRO-3 recomputes parameter shards as empty tensors during the backward pass.
 
@@ -385,29 +385,65 @@ The training script reports to Weights & Biases by default. Override the project
 WANDB_PROJECT=my-e2rank-project bash ./scripts/train_rl_0.6b.sh
 ```
 
-Besides the standard `Trainer` logs, the run also tracks GRPO-specific metrics such as `query_loss`, `listwise_loss`, `query_reward`, `listwise_reward`, `query_sigma`, and `listwise_sigma`.
-
-You can also invoke the entrypoint directly:
+To use a different training config:
 
 ```bash
-python src/train.py \
-  --model_name_or_path Alibaba-NLP/E2Rank-0.6B-Embedding-Only \
-  --data_path data/train.jsonl \
-  --output_dir checkpoints/E2Rank-Full-GRPO-0.6B \
-  --report_to wandb \
-  --run_name E2Rank-Full-GRPO-0.6B \
-  --rl_mode dual \
-  --group_size 8 \
-  --sigma 0.05 \
-  --query_reward_type ndcg \
-  --listwise_reward_type ndcg \
-  --query_reward_ndcg_k 10 \
-  --listwise_reward_ndcg_k 16 \
-  --query_relevance_scheme binary \
-  --listwise_relevance_scheme graded
+bash ./scripts/train_rl_0.6b.sh configs/exp/train_rl_0.6b.yaml
 ```
 
-The RL-specific arguments exposed by `src/train.py` are:
+Besides the standard `Trainer` logs, the run also tracks GRPO-specific metrics such as `query_loss`, `listwise_loss`, `query_reward`, `listwise_reward`, `query_sigma`, and `listwise_sigma`.
+
+You can also invoke the entrypoint directly with a YAML config:
+
+```bash
+python src/train.py configs/exp/train_rl_0.6b.yaml
+```
+
+`src/train.py` now supports loading `.json`, `.yaml`, and `.yml` config files. YAML configs can declare `_base_` to inherit and merge other config files. Relative `_base_` paths are resolved relative to the current config file. If you still prefer direct CLI arguments, the original `--xxx` style remains available.
+
+The recommended config layout is:
+
+```text
+configs/
+  base/
+  model/
+  reward/
+  exp/
+```
+
+For example, `configs/exp/train_rl_0.6b.yaml` currently composes:
+
+```yaml
+_base_:
+  - ../base/train.yaml
+  - ../model/e2rank_0.6b_embedding_only.yaml
+  - ../reward/ndcg.yaml
+```
+
+You can keep shared settings in `base/`, model-specific settings in `model/`, reward definitions in `reward/`, and leave only experiment-specific overrides in `exp/`.
+
+The repository now includes ready-to-use reward presets:
+
+- `configs/reward/ndcg.yaml`
+- `configs/reward/mixed.yaml`
+- `configs/reward/contrastive.yaml`
+- `configs/reward/mrr.yaml`
+
+And matching experiment templates:
+
+- `configs/exp/train_rl_0.6b.yaml`
+- `configs/exp/train_rl_0.6b_mixed.yaml`
+- `configs/exp/train_rl_0.6b_contrastive.yaml`
+- `configs/exp/train_rl_0.6b_mrr.yaml`
+
+Examples:
+
+```bash
+bash ./scripts/train_rl_0.6b.sh configs/exp/train_rl_0.6b_mixed.yaml
+bash ./scripts/train_rl_0.6b.sh configs/exp/train_rl_0.6b_contrastive.yaml
+```
+
+The RL-specific fields exposed by `src/train.py` are:
 
 - `--rl_mode`: `query_only`, `listwise_only`, or `dual`
 - `--group_size`

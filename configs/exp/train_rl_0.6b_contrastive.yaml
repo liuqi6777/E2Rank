@@ -1,0 +1,8 @@
+_base_:
+  - ../base/train.yaml
+  - ../model/e2rank_0.6b_embedding_only.yaml
+  - ../reward/contrastive.yaml
+
+data_path: data/train.jsonl
+output_dir: checkpoints/E2Rank-Full-GRPO-0.6B-Contrastive
+run_name: E2Rank-Full-GRPO-0.6B-Contrastive

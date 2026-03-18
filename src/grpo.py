@@ -9,6 +9,7 @@ from torch import Tensor, nn
 from transformers import PreTrainedModel
 from transformers.file_utils import ModelOutput
 
+from config import RLArguments
 from rewards import SUPPORTED_REWARD_TYPES, build_relevance_labels, compute_reward
 
 
@@ -152,67 +153,49 @@ class GRPOModel(nn.Module):
     def __init__(
         self,
         model: PreTrainedModel,
-        rl_mode: str = "dual",
-        group_size: int = 8,
-        sigma: float = 0.05,
-        sigma_learnable: bool = False,
-        query_reward_type: str = "ndcg",
-        listwise_reward_type: str = "ndcg",
-        query_reward_ndcg_k: int = 10,
-        listwise_reward_ndcg_k: int = 16,
-        query_mixed_contrastive_weight: float = 1.0,
-        query_mixed_ndcg_weight: float = 1.0,
-        listwise_mixed_contrastive_weight: float = 1.0,
-        listwise_mixed_ndcg_weight: float = 1.0,
-        query_contrastive_use_in_batch_negatives: bool = False,
-        listwise_contrastive_use_in_batch_negatives: bool = False,
-        listwise_loss_weight: float = 1.0,
-        advantage_norm: bool = True,
-        query_relevance_scheme: str = "binary",
-        listwise_relevance_scheme: str = "graded",
+        rl_args: RLArguments,
     ):
         super().__init__()
-        if rl_mode not in {"query_only", "listwise_only", "dual"}:
-            raise ValueError(f"Unsupported rl_mode: {rl_mode}")
+        if rl_args.rl_mode not in {"query_only", "listwise_only", "dual"}:
+            raise ValueError(f"Unsupported rl_mode: {rl_args.rl_mode}")
 
         self.model = model
         self.config = self.model.config
-        self.listwise_loss_weight = listwise_loss_weight
-        self.use_query_branch = rl_mode in {"query_only", "dual"}
-        self.use_listwise_branch = rl_mode in {"listwise_only", "dual"}
+        self.listwise_loss_weight = rl_args.listwise_loss_weight
+        self.use_query_branch = rl_args.rl_mode in {"query_only", "dual"}
+        self.use_listwise_branch = rl_args.rl_mode in {"listwise_only", "dual"}
 
         self.query_grpo = (
-            GRPO(
-                group_size=group_size,
-                sigma=sigma,
-                sigma_learnable=sigma_learnable,
-                reward_type=query_reward_type,
-                reward_ndcg_k=query_reward_ndcg_k,
-                mixed_contrastive_weight=query_mixed_contrastive_weight,
-                mixed_ndcg_weight=query_mixed_ndcg_weight,
-                contrastive_use_in_batch_negatives=query_contrastive_use_in_batch_negatives,
-                advantage_norm=advantage_norm,
-                relevance_scheme=query_relevance_scheme,
-            )
+            GRPO(**self._build_branch_kwargs(rl_args=rl_args, branch_name="query"))
             if self.use_query_branch
             else None
         )
         self.listwise_grpo = (
-            GRPO(
-                group_size=group_size,
-                sigma=sigma,
-                sigma_learnable=sigma_learnable,
-                reward_type=listwise_reward_type,
-                reward_ndcg_k=listwise_reward_ndcg_k,
-                mixed_contrastive_weight=listwise_mixed_contrastive_weight,
-                mixed_ndcg_weight=listwise_mixed_ndcg_weight,
-                contrastive_use_in_batch_negatives=listwise_contrastive_use_in_batch_negatives,
-                advantage_norm=advantage_norm,
-                relevance_scheme=listwise_relevance_scheme,
-            )
+            GRPO(**self._build_branch_kwargs(rl_args=rl_args, branch_name="listwise"))
             if self.use_listwise_branch
             else None
         )
+
+    @staticmethod
+    def _build_branch_kwargs(rl_args: RLArguments, branch_name: str) -> dict:
+        if branch_name not in {"query", "listwise"}:
+            raise ValueError(f"Unsupported branch_name: {branch_name}")
+
+        return {
+            "group_size": rl_args.group_size,
+            "sigma": rl_args.sigma,
+            "sigma_learnable": rl_args.sigma_learnable,
+            "reward_type": getattr(rl_args, f"{branch_name}_reward_type"),
+            "reward_ndcg_k": getattr(rl_args, f"{branch_name}_reward_ndcg_k"),
+            "mixed_contrastive_weight": getattr(rl_args, f"{branch_name}_mixed_contrastive_weight"),
+            "mixed_ndcg_weight": getattr(rl_args, f"{branch_name}_mixed_ndcg_weight"),
+            "contrastive_use_in_batch_negatives": getattr(
+                rl_args,
+                f"{branch_name}_contrastive_use_in_batch_negatives",
+            ),
+            "advantage_norm": rl_args.advantage_norm,
+            "relevance_scheme": getattr(rl_args, f"{branch_name}_relevance_scheme"),
+        }
 
     def encode(self, model_inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
         return pool_last_token_embedding(

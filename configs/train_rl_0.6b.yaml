@@ -1,0 +1,1 @@
+_base_: exp/train_rl_0.6b_ndcg.yaml
