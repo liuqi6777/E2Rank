@@ -1,30 +1,30 @@
-# RL Training and Evaluation
+# RL Training and Evaluation for Embedding
 
-This repository keeps the RL training pipeline and evaluation scripts for ranking-oriented embedding checkpoints.
+This repository keeps the RL training pipeline and evaluation scripts for embedding models.
 
 Current scope:
 
 - GRPO-based RL training in [`src/train.py`](src/train.py)
 - Config-driven experiments in [`configs/`](configs)
-- Shell launcher in [`scripts/train_rl_0.6b.sh`](scripts/train_rl_0.6b.sh)
+- Shell launcher in [`scripts/run.sh`](scripts/train_rl_0.6b.sh)
 - MTEB/BEIR-style evaluation in [`eval_mteb/`](eval_mteb)
 
 ## Environment Setup
 
-This project uses `uv` and targets Python `3.10` (`.python-version` is already included).
+This project uses `uv` and targets Python `3.10` (`.python-version` is already included). First install uv by:
 
 ```bash
-uv python install 3.10
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Then run:
+
+```bash
 uv sync
+source .venv/bin/activate
 ```
 
-If you want to log training metrics to Weights & Biases:
-
-```bash
-uv run wandb login
-```
-
-## Data Preparation
+## Data and Model Preparation
 
 Training expects a JSONL file at `data/train.jsonl`.
 
@@ -125,9 +125,9 @@ The wrapper script runs retrieval evaluation with the settings currently baked i
 Run evaluation with:
 
 ```bash
-uv run bash eval_mteb/scripts/run_mteb.sh \
+bash eval_mteb/scripts/run_mteb.sh \
   checkpoints/E2Rank-Full-GRPO-0.6B \
-  E2Rank-Full-GRPO-0.6B
+  exp/E2Rank-Full-GRPO-0.6B
 ```
 
 Results are written under `results/mteb/<model_name>/`.
@@ -137,7 +137,7 @@ To summarize scores:
 ```bash
 python eval_mteb/summary.py \
   results/mteb/E2Rank-Full-GRPO-0.6B/E2Rank-Full-GRPO-0.6B/no_version_available \
-  "MTEB(eng, v1)"
+  "MTEB(eng, v2)"
 ```
 
 If you need custom evaluation arguments, call the Python entrypoint directly:
