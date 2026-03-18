@@ -17,6 +17,6 @@ python eval_mteb/run_mteb.py \
   --output_dir results/mteb/${model_name} \
   --batch_size 16 \
   --langs "eng" \
-  --benchmark "BEIR" $@
+  --benchmark "MTEB(eng, v2)" $@
 
   
