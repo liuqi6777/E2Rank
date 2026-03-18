@@ -34,7 +34,7 @@ class TransformersTextEmbedder(torch.nn.Module):
         **kwargs,
     ):
         super().__init__()
-        self.base_model = AutoModelForCausalLM.from_pretrained(model, **kwargs).model  # hotfix
+        self.base_model = AutoModel.from_pretrained(model, **kwargs)
         self.tokenizer = AutoTokenizer.from_pretrained(model, **kwargs)
         self.tokenizer.padding_side = "left"
         self.pooler_type = pooler_type
