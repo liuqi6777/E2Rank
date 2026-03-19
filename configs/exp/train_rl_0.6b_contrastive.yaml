@@ -1,7 +1,7 @@
 _base_:
   - ../base/default.yaml
   - ../model/qwen3_0.6b.yaml
-  - ../reward/contrastive_in_batch_mean.yaml
+  - ../reward/contrastive_in_batch.yaml
 
 data_path: data/train.jsonl
 output_dir: checkpoints/Qwen3-0.6B-GRPO-Contrastive

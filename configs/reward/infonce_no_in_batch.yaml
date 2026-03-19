@@ -1,5 +1,5 @@
-query_reward_type: contrastive
-listwise_reward_type: contrastive
+query_reward_type: infonce
+listwise_reward_type: infonce
 query_reward_ndcg_k: 10
 listwise_reward_ndcg_k: 16
 query_mixed_contrastive_weight: 1.0
@@ -8,7 +8,7 @@ listwise_mixed_contrastive_weight: 1.0
 listwise_mixed_ndcg_weight: 1.0
 query_contrastive_use_in_batch_negatives: false
 listwise_contrastive_use_in_batch_negatives: false
-query_contrastive_negative_aggregation: max
-listwise_contrastive_negative_aggregation: max
+query_contrastive_temperature: 0.03
+listwise_contrastive_temperature: 0.03
 query_relevance_scheme: binary
 listwise_relevance_scheme: graded

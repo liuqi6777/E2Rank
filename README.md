@@ -89,8 +89,8 @@ Important RL-related fields exposed by [`src/config.py`](src/config.py):
 - `listwise_reward_type`
 - `query_reward_ndcg_k`
 - `listwise_reward_ndcg_k`
-- `query_contrastive_negative_aggregation`
-- `listwise_contrastive_negative_aggregation`
+- `query_contrastive_temperature`
+- `listwise_contrastive_temperature`
 - `listwise_loss_weight`
 - `advantage_norm`
 - `query_relevance_scheme`
@@ -100,22 +100,22 @@ Supported reward presets in [`configs/reward/`](configs/reward):
 
 - `ndcg.yaml`
 - `mixed.yaml`
-- `contrastive_in_batch_mean.yaml`
-- `contrastive_in_batch_max.yaml`
-- `contrastive_no_in_batch_mean.yaml`
-- `contrastive_no_in_batch_max.yaml`
+- `contrastive_in_batch.yaml`
+- `contrastive_no_in_batch.yaml`
+- `infonce_in_batch.yaml`
+- `infonce_no_in_batch.yaml`
 - `mrr.yaml`
 
-For contrastive reward, the negative term supports two aggregation modes, and the default is `mean`:
+Contrastive-style rewards now follow the paper appendix:
 
-- `max`: `sim(q, d+) - max(sim(q, d-))`
-- `mean`: `sim(q, d+) - mean(sim(q, d-))`
+- `contrastive`: `s+ - tau * logsumexp(s- / tau)` over negatives only
+- `infonce`: `s+ - tau * logsumexp([s+, s-] / tau)` over the full partition
 
 Example:
 
 ```yaml
 query_reward_type: contrastive
-query_contrastive_negative_aggregation: mean
+query_contrastive_temperature: 0.03
 ```
 
 By default the training config enables:

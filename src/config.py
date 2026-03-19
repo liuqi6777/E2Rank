@@ -80,11 +80,11 @@ class RLArguments:
     )
     query_reward_type: str = field(
         default="ndcg",
-        metadata={"help": "Reward for the query-side branch: ndcg, contrastive, mrr, or mixed"},
+        metadata={"help": "Reward for the query-side branch: ndcg, contrastive, infonce, mrr, or mixed"},
     )
     listwise_reward_type: str = field(
         default="ndcg",
-        metadata={"help": "Reward for the listwise branch: ndcg, contrastive, mrr, or mixed"},
+        metadata={"help": "Reward for the listwise branch: ndcg, contrastive, infonce, mrr, or mixed"},
     )
     query_reward_ndcg_k: int = field(
         default=10,
@@ -118,13 +118,13 @@ class RLArguments:
         default=False,
         metadata={"help": "Use positives from other samples as extra negatives for listwise contrastive reward"},
     )
-    query_contrastive_negative_aggregation: str = field(
-        default="mean",
-        metadata={"help": "How to aggregate query-side contrastive negatives: max or mean"},
+    query_contrastive_temperature: float = field(
+        default=0.03,
+        metadata={"help": "Temperature used by the query-side contrastive/infonce reward"},
     )
-    listwise_contrastive_negative_aggregation: str = field(
-        default="mean",
-        metadata={"help": "How to aggregate listwise contrastive negatives: max or mean"},
+    listwise_contrastive_temperature: float = field(
+        default=0.03,
+        metadata={"help": "Temperature used by the listwise contrastive/infonce reward"},
     )
     listwise_loss_weight: float = field(
         default=1.0,

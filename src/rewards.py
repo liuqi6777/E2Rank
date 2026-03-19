@@ -4,8 +4,7 @@ import torch
 import torch.nn.functional as F
 
 
-SUPPORTED_REWARD_TYPES = {"ndcg", "contrastive", "mrr", "mixed"}
-SUPPORTED_CONTRASTIVE_NEGATIVE_AGGREGATIONS = {"max", "mean"}
+SUPPORTED_REWARD_TYPES = {"ndcg", "contrastive", "infonce", "mrr", "mixed"}
 
 
 def build_relevance_labels(
@@ -89,38 +88,36 @@ def _compute_scores(
     return torch.matmul(normalized_candidates, normalized_queries.unsqueeze(-1)).squeeze(-1)
 
 
-def _aggregate_negative_scores(
+def _temperature_scaled_logsumexp(
     values: torch.Tensor,
-    aggregation: str = "mean",
-    default: float = 0.0,
+    temperature: float,
+    empty_value: float = 0.0,
 ) -> torch.Tensor:
-    if aggregation not in SUPPORTED_CONTRASTIVE_NEGATIVE_AGGREGATIONS:
-        raise ValueError(
-            "Unsupported contrastive negative aggregation: "
-            f"{aggregation}. Supported aggregations: {sorted(SUPPORTED_CONTRASTIVE_NEGATIVE_AGGREGATIONS)}"
-        )
+    if temperature <= 0:
+        raise ValueError(f"temperature must be positive, got {temperature}")
 
-    if aggregation == "max":
-        aggregated_values = values.max(dim=-1).values
-        default_values = torch.full_like(aggregated_values, fill_value=default)
-        return torch.where(torch.isfinite(aggregated_values), aggregated_values, default_values)
-
+    temperature_tensor = torch.as_tensor(
+        float(temperature),
+        device=values.device,
+        dtype=values.dtype,
+    )
     finite_mask = torch.isfinite(values)
-    finite_values = torch.where(finite_mask, values, torch.zeros_like(values))
-    finite_counts = finite_mask.sum(dim=-1)
-    aggregated_values = finite_values.sum(dim=-1) / finite_counts.clamp_min(1)
-    default_values = torch.full_like(aggregated_values, fill_value=default)
-    return torch.where(finite_counts > 0, aggregated_values, default_values)
+    scaled_values = torch.where(
+        finite_mask,
+        values / temperature_tensor,
+        torch.full_like(values, float("-inf")),
+    )
+    aggregated_values = temperature_tensor * torch.logsumexp(scaled_values, dim=-1)
+    default_values = torch.full_like(aggregated_values, fill_value=empty_value)
+    return torch.where(finite_mask.any(dim=-1), aggregated_values, default_values)
 
 
-def compute_contrastive_reward(
+def _gather_positive_and_negative_scores(
     query_embeddings: torch.Tensor,
     candidate_embeddings: torch.Tensor,
     relevance_labels: torch.Tensor,
     use_in_batch_negatives: bool = False,
-    negative_aggregation: str = "mean",
-) -> torch.Tensor:
-    _validate_relevance_labels(relevance_labels, candidate_embeddings)
+) -> tuple[torch.Tensor, torch.Tensor]:
     scores = _compute_scores(
         query_embeddings=query_embeddings,
         candidate_embeddings=candidate_embeddings,
@@ -149,11 +146,48 @@ def compute_contrastive_reward(
         in_batch_scores.fill_diagonal_(float("-inf"))
         all_negative_scores.append(in_batch_scores)
 
-    aggregated_negative_scores = _aggregate_negative_scores(
-        torch.cat(all_negative_scores, dim=1),
-        aggregation=negative_aggregation,
+    return positive_scores, torch.cat(all_negative_scores, dim=1)
+
+
+def compute_contrastive_reward(
+    query_embeddings: torch.Tensor,
+    candidate_embeddings: torch.Tensor,
+    relevance_labels: torch.Tensor,
+    use_in_batch_negatives: bool = False,
+    temperature: float = 0.03,
+) -> torch.Tensor:
+    _validate_relevance_labels(relevance_labels, candidate_embeddings)
+    positive_scores, negative_scores = _gather_positive_and_negative_scores(
+        query_embeddings=query_embeddings,
+        candidate_embeddings=candidate_embeddings,
+        relevance_labels=relevance_labels,
+        use_in_batch_negatives=use_in_batch_negatives,
     )
-    return positive_scores - aggregated_negative_scores
+    return positive_scores - _temperature_scaled_logsumexp(
+        negative_scores,
+        temperature=temperature,
+    )
+
+
+def compute_infonce_reward(
+    query_embeddings: torch.Tensor,
+    candidate_embeddings: torch.Tensor,
+    relevance_labels: torch.Tensor,
+    use_in_batch_negatives: bool = False,
+    temperature: float = 0.03,
+) -> torch.Tensor:
+    _validate_relevance_labels(relevance_labels, candidate_embeddings)
+    positive_scores, negative_scores = _gather_positive_and_negative_scores(
+        query_embeddings=query_embeddings,
+        candidate_embeddings=candidate_embeddings,
+        relevance_labels=relevance_labels,
+        use_in_batch_negatives=use_in_batch_negatives,
+    )
+    partition_scores = torch.cat((positive_scores.unsqueeze(1), negative_scores), dim=1)
+    return positive_scores - _temperature_scaled_logsumexp(
+        partition_scores,
+        temperature=temperature,
+    )
 
 
 def compute_ndcg_reward(
@@ -222,7 +256,7 @@ def compute_mixed_reward(
     contrastive_weight: float = 1.0,
     ndcg_weight: float = 1.0,
     contrastive_use_in_batch_negatives: bool = False,
-    contrastive_negative_aggregation: str = "mean",
+    contrastive_temperature: float = 0.03,
 ) -> torch.Tensor:
     if contrastive_weight == 0 and ndcg_weight == 0:
         raise ValueError("At least one mixed reward weight must be non-zero")
@@ -238,7 +272,7 @@ def compute_mixed_reward(
             candidate_embeddings=candidate_embeddings,
             relevance_labels=relevance_labels,
             use_in_batch_negatives=contrastive_use_in_batch_negatives,
-            negative_aggregation=contrastive_negative_aggregation,
+            temperature=contrastive_temperature,
         )
     if ndcg_weight != 0:
         reward = reward + ndcg_weight * compute_ndcg_reward(
@@ -259,7 +293,7 @@ def compute_reward(
     mixed_contrastive_weight: float = 1.0,
     mixed_ndcg_weight: float = 1.0,
     contrastive_use_in_batch_negatives: bool = False,
-    contrastive_negative_aggregation: str = "mean",
+    contrastive_temperature: float = 0.03,
 ) -> torch.Tensor:
     reward_type = reward_type.lower()
     if reward_type not in SUPPORTED_REWARD_TYPES:
@@ -280,7 +314,15 @@ def compute_reward(
             candidate_embeddings=candidate_embeddings,
             relevance_labels=relevance_labels,
             use_in_batch_negatives=contrastive_use_in_batch_negatives,
-            negative_aggregation=contrastive_negative_aggregation,
+            temperature=contrastive_temperature,
+        )
+    if reward_type == "infonce":
+        return compute_infonce_reward(
+            query_embeddings=query_embeddings,
+            candidate_embeddings=candidate_embeddings,
+            relevance_labels=relevance_labels,
+            use_in_batch_negatives=contrastive_use_in_batch_negatives,
+            temperature=contrastive_temperature,
         )
     if reward_type == "mrr":
         return compute_mrr_reward(
@@ -297,5 +339,5 @@ def compute_reward(
         contrastive_weight=mixed_contrastive_weight,
         ndcg_weight=mixed_ndcg_weight,
         contrastive_use_in_batch_negatives=contrastive_use_in_batch_negatives,
-        contrastive_negative_aggregation=contrastive_negative_aggregation,
+        contrastive_temperature=contrastive_temperature,
     )
