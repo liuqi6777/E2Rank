@@ -89,6 +89,8 @@ Important RL-related fields exposed by [`src/config.py`](src/config.py):
 - `listwise_reward_type`
 - `query_reward_ndcg_k`
 - `listwise_reward_ndcg_k`
+- `query_contrastive_negative_aggregation`
+- `listwise_contrastive_negative_aggregation`
 - `listwise_loss_weight`
 - `advantage_norm`
 - `query_relevance_scheme`
@@ -100,6 +102,18 @@ Supported reward presets in [`configs/reward/`](configs/reward):
 - `mixed.yaml`
 - `contrastive.yaml`
 - `mrr.yaml`
+
+For contrastive reward, the negative term supports two aggregation modes, and the default is `mean`:
+
+- `max`: `sim(q, d+) - max(sim(q, d-))`
+- `mean`: `sim(q, d+) - mean(sim(q, d-))`
+
+Example:
+
+```yaml
+query_reward_type: contrastive
+query_contrastive_negative_aggregation: mean
+```
 
 By default the training config enables:
 

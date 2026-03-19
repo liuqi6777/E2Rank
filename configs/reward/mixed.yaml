@@ -8,5 +8,7 @@ listwise_mixed_contrastive_weight: 1.0
 listwise_mixed_ndcg_weight: 1.0
 query_contrastive_use_in_batch_negatives: false
 listwise_contrastive_use_in_batch_negatives: false
+query_contrastive_negative_aggregation: mean
+listwise_contrastive_negative_aggregation: mean
 query_relevance_scheme: binary
 listwise_relevance_scheme: graded

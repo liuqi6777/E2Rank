@@ -118,6 +118,14 @@ class RLArguments:
         default=False,
         metadata={"help": "Use positives from other samples as extra negatives for listwise contrastive reward"},
     )
+    query_contrastive_negative_aggregation: str = field(
+        default="mean",
+        metadata={"help": "How to aggregate query-side contrastive negatives: max or mean"},
+    )
+    listwise_contrastive_negative_aggregation: str = field(
+        default="mean",
+        metadata={"help": "How to aggregate listwise contrastive negatives: max or mean"},
+    )
     listwise_loss_weight: float = field(
         default=1.0,
         metadata={"help": "Weight applied to the listwise GRPO loss in dual mode"},

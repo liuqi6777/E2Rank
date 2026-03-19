@@ -5,6 +5,7 @@ import torch.nn.functional as F
 
 
 SUPPORTED_REWARD_TYPES = {"ndcg", "contrastive", "mrr", "mixed"}
+SUPPORTED_CONTRASTIVE_NEGATIVE_AGGREGATIONS = {"max", "mean"}
 
 
 def build_relevance_labels(
@@ -88,10 +89,28 @@ def _compute_scores(
     return torch.matmul(normalized_candidates, normalized_queries.unsqueeze(-1)).squeeze(-1)
 
 
-def _row_max_or_default(values: torch.Tensor, default: float = 0.0) -> torch.Tensor:
-    max_values = values.max(dim=-1).values
-    default_values = torch.full_like(max_values, fill_value=default)
-    return torch.where(torch.isfinite(max_values), max_values, default_values)
+def _aggregate_negative_scores(
+    values: torch.Tensor,
+    aggregation: str = "mean",
+    default: float = 0.0,
+) -> torch.Tensor:
+    if aggregation not in SUPPORTED_CONTRASTIVE_NEGATIVE_AGGREGATIONS:
+        raise ValueError(
+            "Unsupported contrastive negative aggregation: "
+            f"{aggregation}. Supported aggregations: {sorted(SUPPORTED_CONTRASTIVE_NEGATIVE_AGGREGATIONS)}"
+        )
+
+    if aggregation == "max":
+        aggregated_values = values.max(dim=-1).values
+        default_values = torch.full_like(aggregated_values, fill_value=default)
+        return torch.where(torch.isfinite(aggregated_values), aggregated_values, default_values)
+
+    finite_mask = torch.isfinite(values)
+    finite_values = torch.where(finite_mask, values, torch.zeros_like(values))
+    finite_counts = finite_mask.sum(dim=-1)
+    aggregated_values = finite_values.sum(dim=-1) / finite_counts.clamp_min(1)
+    default_values = torch.full_like(aggregated_values, fill_value=default)
+    return torch.where(finite_counts > 0, aggregated_values, default_values)
 
 
 def compute_contrastive_reward(
@@ -99,6 +118,7 @@ def compute_contrastive_reward(
     candidate_embeddings: torch.Tensor,
     relevance_labels: torch.Tensor,
     use_in_batch_negatives: bool = False,
+    negative_aggregation: str = "mean",
 ) -> torch.Tensor:
     _validate_relevance_labels(relevance_labels, candidate_embeddings)
     scores = _compute_scores(
@@ -113,7 +133,7 @@ def compute_contrastive_reward(
         F.one_hot(positive_indices.squeeze(-1), num_classes=scores.size(1)).bool(),
         float("-inf"),
     )
-    hardest_negative_scores = _row_max_or_default(negative_scores)
+    all_negative_scores = [negative_scores]
 
     if use_in_batch_negatives and query_embeddings.size(0) > 1:
         _, normalized_candidates = _normalize_inputs(
@@ -127,12 +147,13 @@ def compute_contrastive_reward(
         normalized_queries = F.normalize(query_embeddings, dim=-1)
         in_batch_scores = torch.matmul(normalized_queries, positive_embeddings.transpose(0, 1))
         in_batch_scores.fill_diagonal_(float("-inf"))
-        hardest_negative_scores = torch.maximum(
-            hardest_negative_scores,
-            _row_max_or_default(in_batch_scores),
-        )
+        all_negative_scores.append(in_batch_scores)
 
-    return positive_scores - hardest_negative_scores
+    aggregated_negative_scores = _aggregate_negative_scores(
+        torch.cat(all_negative_scores, dim=1),
+        aggregation=negative_aggregation,
+    )
+    return positive_scores - aggregated_negative_scores
 
 
 def compute_ndcg_reward(
@@ -201,6 +222,7 @@ def compute_mixed_reward(
     contrastive_weight: float = 1.0,
     ndcg_weight: float = 1.0,
     contrastive_use_in_batch_negatives: bool = False,
+    contrastive_negative_aggregation: str = "mean",
 ) -> torch.Tensor:
     if contrastive_weight == 0 and ndcg_weight == 0:
         raise ValueError("At least one mixed reward weight must be non-zero")
@@ -216,6 +238,7 @@ def compute_mixed_reward(
             candidate_embeddings=candidate_embeddings,
             relevance_labels=relevance_labels,
             use_in_batch_negatives=contrastive_use_in_batch_negatives,
+            negative_aggregation=contrastive_negative_aggregation,
         )
     if ndcg_weight != 0:
         reward = reward + ndcg_weight * compute_ndcg_reward(
@@ -236,6 +259,7 @@ def compute_reward(
     mixed_contrastive_weight: float = 1.0,
     mixed_ndcg_weight: float = 1.0,
     contrastive_use_in_batch_negatives: bool = False,
+    contrastive_negative_aggregation: str = "mean",
 ) -> torch.Tensor:
     reward_type = reward_type.lower()
     if reward_type not in SUPPORTED_REWARD_TYPES:
@@ -256,6 +280,7 @@ def compute_reward(
             candidate_embeddings=candidate_embeddings,
             relevance_labels=relevance_labels,
             use_in_batch_negatives=contrastive_use_in_batch_negatives,
+            negative_aggregation=contrastive_negative_aggregation,
         )
     if reward_type == "mrr":
         return compute_mrr_reward(
@@ -272,4 +297,5 @@ def compute_reward(
         contrastive_weight=mixed_contrastive_weight,
         ndcg_weight=mixed_ndcg_weight,
         contrastive_use_in_batch_negatives=contrastive_use_in_batch_negatives,
+        contrastive_negative_aggregation=contrastive_negative_aggregation,
     )

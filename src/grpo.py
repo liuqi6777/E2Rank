@@ -10,7 +10,12 @@ from transformers import PreTrainedModel
 from transformers.file_utils import ModelOutput
 
 from config import RLArguments
-from rewards import SUPPORTED_REWARD_TYPES, build_relevance_labels, compute_reward
+from rewards import (
+    SUPPORTED_CONTRASTIVE_NEGATIVE_AGGREGATIONS,
+    SUPPORTED_REWARD_TYPES,
+    build_relevance_labels,
+    compute_reward,
+)
 
 
 def pool_last_token_embedding(
@@ -56,6 +61,7 @@ class GRPO(nn.Module):
         mixed_contrastive_weight: float = 1.0,
         mixed_ndcg_weight: float = 1.0,
         contrastive_use_in_batch_negatives: bool = False,
+        contrastive_negative_aggregation: str = "mean",
         advantage_norm: bool = True,
         relevance_scheme: str = "graded",
     ):
@@ -71,6 +77,12 @@ class GRPO(nn.Module):
             raise ValueError(
                 f"Unsupported reward type: {reward_type}. Supported types: {sorted(SUPPORTED_REWARD_TYPES)}"
             )
+        if contrastive_negative_aggregation not in SUPPORTED_CONTRASTIVE_NEGATIVE_AGGREGATIONS:
+            raise ValueError(
+                "Unsupported contrastive_negative_aggregation: "
+                f"{contrastive_negative_aggregation}. Supported aggregations: "
+                f"{sorted(SUPPORTED_CONTRASTIVE_NEGATIVE_AGGREGATIONS)}"
+            )
 
         self.group_size = group_size
         self.reward_type = reward_type
@@ -78,6 +90,7 @@ class GRPO(nn.Module):
         self.mixed_contrastive_weight = mixed_contrastive_weight
         self.mixed_ndcg_weight = mixed_ndcg_weight
         self.contrastive_use_in_batch_negatives = contrastive_use_in_batch_negatives
+        self.contrastive_negative_aggregation = contrastive_negative_aggregation
         self.advantage_norm = advantage_norm
         self.relevance_scheme = relevance_scheme
         self.sigma_learnable = sigma_learnable
@@ -135,6 +148,7 @@ class GRPO(nn.Module):
                     mixed_contrastive_weight=self.mixed_contrastive_weight,
                     mixed_ndcg_weight=self.mixed_ndcg_weight,
                     contrastive_use_in_batch_negatives=self.contrastive_use_in_batch_negatives,
+                    contrastive_negative_aggregation=self.contrastive_negative_aggregation,
                 )
             )
         rewards = torch.stack(rewards, dim=0)
@@ -192,6 +206,10 @@ class GRPOModel(nn.Module):
             "contrastive_use_in_batch_negatives": getattr(
                 rl_args,
                 f"{branch_name}_contrastive_use_in_batch_negatives",
+            ),
+            "contrastive_negative_aggregation": getattr(
+                rl_args,
+                f"{branch_name}_contrastive_negative_aggregation",
             ),
             "advantage_norm": rl_args.advantage_norm,
             "relevance_scheme": getattr(rl_args, f"{branch_name}_relevance_scheme"),
