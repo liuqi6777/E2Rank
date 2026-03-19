@@ -100,7 +100,10 @@ Supported reward presets in [`configs/reward/`](configs/reward):
 
 - `ndcg.yaml`
 - `mixed.yaml`
-- `contrastive.yaml`
+- `contrastive_in_batch_mean.yaml`
+- `contrastive_in_batch_max.yaml`
+- `contrastive_no_in_batch_mean.yaml`
+- `contrastive_no_in_batch_max.yaml`
 - `mrr.yaml`
 
 For contrastive reward, the negative term supports two aggregation modes, and the default is `mean`:

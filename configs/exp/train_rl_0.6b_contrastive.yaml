@@ -1,8 +1,8 @@
 _base_:
-  - ../base/train.yaml
-  - ../model/e2rank_0.6b_embedding_only.yaml
-  - ../reward/contrastive.yaml
+  - ../base/default.yaml
+  - ../model/qwen3_0.6b.yaml
+  - ../reward/contrastive_in_batch_mean.yaml
 
 data_path: data/train.jsonl
-output_dir: checkpoints/E2Rank-Full-GRPO-0.6B-Contrastive
-run_name: E2Rank-Full-GRPO-0.6B-Contrastive
+output_dir: checkpoints/Qwen3-0.6B-GRPO-Contrastive
+run_name: Qwen3-0.6B-GRPO-Contrastive
