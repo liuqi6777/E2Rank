@@ -44,7 +44,23 @@ class GRPOModelOutput(ModelOutput):
     query_loss: Optional[Tensor] = None
     listwise_loss: Optional[Tensor] = None
     query_reward: Optional[Tensor] = None
+    query_reward_mean: Optional[Tensor] = None
+    query_reward_std: Optional[Tensor] = None
+    query_reward_min: Optional[Tensor] = None
+    query_reward_max: Optional[Tensor] = None
+    query_advantages_mean: Optional[Tensor] = None
+    query_advantages_std: Optional[Tensor] = None
+    query_advantages_min: Optional[Tensor] = None
+    query_advantages_max: Optional[Tensor] = None
     listwise_reward: Optional[Tensor] = None
+    listwise_reward_mean: Optional[Tensor] = None
+    listwise_reward_std: Optional[Tensor] = None
+    listwise_reward_min: Optional[Tensor] = None
+    listwise_reward_max: Optional[Tensor] = None
+    listwise_advantages_mean: Optional[Tensor] = None
+    listwise_advantages_std: Optional[Tensor] = None
+    listwise_advantages_min: Optional[Tensor] = None
+    listwise_advantages_max: Optional[Tensor] = None
     query_sigma: Optional[Tensor] = None
     listwise_sigma: Optional[Tensor] = None
 
@@ -99,13 +115,23 @@ class GRPO(nn.Module):
         sigma = torch.exp(self.log_sigma) if self.sigma_learnable else self.fixed_sigma
         return sigma.to(device=device, dtype=dtype)
 
+    @staticmethod
+    def summarize_tensor(values: torch.Tensor, prefix: str) -> dict[str, torch.Tensor]:
+        flattened_values = values.detach().reshape(-1).to(dtype=torch.float32)
+        return {
+            f"{prefix}_mean": flattened_values.mean(),
+            f"{prefix}_std": flattened_values.std(unbiased=False),
+            f"{prefix}_min": flattened_values.min(),
+            f"{prefix}_max": flattened_values.max(),
+        }
+
     def forward(
         self,
         policy_embeddings: torch.Tensor,
         rollout_embeddings: torch.Tensor,
         document_embeddings: torch.Tensor,
         ranking: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, dict[str, torch.Tensor], dict[str, torch.Tensor], torch.Tensor]:
         if ranking is None:
             raise ValueError("ranking is required for GRPO training")
         if document_embeddings.dim() != 3:
@@ -147,15 +173,17 @@ class GRPO(nn.Module):
                 )
             )
         rewards = torch.stack(rewards, dim=0)
+        reward_stats = self.summarize_tensor(rewards, prefix="reward")
 
         advantages = rewards - rewards.mean(dim=0, keepdim=True)
         if self.advantage_norm:
             advantages = advantages / (advantages.std(dim=0, keepdim=True, unbiased=False) + 1e-8)
+        advantage_stats = self.summarize_tensor(advantages, prefix="advantages")
 
         squared_distance = (sampled_embeddings.detach() - policy_embeddings.unsqueeze(0)).pow(2).sum(dim=-1)
         log_prob = -0.5 * squared_distance / sigma.pow(2) - policy_embeddings.size(-1) * torch.log(sigma)
         loss = -(advantages.detach() * log_prob).mean()
-        return loss, rewards.mean(), sigma.detach()
+        return loss, reward_stats, advantage_stats, sigma.detach()
 
 
 class GRPOModel(nn.Module):
@@ -238,24 +266,28 @@ class GRPOModel(nn.Module):
             rollout_listwise_embeddings = self.encode(pseudo_query) if self.use_listwise_branch else None
 
         query_loss = query_reward = query_sigma = None
+        query_reward_stats = query_advantage_stats = None
         if self.use_query_branch:
             query_embeddings = self.encode(query)
-            query_loss, query_reward, query_sigma = self.query_grpo(
+            query_loss, query_reward_stats, query_advantage_stats, query_sigma = self.query_grpo(
                 policy_embeddings=query_embeddings,
                 rollout_embeddings=rollout_query_embeddings,
                 document_embeddings=rollout_document_embeddings,
                 ranking=ranking,
             )
+            query_reward = query_reward_stats["reward_mean"]
 
         listwise_loss = listwise_reward = listwise_sigma = None
+        listwise_reward_stats = listwise_advantage_stats = None
         if self.use_listwise_branch:
             listwise_embeddings = self.encode(pseudo_query)
-            listwise_loss, listwise_reward, listwise_sigma = self.listwise_grpo(
+            listwise_loss, listwise_reward_stats, listwise_advantage_stats, listwise_sigma = self.listwise_grpo(
                 policy_embeddings=listwise_embeddings,
                 rollout_embeddings=rollout_listwise_embeddings,
                 document_embeddings=rollout_document_embeddings,
                 ranking=ranking,
             )
+            listwise_reward = listwise_reward_stats["reward_mean"]
 
         loss_terms = []
         if query_loss is not None:
@@ -272,7 +304,23 @@ class GRPOModel(nn.Module):
             query_loss=query_loss,
             listwise_loss=listwise_loss,
             query_reward=query_reward,
+            query_reward_mean=None if query_reward_stats is None else query_reward_stats["reward_mean"],
+            query_reward_std=None if query_reward_stats is None else query_reward_stats["reward_std"],
+            query_reward_min=None if query_reward_stats is None else query_reward_stats["reward_min"],
+            query_reward_max=None if query_reward_stats is None else query_reward_stats["reward_max"],
+            query_advantages_mean=None if query_advantage_stats is None else query_advantage_stats["advantages_mean"],
+            query_advantages_std=None if query_advantage_stats is None else query_advantage_stats["advantages_std"],
+            query_advantages_min=None if query_advantage_stats is None else query_advantage_stats["advantages_min"],
+            query_advantages_max=None if query_advantage_stats is None else query_advantage_stats["advantages_max"],
             listwise_reward=listwise_reward,
+            listwise_reward_mean=None if listwise_reward_stats is None else listwise_reward_stats["reward_mean"],
+            listwise_reward_std=None if listwise_reward_stats is None else listwise_reward_stats["reward_std"],
+            listwise_reward_min=None if listwise_reward_stats is None else listwise_reward_stats["reward_min"],
+            listwise_reward_max=None if listwise_reward_stats is None else listwise_reward_stats["reward_max"],
+            listwise_advantages_mean=None if listwise_advantage_stats is None else listwise_advantage_stats["advantages_mean"],
+            listwise_advantages_std=None if listwise_advantage_stats is None else listwise_advantage_stats["advantages_std"],
+            listwise_advantages_min=None if listwise_advantage_stats is None else listwise_advantage_stats["advantages_min"],
+            listwise_advantages_max=None if listwise_advantage_stats is None else listwise_advantage_stats["advantages_max"],
             query_sigma=query_sigma,
             listwise_sigma=listwise_sigma,
         )
