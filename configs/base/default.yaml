@@ -17,10 +17,10 @@ report_to: wandb
 lora_enabled: true
 lora_r: 16
 lora_alpha: 32
-lora_dropout: 0.1
+lora_dropout: 0
 lora_bias: "none"
 
-rl_mode: query
+rl_mode: query_only
 group_size: 8
 sigma: 0.05
 listwise_loss_weight: 1.0
