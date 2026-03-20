@@ -3,20 +3,12 @@ import sys
 import logging
 import os
 from dataclasses import dataclass, field
-from functools import partial
-from typing import Optional, Any
+from typing import Optional
 
+import mteb
 import torch
 from transformers import HfArgumentParser
-import mteb
-from pathlib import Path
-from mteb import AbsTaskRetrieval,RetrievalEvaluator
-from time import time
-from mteb.models.sentence_transformer_wrapper import SentenceTransformerWrapper
-import csv
-from mteb.benchmarks.benchmarks import Benchmark
 from qwen3_embedding_model import Qwen3Embedding
-from utils import *
 
 
 logging.basicConfig(
@@ -26,169 +18,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger('run_mteb.py')
 
-
-RARB_tasks = [ "ARCChallenge",
-            "AlphaNLI",
-            "HellaSwag",
-            "WinoGrande",
-            "PIQA",
-            "SIQA",
-            "Quail",
-            "SpartQA",
-            "TempReasonL1",
-            "TempReasonL2Pure",
-            "TempReasonL2Fact",
-            "TempReasonL2Context",
-            "TempReasonL3Pure",
-            "TempReasonL3Fact",
-            "TempReasonL3Context",
-            "RARbCode",
-            "RARbMath",
-        ]
-
-def evaluate(
-    self,
-    model,
-    split: str = "test",
-    subsets_to_run: list | None = None,
-    *,
-    encode_kwargs: dict[str, Any] = {},
-    **kwargs,
-):
-    retriever = RetrievalEvaluator(
-        retriever=model,
-        task_name=self.metadata.name,
-        encode_kwargs=encode_kwargs,
-        **kwargs,
-    )
-    scores = {}
-    hf_subsets = list(self.hf_subsets) if self.is_multilingual else ["default"]
-    if subsets_to_run is not None:
-        hf_subsets = [s for s in hf_subsets if s in subsets_to_run]
-    for hf_subset in hf_subsets:
-        logger.info(f"Subset: {hf_subset}")
-        if hf_subset == "default":
-            corpus, queries, relevant_docs = (
-                self.corpus[split],
-                self.queries[split],
-                self.relevant_docs[split],
-            )
-        else:
-            corpus, queries, relevant_docs = (
-                self.corpus[hf_subset][split],
-                self.queries[hf_subset][split],
-                self.relevant_docs[hf_subset][split],
-            )
-        scores[hf_subset] = self._evaluate_subset(
-            retriever, corpus, queries, relevant_docs, hf_subset, split=split, **kwargs
-        )
-    return scores
-
-def _evaluate_subset(
-    self, retriever, corpus, queries, relevant_docs, hf_subset: str, **kwargs
-):
-    start_time = time()
-    results = retriever(corpus, queries)
-    end_time = time()
-
-    save_predictions = kwargs.get("save_predictions", False)
-    export_errors = kwargs.get("export_errors", False)
-    if save_predictions or export_errors:
-        output_folder = Path(kwargs.get("output_folder", "results"))
-        if not os.path.isdir(output_folder):
-            os.makedirs(output_folder)
-
-    if save_predictions:
-        top_k = kwargs.get("top_k", None)
-        if top_k is not None:
-            for qid in list(results.keys()):
-                doc_ids = set(
-                    sorted(
-                        results[qid], key=lambda x: results[qid][x], reverse=True
-                    )[:top_k]
-                )
-                results[qid] = {
-                    k: v for k, v in results[qid].items() if k in doc_ids
-                }
-        split = kwargs.get('split', 'test')
-        if split != 'test':
-            qrels_save_path = (
-                output_folder / f"{self.metadata.name}_{hf_subset}_{split}_predictions.json"
-            )
-        else:
-            qrels_save_path = (
-                output_folder / f"{self.metadata.name}_{hf_subset}_predictions.json"
-            )
-
-        with open(qrels_save_path, "w") as f:
-            json.dump(results, f)
-
-    ndcg, _map, recall, precision, naucs = retriever.evaluate(
-        relevant_docs,
-        results,
-        retriever.k_values,
-        ignore_identical_ids=self.ignore_identical_ids,
-    )
-    mrr, naucs_mrr = retriever.evaluate_custom(
-        relevant_docs, results, retriever.k_values, "mrr"
-    )
-    scores = {
-        **{f"ndcg_at_{k.split('@')[1]}": v for (k, v) in ndcg.items()},
-        **{f"map_at_{k.split('@')[1]}": v for (k, v) in _map.items()},
-        **{f"recall_at_{k.split('@')[1]}": v for (k, v) in recall.items()},
-        **{f"precision_at_{k.split('@')[1]}": v for (k, v) in precision.items()},
-        **{f"mrr_at_{k.split('@')[1]}": v for (k, v) in mrr.items()},
-        **{
-            k.replace("@", "_at_").replace("_P", "_precision").lower(): v
-            for k, v in naucs.items()
-        },
-        **{
-            k.replace("@", "_at_").replace("_P", "_precision").lower(): v
-            for k, v in naucs_mrr.items()
-        },
-    }
-    self._add_main_score(scores)
-
-    if export_errors:
-        errors = {}
-
-        top_k = kwargs.get("top_k", 1)
-        if not save_predictions and top_k == 1:
-            for qid in results.keys():
-                doc_scores = results[qid]
-                sorted_docs = sorted(
-                    doc_scores.items(), key=lambda x: x[1], reverse=True
-                )[:top_k]
-                results[qid] = dict(sorted_docs)
-        for qid, retrieved_docs in results.items():
-            expected_docs = relevant_docs[qid]
-            false_positives = [
-                doc for doc in retrieved_docs if doc not in expected_docs
-            ]
-            false_negatives = [
-                doc for doc in expected_docs if doc not in retrieved_docs
-            ]
-            if false_positives or false_negatives:
-                errors[qid] = {
-                    "false_positives": false_positives,
-                    "false_negatives": false_negatives,
-                }
-        split = kwargs.get('split', 'test')
-        if split != 'test':
-            errors_save_path = (
-                output_folder / f"{self.metadata.name}_{hf_subset}_{split}_errors.json"
-            )
-        else:
-            errors_save_path = (
-                output_folder / f"{self.metadata.name}_{hf_subset}_errors.json"
-            )
-        with open(errors_save_path, "w") as f:
-            json.dump(errors, f)
-
-    return scores
-
-AbsTaskRetrieval.evaluate = evaluate
-AbsTaskRetrieval._evaluate_subset = _evaluate_subset
 
 @dataclass
 class EvalArguments:
@@ -252,6 +81,7 @@ def get_model(model_path: str, model_name: str, precision: str = 'fp16', **kwarg
     model = Qwen3Embedding(model_path, model_name=model_name, precision=precision, **kwargs)
     return model
 
+
 def run_bright(t, model, args, **kwargs):
     # task_instructions = {}
     Instructions = {
@@ -297,19 +127,9 @@ def run_eval(model, tasks: list, args: EvalArguments, **kwargs):
         if t.metadata.name == 'BrightRetrieval':
             run_bright(t, model, args, **kwargs)
             continue
-        if t.metadata.name == 'MLQARetrieval':
-            load_mlqa_data(t)
-        if t.metadata.name == 'HagridRetrieval':
-            load_hagrid_data(t)
-
-        if t.metadata.name == 'BelebeleRetrieval':
-            load_belebel_data(t)
-        if t.metadata.name in RARB_tasks:
-            load_rarb_data(t)
         evaluation = mteb.MTEB(tasks=[t])
         
         try:
-            os.environ['HF_DATASETS_OFFLINE'] = "1"
             results = evaluation.run(
                 model,
                 output_folder=args.output_dir,
@@ -317,17 +137,8 @@ def run_eval(model, tasks: list, args: EvalArguments, **kwargs):
                 **kwargs
             )
         except Exception as e:
-            try:
-                os.environ['HF_DATASETS_OFFLINE'] = "0"
-                results = evaluation.run(
-                    model,
-                    output_folder=args.output_dir,
-                    encode_kwargs=encode_kwargs,
-                    **kwargs
-                )
-            except Exception as e:
-                print(f'meet error when running task: {t.metadata.name}. {str(e)}')
-                continue
+            print(f'meet error when running task: {t.metadata.name}. {str(e)}')
+            continue
 
     if model is not None and _started and hasattr(model, 'stop'):
         model.stop()

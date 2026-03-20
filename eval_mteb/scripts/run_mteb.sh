@@ -2,21 +2,14 @@ export OMP_NUM_THREADS=8
 export OPENBLAS_NUM_THREADS='8'
 
 model_path=$1
-shift
-model_name=$1
-shift
-# benchmark=$1
-# shift
+
+eval_subset="SciFact,ArguAna,NFCorpus,StackOverflowDupQuestions,SciDocsRR,BiorxivClusteringS2S,MedrxivClusteringS2S,TwentyNewsgroupsClustering,SprintDuplicateQuestions,Banking77Classification,EmotionClassification,MassiveIntentClassification,STS17,SICK-R,STSBenchmark,SummEval"
 
 python eval_mteb/run_mteb.py \
   --model ${model_path} \
-  --model_name ${model_name} \
   --precision fp16 \
   --model_kwargs "{\"max_length\": 8192, \"attn_type\": \"causal\", \"pooler_type\": \"last\", \"do_norm\": true, \"use_instruction\": true, \"instruction_template\": \"Instruct: {}\nQuery:\", \"instruction_dict_path\": \"eval_mteb/scripts/task_prompts.json\"}" \
-  --run_kwargs "{\"save_predictions\": \"true\"}" \
-  --output_dir results/mteb/${model_name} \
+  --output_dir results/mteb \
   --batch_size 16 \
   --langs "eng" \
-  --benchmark "MTEB(eng, v2)" $@
-
-  
+  --tasks $eval_subset

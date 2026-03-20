@@ -11,9 +11,8 @@ from tqdm.autonotebook import tqdm
 import numpy as np
 import torch
 from torch.utils.data._utils.worker import ManagerWatchdog
-from transformers import AutoModel, AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoModel, AutoTokenizer
 from transformers.tokenization_utils_base import BatchEncoding
-from peft import AutoPeftModelForCausalLM, PeftModel
 from mteb.encoder_interface import PromptType
 from mteb.models.wrapper import Wrapper
 from mteb.model_meta import ModelMeta
@@ -184,9 +183,9 @@ class Qwen3Embedding(Wrapper):
         
         model_name = model.split('/')
         if model_name[-1] == '':
-            model_name = model_name[-2]
+            model_name = '/'.join(model_name[-3:-1])
         else:
-            model_name = model_name[-1]
+            model_name = '/'.join(model_name[-2:])
         model_name = kwargs.pop('model_name', model_name)
         self.model = self._model_class(model, **kwargs)
         self.mteb_model_meta = ModelMeta(
