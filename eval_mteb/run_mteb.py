@@ -77,8 +77,8 @@ def get_tasks(names: list[str] | None, languages: list[str] | None = None, bench
     return tasks
 
 
-def get_model(model_path: str, model_name: str, precision: str = 'fp16', **kwargs):
-    model = Qwen3Embedding(model_path, model_name=model_name, precision=precision, **kwargs)
+def get_model(model_path: str, precision: str = 'fp16', **kwargs):
+    model = Qwen3Embedding(model_path, precision=precision, **kwargs)
     return model
 
 
@@ -176,7 +176,7 @@ def main():
             
         if not args.load_model:
             return
-    model = get_model(args.model, args.model_name, precision=args.precision, **args.model_kwargs)
+    model = get_model(args.model, precision=args.precision, **args.model_kwargs)
     if args.only_load:
         return
 
