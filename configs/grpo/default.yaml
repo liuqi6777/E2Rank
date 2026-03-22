@@ -1,5 +1,4 @@
-rl_mode: query_only
 group_size: 8
 sigma: 0.05
-listwise_loss_weight: 1.0
+sigma_learnable: false
 advantage_norm: true

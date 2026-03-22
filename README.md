@@ -154,20 +154,17 @@ run_name: E2Rank-Full-GRPO-0.6B
 
 Important RL-related fields exposed by [`src/config.py`](src/config.py):
 
-- `rl_mode`: `query_only`, `listwise_only`, or `dual`
 - `group_size`
 - `sigma`
 - `sigma_learnable`
-- `query_reward_type`
-- `listwise_reward_type`
-- `query_reward_ndcg_k`
-- `listwise_reward_ndcg_k`
-- `query_contrastive_temperature`
-- `listwise_contrastive_temperature`
-- `listwise_loss_weight`
+- `reward_type`
+- `reward_ndcg_k`
+- `mixed_contrastive_weight`
+- `mixed_ndcg_weight`
+- `contrastive_use_in_batch_negatives`
+- `contrastive_temperature`
 - `advantage_norm`
-- `query_relevance_scheme`
-- `listwise_relevance_scheme`
+- `relevance_scheme`
 
 Supported reward presets in [`configs/reward/`](configs/reward):
 
@@ -187,8 +184,8 @@ Contrastive-style rewards now follow the paper appendix:
 Example:
 
 ```yaml
-query_reward_type: contrastive
-query_contrastive_temperature: 0.03
+reward_type: contrastive
+contrastive_temperature: 0.03
 ```
 
 By default the training config enables:

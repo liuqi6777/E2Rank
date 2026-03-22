@@ -9,63 +9,21 @@ from torch.utils.data import Dataset
 
 
 TASK_PROMPTS = {
-    "msmarco": (
-        "Given a web search query, retrieval the documents that answer the query",
-        "Given a web search query and some relevant documents, rerank the documents that answer the query",
-    ),
-    "nq": (
-        "Given a question, retrieval Wikipedia documents that answer the question",
-        "Given a question and some relevant documents, rerank the documents that answer the question",
-    ),
-    "hotpotqa": (
-        "Given a multi-hop question, retrieval the documents that can help answer the question",
-        "Given a multi-hop question and some relevant documents, rerank the documents that answer the question",
-    ),
-    "trivia": (
-        "Retrieval Wikipedia documents that answer the question",
-        "Given a question and some relevant Wikipedia documents, rerank the documents that answer the question",
-    ),
-    "t2ranking": (
-        "Given a Chinese search query, retrieval the documents that answer the query",
-        "Given a Chinese search query and some relevant documents, rerank the documents that answer the query",
-    ),
-    "dureader": (
-        "Given a Chinese search query, retrieval the documents that answer the query",
-        "Given a Chinese search query and some relevant documents, rerank the documents that answer the query",
-    ),
-    "mmarco_chinese": (
-        "Given a Chinese web search query, retrieval the documents that answer the query",
-        "Given a Chinese web search query and some relevant documents, rerank the documents that answer the query",
-    ),
-    "cMedQAv2": (
-        "Given a Chinese medical question, retrieval the documents that answer the question",
-        "Given a Chinese medical question and some relevant documents, rerank the documents that answer the question",
-    ),
-    "colliee": (
-        "Given a legal case, retrieval the relevant legal articles that can help analyze the case",
-        "Given a legal case and some relevant legal articles, rerank the legal articles that can help analyze the case",
-    ),
-    "law_gpt": (
-        "Given a Chinese legal case, retrieval the relevant legal articles that can help analyze the case",
-        "Given a Chinese legal case and some relevant legal articles, rerank the legal articles that can help analyze the case",
-    ),
-    "miracl": (
-        "Given a question, retrieval Wikipedia documents that answer the question",
-        "Given a question and some relevant Wikipedia documents, rerank the documents that answer the question",
-    ),
+    "msmarco": "Given a web search query, retrieval the documents that answer the query",
+    "nq": "Given a question, retrieval Wikipedia documents that answer the question",
+    "hotpotqa": "Given a multi-hop question, retrieval the documents that can help answer the question",
+    "trivia": "Retrieval Wikipedia documents that answer the question",
+    "t2ranking": "Given a Chinese search query, retrieval the documents that answer the query",
+    "dureader": "Given a Chinese search query, retrieval the documents that answer the query",
+    "mmarco_chinese": "Given a Chinese web search query, retrieval the documents that answer the query",
+    "cMedQAv2": "Given a Chinese medical question, retrieval the documents that answer the question",
+    "miracl": "Given a question, retrieval Wikipedia documents that answer the question",
 }
 
-DEFAULT_TASK_PROMPTS = (
-    "Given a query, retrieval the documents that are relevant to the query",
-    "Given a query and some relevant documents, rerank the documents that are the most relevant to the query",
-)
+DEFAULT_TASK_PROMPTS = "Given a query, retrieval the documents that are relevant to the query"
 
 
 class RankingDataset(Dataset):
-    listwise_prompt_template = """{instruction}:
-Documents:
-{documents}
-Query: {query}"""
     query_prompt_template = "Instruct: {task_description}\nQuery:{query}"
 
     def __init__(
@@ -76,7 +34,6 @@ Query: {query}"""
     ):
         self.batch_size = batch_size
         self.per_dataset_max_samples = per_dataset_max_samples
-        self.use_listwise = data_args.use_listwise
         self.samples: list[dict[str, Any]] = []
         self._load(data_args.data_path)
 
@@ -87,17 +44,9 @@ Query: {query}"""
         return self.samples[index]
 
     def _format_query(self, task_name: str, query: str) -> str:
-        retrieval_prompt = TASK_PROMPTS.get(task_name, DEFAULT_TASK_PROMPTS)[0]
+        retrieval_prompt = TASK_PROMPTS.get(task_name, DEFAULT_TASK_PROMPTS)
         return self.query_prompt_template.format(
             task_description=retrieval_prompt,
-            query=query,
-        )
-
-    def _format_listwise_prompt(self, task_name: str, query: str, docs: list[str]) -> str:
-        rerank_prompt = TASK_PROMPTS.get(task_name, DEFAULT_TASK_PROMPTS)[1]
-        return self.listwise_prompt_template.format(
-            instruction=rerank_prompt,
-            documents="\n".join([f"[{i}] {doc}" for i, doc in enumerate(docs, start=1)]),
             query=query,
         )
 
@@ -115,9 +64,6 @@ Query: {query}"""
                 {
                     "query": self._format_query(task_name, sample["query"]),
                     "document": sample["document"],
-                    "pseudo_query": self._format_listwise_prompt(task_name, sample["query"], sample["document"])
-                    if self.use_listwise
-                    else None,
                     "ranking": sample["ranking"],
                 }
             )
@@ -177,26 +123,9 @@ class RankingDataCollator:
             return_tensors="pt",
         )
 
-        if instances[0]["pseudo_query"] is not None:
-            listwise_prompts = [instance["pseudo_query"] + self.tokenizer.pad_token for instance in instances]
-            listwise_inputs = self.tokenizer.apply_chat_template(
-                [[{"role": "user", "content": prompt}] for prompt in listwise_prompts],
-                tokenize=True,
-                add_generation_prompt=True,
-                enable_thinking=False,
-                padding=True,
-                truncation=True,
-                max_length=32768,
-                return_tensors="pt",
-                return_dict=True,
-            )
-        else:
-            listwise_inputs = None
-
         ranking = torch.tensor([instance["ranking"] for instance in instances]) - 1
         return {
             "query": query_inputs,
             "document": document_inputs,
-            "pseudo_query": listwise_inputs,
             "ranking": ranking,
         }

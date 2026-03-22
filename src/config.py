@@ -28,10 +28,6 @@ class DataArguments:
     data_path: str = field(
         metadata={"help": "Path to the Stage II ranking dataset"}
     )
-    use_listwise: bool = field(
-        default=True,
-        metadata={"help": "Build listwise prompts for the reranking GRPO branch"},
-    )
     q_max_len: int = field(
         default=512,
         metadata={"help": "Maximum token length for query inputs"},
@@ -62,10 +58,6 @@ class LoraArguments:
 
 @dataclass
 class RLArguments:
-    rl_mode: str = field(
-        default="dual",
-        metadata={"help": "Which GRPO branches to optimize: query_only, listwise_only, or dual"},
-    )
     group_size: int = field(
         default=8,
         metadata={"help": "Number of sampled actions per input"},
@@ -76,69 +68,37 @@ class RLArguments:
     )
     sigma_learnable: bool = field(
         default=False,
-        metadata={"help": "Learn a global sigma scalar for each GRPO branch"},
+        metadata={"help": "Learn a global sigma scalar for GRPO"},
     )
-    query_reward_type: str = field(
+    reward_type: str = field(
         default="ndcg",
-        metadata={"help": "Reward for the query-side branch: ndcg, contrastive, infonce, mrr, or mixed"},
+        metadata={"help": "Reward type: ndcg, contrastive, infonce, mrr, or mixed"},
     )
-    listwise_reward_type: str = field(
-        default="ndcg",
-        metadata={"help": "Reward for the listwise branch: ndcg, contrastive, infonce, mrr, or mixed"},
-    )
-    query_reward_ndcg_k: int = field(
+    reward_ndcg_k: int = field(
         default=10,
-        metadata={"help": "Ranking cutoff used by the query-side nDCG/MRR reward component"},
+        metadata={"help": "Ranking cutoff used by the nDCG/MRR reward component"},
     )
-    listwise_reward_ndcg_k: int = field(
-        default=16,
-        metadata={"help": "Ranking cutoff used by the listwise nDCG/MRR reward component"},
-    )
-    query_mixed_contrastive_weight: float = field(
+    mixed_contrastive_weight: float = field(
         default=1.0,
-        metadata={"help": "Contrastive reward weight when query_reward_type=mixed"},
+        metadata={"help": "Contrastive reward weight when reward_type=mixed"},
     )
-    query_mixed_ndcg_weight: float = field(
+    mixed_ndcg_weight: float = field(
         default=1.0,
-        metadata={"help": "nDCG reward weight when query_reward_type=mixed"},
+        metadata={"help": "nDCG reward weight when reward_type=mixed"},
     )
-    listwise_mixed_contrastive_weight: float = field(
-        default=1.0,
-        metadata={"help": "Contrastive reward weight when listwise_reward_type=mixed"},
-    )
-    listwise_mixed_ndcg_weight: float = field(
-        default=1.0,
-        metadata={"help": "nDCG reward weight when listwise_reward_type=mixed"},
-    )
-    query_contrastive_use_in_batch_negatives: bool = field(
+    contrastive_use_in_batch_negatives: bool = field(
         default=False,
-        metadata={"help": "Use positives from other samples as extra negatives for query-side contrastive reward"},
+        metadata={"help": "Use positives from other samples as extra negatives for contrastive reward"},
     )
-    listwise_contrastive_use_in_batch_negatives: bool = field(
-        default=False,
-        metadata={"help": "Use positives from other samples as extra negatives for listwise contrastive reward"},
-    )
-    query_contrastive_temperature: float = field(
+    contrastive_temperature: float = field(
         default=0.03,
-        metadata={"help": "Temperature used by the query-side contrastive/infonce reward"},
-    )
-    listwise_contrastive_temperature: float = field(
-        default=0.03,
-        metadata={"help": "Temperature used by the listwise contrastive/infonce reward"},
-    )
-    listwise_loss_weight: float = field(
-        default=1.0,
-        metadata={"help": "Weight applied to the listwise GRPO loss in dual mode"},
+        metadata={"help": "Temperature used by the contrastive/infonce reward"},
     )
     advantage_norm: bool = field(
         default=True,
         metadata={"help": "Normalize GRPO advantages for each sample group"},
     )
-    query_relevance_scheme: str = field(
+    relevance_scheme: str = field(
         default="binary",
-        metadata={"help": "Relevance labels for the query-side branch: binary or graded"},
-    )
-    listwise_relevance_scheme: str = field(
-        default="graded",
-        metadata={"help": "Relevance labels for the listwise branch: binary or graded"},
+        metadata={"help": "Relevance labels: binary or graded"},
     )
