@@ -12,10 +12,42 @@ from config import DataArguments, LoraArguments, ModelArguments, RLArguments, Tr
 from grpo import GRPOModel
 from grpo_trainer import GRPOTrainer
 from ranking_data import RankingDataCollator, RankingDataset
-from utils import parse_config_file, resolve_gradient_checkpointing_kwargs, save_model_for_trainer
+from utils import (
+    parse_config_file,
+    parse_config_from_base_overrides,
+    resolve_run_name_and_output_dir,
+    resolve_gradient_checkpointing_kwargs,
+    save_model_for_trainer,
+)
 
 
 logger = logging.getLogger(__name__)
+
+
+def split_launcher_args(cli_args: list[str]) -> tuple[dict[str, str], list[str]]:
+    base_flag_to_slot = {
+        "--base-train": "train",
+        "--base-model": "model",
+        "--base-grpo": "grpo",
+        "--base-reward": "reward",
+    }
+
+    base_overrides: dict[str, str] = {}
+    passthrough_args: list[str] = []
+    index = 0
+    while index < len(cli_args):
+        arg = cli_args[index]
+        if arg in base_flag_to_slot:
+            if index + 1 >= len(cli_args):
+                raise ValueError(f"Expected a YAML path after {arg}")
+            base_overrides[base_flag_to_slot[arg]] = cli_args[index + 1]
+            index += 2
+            continue
+
+        passthrough_args.append(arg)
+        index += 1
+
+    return base_overrides, passthrough_args
 
 
 def main() -> None:
@@ -23,13 +55,32 @@ def main() -> None:
         (ModelArguments, DataArguments, TrainingArguments, LoraArguments, RLArguments)
     )
 
-    if len(sys.argv) == 2 and pathlib.Path(sys.argv[1]).suffix.lower() in {".json", ".yaml", ".yml"}:
+    base_overrides, cli_args = split_launcher_args(sys.argv[1:])
+
+    if cli_args and pathlib.Path(cli_args[0]).suffix.lower() in {".json", ".yaml", ".yml"}:
+        config_path = cli_args[0]
         model_args, data_args, training_args, lora_args, rl_args = parse_config_file(
             parser=parser,
-            config_path=sys.argv[1],
+            config_path=config_path,
+            cli_args=cli_args[1:],
+            base_overrides=base_overrides,
+        )
+    elif base_overrides:
+        config_path = None
+        model_args, data_args, training_args, lora_args, rl_args = parse_config_from_base_overrides(
+            parser=parser,
+            base_overrides=base_overrides,
+            cli_args=cli_args,
         )
     else:
-        model_args, data_args, training_args, lora_args, rl_args = parser.parse_args_into_dataclasses()
+        config_path = None
+        model_args, data_args, training_args, lora_args, rl_args = parser.parse_args_into_dataclasses(cli_args)
+
+    resolve_run_name_and_output_dir(
+        config_path=config_path,
+        base_overrides=base_overrides,
+        training_args=training_args,
+    )
 
     if (
         os.path.exists(training_args.output_dir)

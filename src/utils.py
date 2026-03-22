@@ -1,7 +1,9 @@
+import argparse
 import json
 import logging
 import os
 import pathlib
+import re
 from copy import deepcopy
 
 import torch
@@ -11,6 +13,8 @@ from config import DataArguments, LoraArguments, ModelArguments, RLArguments, Tr
 
 
 logger = logging.getLogger(__name__)
+
+BASE_CONFIG_SLOTS = ("train", "model", "grpo", "reward")
 
 
 def load_raw_config_file(config_path: str) -> dict:
@@ -85,12 +89,206 @@ def resolve_config_inheritance(config_path: str, visited_paths: tuple[str, ...] 
     return merge_config_dicts(merged_config, config)
 
 
+def resolve_config_inheritance_from_dict(
+    config: dict,
+    config_path: str,
+    visited_paths: tuple[str, ...] = (),
+) -> dict:
+    config_path = os.path.abspath(config_path)
+    if config_path in visited_paths:
+        cycle = " -> ".join((*visited_paths, config_path))
+        raise ValueError(f"Detected config inheritance cycle: {cycle}")
+
+    local_config = deepcopy(config)
+    base_entries = local_config.pop("_base_", [])
+    if isinstance(base_entries, str):
+        base_entries = [base_entries]
+    elif base_entries is None:
+        base_entries = []
+    elif not isinstance(base_entries, list):
+        raise ValueError(f"`_base_` must be a string or a list of strings: {config_path}")
+
+    merged_config: dict = {}
+    config_dir = os.path.dirname(config_path)
+
+    for base_entry in base_entries:
+        if not isinstance(base_entry, str):
+            raise ValueError(f"Each `_base_` entry must be a string: {config_path}")
+        base_path = base_entry if os.path.isabs(base_entry) else os.path.join(config_dir, base_entry)
+        base_config = load_raw_config_file(base_path)
+        resolved_base_config = resolve_config_inheritance_from_dict(
+            config=base_config,
+            config_path=base_path,
+            visited_paths=(*visited_paths, config_path),
+        )
+        merged_config = merge_config_dicts(merged_config, resolved_base_config)
+
+    return merge_config_dicts(merged_config, local_config)
+
+
+def apply_base_overrides(config_path: str, config: dict, base_overrides: dict[str, str]) -> dict:
+    if not base_overrides:
+        return config
+
+    updated_config = deepcopy(config)
+    base_entries = updated_config.get("_base_", [])
+    if isinstance(base_entries, str):
+        base_entries = [base_entries]
+    elif base_entries is None:
+        base_entries = []
+    elif not isinstance(base_entries, list):
+        raise ValueError(f"`_base_` must be a string or a list of strings: {config_path}")
+
+    replaced_slots: set[str] = set()
+    resolved_entries: list[str] = []
+    for base_entry in base_entries:
+        if not isinstance(base_entry, str):
+            raise ValueError(f"Each `_base_` entry must be a string: {config_path}")
+
+        base_slot = pathlib.Path(base_entry).parent.name
+        if base_slot in base_overrides:
+            resolved_entries.append(os.path.abspath(base_overrides[base_slot]))
+            replaced_slots.add(base_slot)
+        else:
+            resolved_entries.append(base_entry)
+
+    missing_slots = sorted(set(base_overrides) - replaced_slots)
+    if missing_slots:
+        raise ValueError(
+            f"Unknown `_base_` override slot(s) for {config_path}: {', '.join(missing_slots)}"
+        )
+
+    updated_config["_base_"] = resolved_entries
+    return updated_config
+
+
+def resolve_slot_config_paths(base_overrides: dict[str, str]) -> list[str]:
+    invalid_slots = sorted(set(base_overrides) - set(BASE_CONFIG_SLOTS))
+    if invalid_slots:
+        raise ValueError(f"Unsupported base config slot(s): {', '.join(invalid_slots)}")
+
+    resolved_paths: list[str] = []
+    for slot in BASE_CONFIG_SLOTS:
+        path = base_overrides.get(slot)
+        if path:
+            resolved_paths.append(os.path.abspath(path))
+    return resolved_paths
+
+
+def resolve_config_from_base_overrides(base_overrides: dict[str, str]) -> dict:
+    merged_config: dict = {}
+    for config_path in resolve_slot_config_paths(base_overrides):
+        resolved_config = resolve_config_inheritance(config_path)
+        merged_config = merge_config_dicts(merged_config, resolved_config)
+    return merged_config
+
+
+def slugify_name(value: str) -> str:
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", value.strip())
+    slug = re.sub(r"-{2,}", "-", slug)
+    return slug.strip("-") or "run"
+
+
+def build_auto_run_name(config_path: str | None, base_overrides: dict[str, str]) -> str:
+    if base_overrides:
+        parts: list[str] = []
+        for slot in BASE_CONFIG_SLOTS:
+            slot_path = base_overrides.get(slot)
+            if slot_path:
+                stem = pathlib.Path(slot_path).stem
+                if stem == "default" and slot in {"train", "grpo"}:
+                    continue
+                parts.append(stem)
+        if parts:
+            return "__".join(slugify_name(part) for part in parts)
+
+    if config_path:
+        return slugify_name(pathlib.Path(config_path).stem)
+
+    return "run"
+
+
+def resolve_run_name_and_output_dir(
+    config_path: str | None,
+    base_overrides: dict[str, str],
+    training_args: TrainingArguments,
+) -> None:
+    output_dir = (training_args.output_dir or "").strip()
+    run_name = (training_args.run_name or "").strip() if training_args.run_name else ""
+
+    output_dir_is_default = output_dir in {"", "trainer_output"}
+    run_name_is_default = run_name in {"", "trainer_output"}
+
+    if run_name_is_default and not output_dir_is_default:
+        run_name = pathlib.Path(output_dir).name
+
+    if not run_name_is_default and output_dir_is_default:
+        output_dir = str(pathlib.Path("checkpoints") / run_name)
+
+    if run_name_is_default and output_dir_is_default:
+        run_name = build_auto_run_name(
+            config_path=config_path,
+            base_overrides=base_overrides,
+        )
+        output_dir = str(pathlib.Path("checkpoints") / run_name)
+
+    training_args.run_name = run_name
+    training_args.output_dir = output_dir
+
+
 def parse_config_file(
     parser: HfArgumentParser,
     config_path: str,
+    cli_args: list[str] | None = None,
+    base_overrides: dict[str, str] | None = None,
 ) -> tuple[ModelArguments, DataArguments, TrainingArguments, LoraArguments, RLArguments]:
-    config = resolve_config_inheritance(config_path)
+    root_config = load_raw_config_file(config_path)
+    root_config = apply_base_overrides(
+        config_path=config_path,
+        config=root_config,
+        base_overrides=base_overrides or {},
+    )
+    config = resolve_config_inheritance_from_dict(
+        config=root_config,
+        config_path=config_path,
+    )
+    if cli_args:
+        override_config = parse_cli_overrides(
+            dataclass_types=parser.dataclass_types,
+            cli_args=cli_args,
+        )
+        config = merge_config_dicts(config, override_config)
     return parser.parse_dict(config)
+
+
+def parse_config_from_base_overrides(
+    parser: HfArgumentParser,
+    base_overrides: dict[str, str],
+    cli_args: list[str] | None = None,
+) -> tuple[ModelArguments, DataArguments, TrainingArguments, LoraArguments, RLArguments]:
+    config = resolve_config_from_base_overrides(base_overrides)
+    if cli_args:
+        override_config = parse_cli_overrides(
+            dataclass_types=parser.dataclass_types,
+            cli_args=cli_args,
+        )
+        config = merge_config_dicts(config, override_config)
+    return parser.parse_dict(config)
+
+
+def parse_cli_overrides(dataclass_types: list[type], cli_args: list[str]) -> dict:
+    override_parser = HfArgumentParser(dataclass_types)
+    for action in override_parser._actions:
+        action.required = False
+        if action.dest != "help":
+            action.default = argparse.SUPPRESS
+
+    namespace, remaining_args = override_parser.parse_known_args(cli_args)
+    if remaining_args:
+        joined_args = " ".join(remaining_args)
+        raise ValueError(f"Unrecognized arguments: {joined_args}")
+
+    return vars(namespace)
 
 
 def get_deepspeed_zero_stage(deepspeed_config) -> int | None:

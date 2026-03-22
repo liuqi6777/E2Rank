@@ -6,7 +6,7 @@ Current scope:
 
 - GRPO-based RL training in [`src/train.py`](src/train.py)
 - Config-driven experiments in [`configs/`](configs)
-- Shell launcher in [`scripts/run.sh`](scripts/train_rl_0.6b.sh)
+- Shell launcher in [`scripts/run.sh`](scripts/run.sh)
 - MTEB/BEIR-style evaluation in [`eval_mteb/`](eval_mteb)
 
 ## Environment Setup
@@ -51,17 +51,89 @@ Each sample should contain the fields used by [`src/ranking_data.py`](src/rankin
 The recommended entrypoint is the shell wrapper plus an explicit config path:
 
 ```bash
-bash ./scripts/run.sh configs/exp/train_rl_0.6b_ndcg.yaml
+bash ./scripts/run.sh configs/exp/template.yaml
 ```
 
-The top-level config currently resolves to `configs/exp/train_rl_0.6b_ndcg.yaml`.
+You can run training without any `configs/exp/*.yaml` and compose the config directly from the shell:
+
+```bash
+bash ./scripts/run.sh \
+  --base-train configs/train/default.yaml \
+  --base-model configs/model/e2rank_0.6b_embedding_only.yaml \
+  --base-grpo configs/grpo/default.yaml \
+  --base-reward configs/reward/contrastive_in_batch.yaml \
+  --data_path data/train.jsonl
+```
+
+If you omit `run_name` and `output_dir`, they are auto-generated. For example, the command above becomes:
+
+- `run_name=e2rank_0.6b_embedding_only__contrastive_in_batch`
+- `output_dir=checkpoints/<run_name>`
+
+Supported base config flags:
+
+- `--base-train`
+- `--base-model`
+- `--base-grpo`
+- `--base-reward`
+
+Regular training arguments can still be appended after that:
+
+```bash
+bash ./scripts/run.sh \
+  --base-train configs/train/default.yaml \
+  --base-model configs/model/qwen3_embedding_0.6b.yaml \
+  --base-grpo configs/grpo/default.yaml \
+  --base-reward configs/reward/mrr.yaml \
+  --data_path data/train.jsonl \
+  --learning_rate 5e-5 \
+  --sigma 0.03
+```
+
+You can still override either one manually:
+
+```bash
+bash ./scripts/run.sh \
+  --base-train configs/train/default.yaml \
+  --base-model configs/model/qwen3_embedding_0.6b.yaml \
+  --base-grpo configs/grpo/default.yaml \
+  --base-reward configs/reward/mrr.yaml \
+  --data_path data/train.jsonl \
+  --run_name qwen3-embed-mrr
+```
+
+In that case `output_dir` falls back to `checkpoints/qwen3-embed-mrr`.
+
+If you still want to keep a top-level experiment template, the old form also works:
+
+```bash
+bash ./scripts/run.sh configs/exp/template.yaml
+```
+
+For simple sweeps over `train/model/grpo/reward` entries, use [`scripts/run_grid.py`](scripts/run_grid.py):
+
+```bash
+uv run python scripts/run_grid.py \
+  --set-base train=configs/train/default.yaml \
+  --set-base model=configs/model/qwen3_0.6b.yaml,configs/model/e2rank_0.6b_embedding_only.yaml \
+  --set-base grpo=configs/grpo/default.yaml \
+  --set-base reward=configs/reward/ndcg.yaml,configs/reward/contrastive_in_batch.yaml \
+  --run-name-prefix sweep \
+  --output-root checkpoints/sweep \
+  --dry-run \
+  -- \
+  --data_path data/train.jsonl
+```
+
+The example top-level config is `configs/exp/template.yaml`.
 
 The config layout is:
 
 ```text
 configs/
-  base/
+  train/
   model/
+  grpo/
   reward/
   exp/
 ```
@@ -70,8 +142,9 @@ Example inheritance:
 
 ```yaml
 _base_:
-  - ../base/train.yaml
+  - ../train/default.yaml
   - ../model/e2rank_0.6b_embedding_only.yaml
+  - ../grpo/default.yaml
   - ../reward/ndcg.yaml
 
 data_path: data/train.jsonl

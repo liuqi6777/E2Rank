@@ -1,0 +1,9 @@
+_base_:
+  - ../train/default.yaml
+  - ../model/qwen3_0.6b.yaml
+  - ../grpo/default.yaml
+  - ../reward/ndcg.yaml
+
+data_path: data/train.jsonl
+output_dir: checkpoints/example-run
+run_name: example-run

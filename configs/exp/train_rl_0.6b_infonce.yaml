@@ -1,8 +1,0 @@
-_base_:
-  - ../base/default.yaml
-  - ../model/qwen3_0.6b.yaml
-  - ../reward/infonce_in_batch.yaml
-
-data_path: data/train.jsonl
-output_dir: checkpoints/Qwen3-0.6B-GRPO-InfoNCE
-run_name: Qwen3-0.6B-GRPO-InfoNCE

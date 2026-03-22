@@ -1,20 +1,23 @@
 #!/bin/bash
 
-set -e
+set -euo pipefail
 
 export FORCE_TORCHRUN=1
-export NNODES=1
-export NODE_RANK=8
+export NNODES=${NNODES:-1}
+export NPROC_PER_NODE=${NPROC_PER_NODE:-${NODE_RANK:-8}}
 export WANDB_PROJECT=${WANDB_PROJECT:-E2Rank-RL}
 
-config_path=${1:-configs/exp/train_rl_0.6b.yaml}
-
-if [ ! -f "$config_path" ]; then
-  echo "Config file not found: $config_path" >&2
-  exit 1
+if [ $# -gt 0 ]; then
+  first_arg=$1
+  if [[ "$first_arg" == *.yaml || "$first_arg" == *.yml || "$first_arg" == *.json ]]; then
+    if [ ! -f "$first_arg" ]; then
+      echo "Config file not found: $first_arg" >&2
+      exit 1
+    fi
+  fi
 fi
 
 torchrun \
-  --nnodes=$NNODES --nproc_per_node=$NODE_RANK \
+  --nnodes="$NNODES" --nproc_per_node="$NPROC_PER_NODE" \
   src/train.py \
-  "$config_path"
+  "$@"

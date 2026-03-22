@@ -1,8 +1,0 @@
-_base_:
-  - ../base/default.yaml
-  - ../model/qwen3_0.6b.yaml
-  - ../reward/ndcg.yaml
-
-data_path: data/train.jsonl
-output_dir: checkpoints/Qwen3-0.6B-GRPO-NDCG
-run_name: Qwen3-0.6B-GRPO-NDCG
