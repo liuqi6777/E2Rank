@@ -15,6 +15,7 @@ from config import DataArguments, LoraArguments, ModelArguments, RLArguments, Tr
 logger = logging.getLogger(__name__)
 
 BASE_CONFIG_SLOTS = ("train", "model", "grpo", "reward")
+BASELINE_CONFIG_SLOTS = ("train", "model", "baseline")
 
 
 def load_raw_config_file(config_path: str) -> dict:
@@ -162,22 +163,28 @@ def apply_base_overrides(config_path: str, config: dict, base_overrides: dict[st
     return updated_config
 
 
-def resolve_slot_config_paths(base_overrides: dict[str, str]) -> list[str]:
-    invalid_slots = sorted(set(base_overrides) - set(BASE_CONFIG_SLOTS))
+def resolve_slot_config_paths(
+    base_overrides: dict[str, str],
+    base_slots: tuple[str, ...] = BASE_CONFIG_SLOTS,
+) -> list[str]:
+    invalid_slots = sorted(set(base_overrides) - set(base_slots))
     if invalid_slots:
         raise ValueError(f"Unsupported base config slot(s): {', '.join(invalid_slots)}")
 
     resolved_paths: list[str] = []
-    for slot in BASE_CONFIG_SLOTS:
+    for slot in base_slots:
         path = base_overrides.get(slot)
         if path:
             resolved_paths.append(os.path.abspath(path))
     return resolved_paths
 
 
-def resolve_config_from_base_overrides(base_overrides: dict[str, str]) -> dict:
+def resolve_config_from_base_overrides(
+    base_overrides: dict[str, str],
+    base_slots: tuple[str, ...] = BASE_CONFIG_SLOTS,
+) -> dict:
     merged_config: dict = {}
-    for config_path in resolve_slot_config_paths(base_overrides):
+    for config_path in resolve_slot_config_paths(base_overrides, base_slots=base_slots):
         resolved_config = resolve_config_inheritance(config_path)
         merged_config = merge_config_dicts(merged_config, resolved_config)
     return merged_config
@@ -189,14 +196,19 @@ def slugify_name(value: str) -> str:
     return slug.strip("-") or "run"
 
 
-def build_auto_run_name(config_path: str | None, base_overrides: dict[str, str]) -> str:
+def build_auto_run_name(
+    config_path: str | None,
+    base_overrides: dict[str, str],
+    base_slots: tuple[str, ...] = BASE_CONFIG_SLOTS,
+) -> str:
     if base_overrides:
         parts: list[str] = []
-        for slot in BASE_CONFIG_SLOTS:
+        for slot in base_slots:
             slot_path = base_overrides.get(slot)
             if slot_path:
+                slot_name = pathlib.Path(slot_path).parent.name
                 stem = pathlib.Path(slot_path).stem
-                if stem == "default" and slot in {"train", "grpo"}:
+                if stem == "default" and slot_name in {"train", "grpo"}:
                     continue
                 parts.append(stem)
         if parts:
@@ -212,6 +224,7 @@ def resolve_run_name_and_output_dir(
     config_path: str | None,
     base_overrides: dict[str, str],
     training_args: TrainingArguments,
+    base_slots: tuple[str, ...] = BASE_CONFIG_SLOTS,
 ) -> None:
     output_dir = (training_args.output_dir or "").strip()
     run_name = (training_args.run_name or "").strip() if training_args.run_name else ""
@@ -229,6 +242,7 @@ def resolve_run_name_and_output_dir(
         run_name = build_auto_run_name(
             config_path=config_path,
             base_overrides=base_overrides,
+            base_slots=base_slots,
         )
         output_dir = str(pathlib.Path("checkpoints") / run_name)
 
@@ -265,8 +279,9 @@ def parse_config_from_base_overrides(
     parser: HfArgumentParser,
     base_overrides: dict[str, str],
     cli_args: list[str] | None = None,
+    base_slots: tuple[str, ...] = BASE_CONFIG_SLOTS,
 ) -> tuple[ModelArguments, DataArguments, TrainingArguments, LoraArguments, RLArguments]:
-    config = resolve_config_from_base_overrides(base_overrides)
+    config = resolve_config_from_base_overrides(base_overrides, base_slots=base_slots)
     if cli_args:
         override_config = parse_cli_overrides(
             dataclass_types=parser.dataclass_types,
@@ -346,3 +361,24 @@ def save_model_for_trainer(trainer: HFTrainer, output_dir: str) -> None:
         cpu_state_dict = {key: value.cpu() for key, value in state_dict.items()}
         del state_dict
         trainer._save(output_dir, state_dict=cpu_state_dict)
+
+
+__all__ = [
+    "BASE_CONFIG_SLOTS",
+    "BASELINE_CONFIG_SLOTS",
+    "apply_base_overrides",
+    "build_auto_run_name",
+    "get_deepspeed_zero_stage",
+    "load_raw_config_file",
+    "merge_config_dicts",
+    "parse_cli_overrides",
+    "parse_config_file",
+    "parse_config_from_base_overrides",
+    "resolve_config_from_base_overrides",
+    "resolve_config_inheritance",
+    "resolve_config_inheritance_from_dict",
+    "resolve_gradient_checkpointing_kwargs",
+    "resolve_run_name_and_output_dir",
+    "resolve_slot_config_paths",
+    "save_model_for_trainer",
+]
