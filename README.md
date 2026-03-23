@@ -169,6 +169,7 @@ Important RL-related fields exposed by [`src/config.py`](src/config.py):
 Supported reward presets in [`configs/reward/`](configs/reward):
 
 - `ndcg.yaml`
+- `ndcg_in_batch.yaml`
 - `mixed.yaml`
 - `contrastive_in_batch.yaml`
 - `contrastive_no_in_batch.yaml`
@@ -178,6 +179,8 @@ Supported reward presets in [`configs/reward/`](configs/reward):
 
 Contrastive-style rewards now follow the paper appendix:
 
+- `ndcg`: per-query slate nDCG only, kept as the backward-compatible no-in-batch option
+- `ndcg_in_batch`: append positives from other samples in the batch as extra zero-relevance candidates
 - `contrastive`: `s+ - tau * logsumexp(s- / tau)` over negatives only
 - `infonce`: `s+ - tau * logsumexp([s+, s-] / tau)` over the full partition
 

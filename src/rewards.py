@@ -4,7 +4,7 @@ import torch
 import torch.nn.functional as F
 
 
-SUPPORTED_REWARD_TYPES = {"ndcg", "contrastive", "infonce", "mrr", "mixed"}
+SUPPORTED_REWARD_TYPES = {"ndcg", "ndcg_in_batch", "contrastive", "infonce", "mrr", "mixed"}
 
 
 def build_relevance_labels(
@@ -149,6 +149,38 @@ def _gather_positive_and_negative_scores(
     return positive_scores, torch.cat(all_negative_scores, dim=1)
 
 
+def _append_in_batch_positive_negatives(
+    candidate_embeddings: torch.Tensor,
+    relevance_labels: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    batch_size, _, embedding_dim = candidate_embeddings.shape
+    if batch_size <= 1:
+        return candidate_embeddings, relevance_labels
+
+    positive_indices = relevance_labels.argmax(dim=-1)
+    positive_embeddings = candidate_embeddings[
+        torch.arange(batch_size, device=candidate_embeddings.device),
+        positive_indices,
+    ]
+    expanded_positive_embeddings = positive_embeddings.unsqueeze(0).expand(batch_size, -1, -1)
+    cross_batch_mask = ~torch.eye(batch_size, device=candidate_embeddings.device, dtype=torch.bool)
+    in_batch_negative_embeddings = expanded_positive_embeddings[cross_batch_mask].reshape(
+        batch_size,
+        batch_size - 1,
+        embedding_dim,
+    )
+    in_batch_negative_labels = torch.zeros(
+        batch_size,
+        batch_size - 1,
+        device=relevance_labels.device,
+        dtype=relevance_labels.dtype,
+    )
+    return (
+        torch.cat((candidate_embeddings, in_batch_negative_embeddings), dim=1),
+        torch.cat((relevance_labels, in_batch_negative_labels), dim=1),
+    )
+
+
 def compute_contrastive_reward(
     query_embeddings: torch.Tensor,
     candidate_embeddings: torch.Tensor,
@@ -195,8 +227,14 @@ def compute_ndcg_reward(
     candidate_embeddings: torch.Tensor,
     relevance_labels: torch.Tensor,
     k: int = 10,
+    use_in_batch_negatives: bool = False,
 ) -> torch.Tensor:
     _validate_relevance_labels(relevance_labels, candidate_embeddings)
+    if use_in_batch_negatives:
+        candidate_embeddings, relevance_labels = _append_in_batch_positive_negatives(
+            candidate_embeddings=candidate_embeddings,
+            relevance_labels=relevance_labels,
+        )
 
     cutoff = min(k, candidate_embeddings.size(1))
     if cutoff <= 0:
@@ -307,6 +345,14 @@ def compute_reward(
             candidate_embeddings=candidate_embeddings,
             relevance_labels=relevance_labels,
             k=k,
+        )
+    if reward_type == "ndcg_in_batch":
+        return compute_ndcg_reward(
+            query_embeddings=query_embeddings,
+            candidate_embeddings=candidate_embeddings,
+            relevance_labels=relevance_labels,
+            k=k,
+            use_in_batch_negatives=True,
         )
     if reward_type == "contrastive":
         return compute_contrastive_reward(

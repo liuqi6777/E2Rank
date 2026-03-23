@@ -72,7 +72,7 @@ class RLArguments:
     )
     reward_type: str = field(
         default="ndcg",
-        metadata={"help": "Reward type: ndcg, contrastive, infonce, mrr, or mixed"},
+        metadata={"help": "Reward type: ndcg, ndcg_in_batch, contrastive, infonce, mrr, or mixed"},
     )
     reward_ndcg_k: int = field(
         default=10,
