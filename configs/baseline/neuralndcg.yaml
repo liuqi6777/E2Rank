@@ -1,0 +1,4 @@
+baseline_type: neuralndcg
+relevance_scheme: graded
+baseline_ndcg_k: 16
+neuralndcg_temperature: 1.0

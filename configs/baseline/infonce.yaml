@@ -1,0 +1,4 @@
+baseline_type: infonce
+relevance_scheme: graded
+baseline_ndcg_k: 16
+infonce_temperature: 0.03
