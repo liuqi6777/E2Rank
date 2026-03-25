@@ -172,8 +172,6 @@ def make_run_id(result_dir: Path, input_path: Path) -> str:
         first_segment = normalized.split("/", 1)[0] if normalized else ""
         if not first_segment:
             first_segment = Path(raw).name
-        if "__" in first_segment:
-            return first_segment.split("__")[-1]
         return first_segment
 
     resolved_result_dir = result_dir.resolve()
