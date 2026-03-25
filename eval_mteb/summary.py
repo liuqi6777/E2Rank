@@ -9,8 +9,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import mteb
-
 
 DEFAULT_INPUT_DIR = "results/mteb"
 DEFAULT_BENCHMARK = "MTEB(Multilingual, v2)"
@@ -60,6 +58,8 @@ def get_tasks(
     languages: list[str] | None = None,
     benchmark: str | None = None,
 ):
+    import mteb
+
     if benchmark:
         tasks = mteb.get_benchmark(benchmark).tasks
     else:
@@ -167,18 +167,29 @@ def parse_task_score(payload: dict[str, Any]) -> float:
 
 
 def make_run_id(result_dir: Path, input_path: Path) -> str:
+    def simplify_run_name(raw: str) -> str:
+        normalized = raw.lstrip("/")
+        first_segment = normalized.split("/", 1)[0] if normalized else ""
+        if not first_segment:
+            first_segment = Path(raw).name
+        if "__" in first_segment:
+            return first_segment.split("__")[-1]
+        return first_segment
+
+    resolved_result_dir = result_dir.resolve()
+    resolved_input_path = input_path.resolve()
     try:
-        relative_path = result_dir.relative_to(input_path.resolve())
+        relative_path = resolved_result_dir.relative_to(resolved_input_path)
     except ValueError:
-        relative_path = result_dir
+        relative_path = resolved_result_dir
 
     relative_str = relative_path.as_posix()
     if relative_str not in ("", "."):
-        return relative_str
+        return simplify_run_name(relative_str)
 
-    if len(result_dir.parts) >= 2:
-        return "/".join(result_dir.parts[-2:])
-    return result_dir.name
+    if result_dir.parent.name:
+        return simplify_run_name(result_dir.parent.name)
+    return simplify_run_name(result_dir.name)
 
 
 def summarize_result_dir(
@@ -248,6 +259,8 @@ def make_type_rows(summaries: list[RunSummary]) -> list[dict[str, Any]]:
         for task_name, task_type in summary.task_types.items():
             grouped_tasks[task_type].append(task_name)
 
+        mean_task_score = round(summary.task_mean_pct or 0.0, 2)
+        mean_type_score = round(summary.type_mean_pct or 0.0, 2)
         for task_type, mean_score in sorted(
             summary.type_scores.items(),
             key=lambda item: (-item[1], item[0]),
@@ -258,8 +271,31 @@ def make_type_rows(summaries: list[RunSummary]) -> list[dict[str, Any]]:
                     "type": task_type,
                     "task_count": len(grouped_tasks[task_type]),
                     "mean_score": round(mean_score * 100.0, 2),
+                    "mean_task_score": mean_task_score,
+                    "mean_type_score": mean_type_score,
                 }
             )
+    return rows
+
+
+def make_type_pivot_rows(summaries: list[RunSummary]) -> list[dict[str, Any]]:
+    all_types = sorted(
+        {
+            task_type
+            for summary in summaries
+            for task_type in summary.type_scores
+        }
+    )
+    rows: list[dict[str, Any]] = []
+    for summary in summaries:
+        row: dict[str, Any] = {"run": summary.run_id}
+        for task_type in all_types:
+            score = summary.type_scores.get(task_type)
+            row[task_type] = round(score * 100.0, 2) if score is not None else ""
+
+        row["mean_task_score"] = round(summary.task_mean_pct or 0.0, 2)
+        row["mean_type_score"] = round(summary.type_mean_pct or 0.0, 2)
+        rows.append(row)
     return rows
 
 
@@ -360,6 +396,8 @@ def print_grouped_view(
                     "type": row["type"],
                     "task_count": row["task_count"],
                     "mean_score": format_score(row["mean_score"]),
+                    "mean_task_score": format_score(row["mean_task_score"]),
+                    "mean_type_score": format_score(row["mean_type_score"]),
                 }
                 for row in make_type_rows([summary])
             ]
@@ -371,6 +409,8 @@ def print_grouped_view(
                         ("type", "Type"),
                         ("task_count", "Tasks"),
                         ("mean_score", "Mean Score"),
+                        ("mean_task_score", "Mean(Task)"),
+                        ("mean_type_score", "Mean(Type)"),
                     ],
                 )
             )
@@ -502,7 +542,7 @@ def main() -> None:
         if "run" in views:
             exported_files.append(export_csv(csv_dir, "run", make_run_rows(summaries, task_catalog)))
         if "type" in views:
-            exported_files.append(export_csv(csv_dir, "type", make_type_rows(summaries)))
+            exported_files.append(export_csv(csv_dir, "type", make_type_pivot_rows(summaries)))
         if "task" in views:
             exported_files.append(export_csv(csv_dir, "task", make_task_rows(summaries)))
 
