@@ -11,7 +11,7 @@ from typing import Any
 
 
 DEFAULT_INPUT_DIR = "results/mteb"
-DEFAULT_BENCHMARK = "MTEB(Multilingual, v2)"
+DEFAULT_BENCHMARK = "MTEB(eng, v1, subset)"
 SUPPORTED_VIEWS = ("run", "type", "task")
 
 
@@ -61,6 +61,27 @@ def get_tasks(
     import mteb
 
     if benchmark:
+        if benchmark == "MTEB(eng, v1, subset)":
+            names = [
+                "SciFact",
+                "ArguAna",
+                "NFCorpus",
+                "StackOverflowDupQuestions",
+                "SciDocsRR",
+                "BiorxivClusteringS2S",
+                "MedrxivClusteringS2S",
+                "TwentyNewsgroupsClustering",
+                "SprintDuplicateQuestions",
+                "Banking77Classification",
+                "EmotionClassification",
+                "MassiveIntentClassification",
+                "STS17",
+                "SICK-R",
+                "STSBenchmark",
+                "SummEval"
+            ]
+            tasks = mteb.get_tasks(languages=languages, tasks=names)
+            return tasks
         tasks = mteb.get_benchmark(benchmark).tasks
     else:
         tasks = mteb.get_tasks(languages=languages, tasks=names)
