@@ -5,10 +5,10 @@ model_path=$1
 benchmark=$2
 
 python eval_mteb/run_mteb.py \
-  --model ${model_path} \
+  --model "${model_path}" \
   --precision fp16 \
   --model_kwargs "{\"max_length\": 8192, \"attn_type\": \"causal\", \"pooler_type\": \"last\", \"do_norm\": true, \"use_instruction\": true, \"instruction_template\": \"Instruct: {}\nQuery:\", \"instruction_dict_path\": \"eval_mteb/scripts/task_prompts.json\"}" \
   --output_dir results/mteb \
   --batch_size 16 \
   --langs "eng" \
-  --benchmark ${benchmark}
+  --benchmark "${benchmark}"
