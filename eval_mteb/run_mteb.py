@@ -71,6 +71,27 @@ class EvalArguments:
 
 def get_tasks(names: list[str] | None, languages: list[str] | None = None, benchmark: str | None = None):
     if benchmark:
+        if benchmark == "MTEB(eng, v1, subset)":
+            names = [
+                "SciFact",
+                "ArguAna",
+                "NFCorpus",
+                "StackOverflowDupQuestions",
+                "SciDocsRR",
+                "BiorxivClusteringS2S",
+                "MedrxivClusteringS2S",
+                "TwentyNewsgroupsClustering",
+                "SprintDuplicateQuestions",
+                "Banking77Classification",
+                "EmotionClassification",
+                "MassiveIntentClassification",
+                "STS17",
+                "SICK-R",
+                "STSBenchmark",
+                "SummEval"
+            ]
+            tasks = mteb.get_tasks(languages=languages, tasks=names)
+            return tasks
         tasks = mteb.get_benchmark(benchmark).tasks
     else:
         tasks = mteb.get_tasks(languages=languages, tasks=names)

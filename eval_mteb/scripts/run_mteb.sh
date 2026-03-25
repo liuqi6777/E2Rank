@@ -2,8 +2,7 @@ export OMP_NUM_THREADS=8
 export OPENBLAS_NUM_THREADS='8'
 
 model_path=$1
-
-eval_subset="SciFact,ArguAna,NFCorpus,StackOverflowDupQuestions,SciDocsRR,BiorxivClusteringS2S,MedrxivClusteringS2S,TwentyNewsgroupsClustering,SprintDuplicateQuestions,Banking77Classification,EmotionClassification,MassiveIntentClassification,STS17,SICK-R,STSBenchmark,SummEval"
+benchmark=$2
 
 python eval_mteb/run_mteb.py \
   --model ${model_path} \
@@ -12,4 +11,4 @@ python eval_mteb/run_mteb.py \
   --output_dir results/mteb \
   --batch_size 16 \
   --langs "eng" \
-  --tasks $eval_subset
+  --benchmark ${benchmark}
