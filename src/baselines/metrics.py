@@ -30,14 +30,19 @@ def compute_mrr_at_k(
     scores: torch.Tensor,
     relevance_labels: torch.Tensor,
     k: int | None = None,
+    relevance_scheme: str = "graded",
 ) -> torch.Tensor:
+    if relevance_scheme not in {"graded", "binary"}:
+        raise ValueError(f"Unsupported relevance scheme: {relevance_scheme}")
+
     cutoff = _resolve_cutoff(k, scores.size(1))
     if cutoff <= 0:
         return torch.zeros(scores.size(0), device=scores.device, dtype=scores.dtype)
 
     ranked_indices = scores.topk(k=cutoff, dim=-1).indices
     ranked_relevance = relevance_labels.gather(dim=1, index=ranked_indices)
-    relevant_mask = ranked_relevance > 0
+    relevant_threshold = 2.0 if relevance_scheme == "graded" else 0.0
+    relevant_mask = ranked_relevance >= relevant_threshold if relevance_scheme == "graded" else ranked_relevance > relevant_threshold
     reciprocal_ranks = relevant_mask.to(scores.dtype) / torch.arange(
         1,
         cutoff + 1,

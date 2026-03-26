@@ -91,6 +91,7 @@ class BaselineModel(nn.Module):
             scores=scores,
             relevance_labels=relevance_labels,
             k=self.baseline_args.baseline_ndcg_k,
+            relevance_scheme=self.baseline_args.relevance_scheme,
         )
         return BaselineModelOutput(
             loss=per_sample_loss.mean(),
