@@ -262,8 +262,11 @@ def compute_mrr_reward(
     candidate_embeddings: torch.Tensor,
     relevance_labels: torch.Tensor,
     k: int | None = None,
+    relevance_scheme: str = "graded",
 ) -> torch.Tensor:
     _validate_relevance_labels(relevance_labels, candidate_embeddings)
+    if relevance_scheme not in {"graded", "binary"}:
+        raise ValueError(f"Unsupported relevance scheme: {relevance_scheme}")
 
     cutoff = candidate_embeddings.size(1) if k is None else min(k, candidate_embeddings.size(1))
     if cutoff <= 0:
@@ -275,7 +278,8 @@ def compute_mrr_reward(
     )
     ranked_indices = scores.topk(k=cutoff, dim=-1).indices
     ranked_relevance = relevance_labels.gather(dim=1, index=ranked_indices)
-    relevant_mask = ranked_relevance > 0
+    relevant_threshold = 2.0 if relevance_scheme == "graded" else 0.0
+    relevant_mask = ranked_relevance >= relevant_threshold if relevance_scheme == "graded" else ranked_relevance > relevant_threshold
 
     reciprocal_ranks = relevant_mask.to(query_embeddings.dtype) / torch.arange(
         1,
@@ -305,11 +309,11 @@ def compute_mixed_reward(
         dtype=query_embeddings.dtype,
     )
     if contrastive_weight != 0:
-        reward = reward + contrastive_weight * compute_contrastive_reward(
+        reward = reward + contrastive_weight * compute_infonce_reward(
             query_embeddings=query_embeddings,
             candidate_embeddings=candidate_embeddings,
             relevance_labels=relevance_labels,
-            use_in_batch_negatives=contrastive_use_in_batch_negatives,
+            use_in_batch_negatives=True,
             temperature=contrastive_temperature,
         )
     if ndcg_weight != 0:
@@ -318,6 +322,7 @@ def compute_mixed_reward(
             candidate_embeddings=candidate_embeddings,
             relevance_labels=relevance_labels,
             k=k,
+            use_in_batch_negatives=True,
         )
     return reward
 
@@ -332,6 +337,7 @@ def compute_reward(
     mixed_ndcg_weight: float = 1.0,
     contrastive_use_in_batch_negatives: bool = False,
     contrastive_temperature: float = 0.03,
+    relevance_scheme: str = "graded",
 ) -> torch.Tensor:
     reward_type = reward_type.lower()
     if reward_type not in SUPPORTED_REWARD_TYPES:
@@ -376,6 +382,7 @@ def compute_reward(
             candidate_embeddings=candidate_embeddings,
             relevance_labels=relevance_labels,
             k=k,
+            relevance_scheme=relevance_scheme,
         )
     return compute_mixed_reward(
         query_embeddings=query_embeddings,

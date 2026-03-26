@@ -158,6 +158,7 @@ class GRPO(nn.Module):
                     mixed_ndcg_weight=self.mixed_ndcg_weight,
                     contrastive_use_in_batch_negatives=self.contrastive_use_in_batch_negatives,
                     contrastive_temperature=self.contrastive_temperature,
+                    relevance_scheme=self.relevance_scheme,
                 )
             )
         rewards = torch.stack(rewards, dim=0)

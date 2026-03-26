@@ -80,11 +80,11 @@ class RLArguments:
     )
     mixed_contrastive_weight: float = field(
         default=1.0,
-        metadata={"help": "Contrastive reward weight when reward_type=mixed"},
+        metadata={"help": "InfoNCE-in-batch reward weight when reward_type=mixed"},
     )
     mixed_ndcg_weight: float = field(
         default=1.0,
-        metadata={"help": "nDCG reward weight when reward_type=mixed"},
+        metadata={"help": "nDCG-in-batch reward weight when reward_type=mixed"},
     )
     contrastive_use_in_batch_negatives: bool = field(
         default=False,
