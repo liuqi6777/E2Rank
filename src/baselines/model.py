@@ -10,7 +10,7 @@ from transformers.file_utils import ModelOutput
 
 from baselines.losses import SUPPORTED_BASELINE_TYPES, compute_baseline_loss
 from baselines.metrics import compute_mrr_at_k, compute_ndcg_at_k
-from config import BaselineArguments
+from baselines.config import BaselineArguments
 from grpo import pool_last_token_embedding
 from rewards import build_relevance_labels
 
