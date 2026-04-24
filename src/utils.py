@@ -208,7 +208,7 @@ def build_auto_run_name(
             if slot_path:
                 slot_name = pathlib.Path(slot_path).parent.name
                 stem = pathlib.Path(slot_path).stem
-                if stem == "default" and slot_name in {"train", "grpo"}:
+                if stem == "default":
                     continue
                 parts.append(stem)
         if parts:
