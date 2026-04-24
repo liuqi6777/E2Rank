@@ -394,3 +394,175 @@ def compute_reward(
         contrastive_use_in_batch_negatives=contrastive_use_in_batch_negatives,
         contrastive_temperature=contrastive_temperature,
     )
+
+
+def _reward_uses_in_batch_negatives(
+    reward_type: str,
+    contrastive_use_in_batch_negatives: bool = False,
+) -> bool:
+    reward_type = reward_type.lower()
+    if reward_type in {"ndcg_in_batch", "mixed"}:
+        return True
+    return reward_type in {"contrastive", "infonce"} and contrastive_use_in_batch_negatives
+
+
+def _expand_rollout_candidates(
+    query_embeddings: torch.Tensor,
+    candidate_embeddings: torch.Tensor,
+) -> torch.Tensor:
+    batch_size = query_embeddings.size(0)
+    rollout_shape = query_embeddings.shape[1:-1]
+    embedding_dim = query_embeddings.size(-1)
+
+    if candidate_embeddings.dim() == 3:
+        expected_shape = (batch_size, candidate_embeddings.size(1), embedding_dim)
+        if tuple(candidate_embeddings.shape) != expected_shape:
+            raise ValueError(
+                "candidate_embeddings must be [batch, slate, dim] when no rollout dims are provided, "
+                f"got {tuple(candidate_embeddings.shape)} and expected {expected_shape}"
+            )
+        return candidate_embeddings.reshape(
+            batch_size,
+            *((1,) * len(rollout_shape)),
+            candidate_embeddings.size(1),
+            embedding_dim,
+        ).expand(
+            batch_size,
+            *rollout_shape,
+            candidate_embeddings.size(1),
+            embedding_dim,
+        )
+
+    expected_dim = len(rollout_shape) + 3
+    if candidate_embeddings.dim() != expected_dim:
+        raise ValueError(
+            "candidate_embeddings must be [batch, *rollout, slate, dim] "
+            f"or [batch, slate, dim], got shape {tuple(candidate_embeddings.shape)}"
+        )
+    if candidate_embeddings.shape[0] != batch_size:
+        raise ValueError(
+            "query_embeddings and candidate_embeddings batch size must match, "
+            f"got queries={tuple(query_embeddings.shape)} candidates={tuple(candidate_embeddings.shape)}"
+        )
+    if candidate_embeddings.shape[1:-2] != rollout_shape:
+        raise ValueError(
+            "candidate_embeddings rollout shape must match query_embeddings rollout shape, "
+            f"got queries={tuple(query_embeddings.shape)} candidates={tuple(candidate_embeddings.shape)}"
+        )
+    if candidate_embeddings.shape[-1] != embedding_dim:
+        raise ValueError(
+            "query_embeddings and candidate_embeddings embedding dim must match, "
+            f"got queries={tuple(query_embeddings.shape)} candidates={tuple(candidate_embeddings.shape)}"
+        )
+    return candidate_embeddings
+
+
+def compute_rollout_reward(
+    query_embeddings: torch.Tensor,
+    candidate_embeddings: torch.Tensor,
+    relevance_labels: torch.Tensor,
+    reward_type: str = "ndcg",
+    k: int = 10,
+    mixed_contrastive_weight: float = 1.0,
+    mixed_ndcg_weight: float = 1.0,
+    contrastive_use_in_batch_negatives: bool = False,
+    contrastive_temperature: float = 0.03,
+    relevance_scheme: str = "graded",
+) -> torch.Tensor:
+    if query_embeddings.dim() < 2:
+        raise ValueError(
+            f"query_embeddings must be [batch, *rollout, dim], got shape {tuple(query_embeddings.shape)}"
+        )
+    if relevance_labels.dim() != 2:
+        raise ValueError(
+            f"relevance_labels must be [batch, slate], got shape {tuple(relevance_labels.shape)}"
+        )
+    if query_embeddings.size(0) != relevance_labels.size(0):
+        raise ValueError(
+            "query_embeddings and relevance_labels batch size must match, "
+            f"got queries={tuple(query_embeddings.shape)} labels={tuple(relevance_labels.shape)}"
+        )
+
+    rollout_shape = query_embeddings.shape[1:-1]
+    if not rollout_shape:
+        return compute_reward(
+            query_embeddings=query_embeddings,
+            candidate_embeddings=candidate_embeddings,
+            relevance_labels=relevance_labels,
+            reward_type=reward_type,
+            k=k,
+            mixed_contrastive_weight=mixed_contrastive_weight,
+            mixed_ndcg_weight=mixed_ndcg_weight,
+            contrastive_use_in_batch_negatives=contrastive_use_in_batch_negatives,
+            contrastive_temperature=contrastive_temperature,
+            relevance_scheme=relevance_scheme,
+        )
+
+    candidate_embeddings = _expand_rollout_candidates(
+        query_embeddings=query_embeddings,
+        candidate_embeddings=candidate_embeddings,
+    )
+    if relevance_labels.shape != candidate_embeddings.shape[:1] + candidate_embeddings.shape[-2:-1]:
+        raise ValueError(
+            "relevance_labels shape must match [batch, slate], "
+            f"got labels={tuple(relevance_labels.shape)} candidates={tuple(candidate_embeddings.shape)}"
+        )
+
+    batch_size = query_embeddings.size(0)
+    rollout_count = 1
+    for rollout_dim in rollout_shape:
+        rollout_count *= rollout_dim
+
+    if _reward_uses_in_batch_negatives(
+        reward_type=reward_type,
+        contrastive_use_in_batch_negatives=contrastive_use_in_batch_negatives,
+    ):
+        query_by_rollout = query_embeddings.reshape(batch_size, rollout_count, query_embeddings.size(-1))
+        candidate_by_rollout = candidate_embeddings.reshape(
+            batch_size,
+            rollout_count,
+            candidate_embeddings.size(-2),
+            candidate_embeddings.size(-1),
+        )
+        rewards = []
+        for rollout_idx in range(rollout_count):
+            rewards.append(
+                compute_reward(
+                    query_embeddings=query_by_rollout[:, rollout_idx],
+                    candidate_embeddings=candidate_by_rollout[:, rollout_idx],
+                    relevance_labels=relevance_labels,
+                    reward_type=reward_type,
+                    k=k,
+                    mixed_contrastive_weight=mixed_contrastive_weight,
+                    mixed_ndcg_weight=mixed_ndcg_weight,
+                    contrastive_use_in_batch_negatives=contrastive_use_in_batch_negatives,
+                    contrastive_temperature=contrastive_temperature,
+                    relevance_scheme=relevance_scheme,
+                )
+            )
+        return torch.stack(rewards, dim=1).reshape(batch_size, *rollout_shape)
+
+    expanded_labels = relevance_labels.reshape(
+        batch_size,
+        *((1,) * len(rollout_shape)),
+        relevance_labels.size(-1),
+    ).expand(batch_size, *rollout_shape, relevance_labels.size(-1))
+    flat_query_embeddings = query_embeddings.reshape(batch_size * rollout_count, query_embeddings.size(-1))
+    flat_candidate_embeddings = candidate_embeddings.reshape(
+        batch_size * rollout_count,
+        candidate_embeddings.size(-2),
+        candidate_embeddings.size(-1),
+    )
+    flat_relevance_labels = expanded_labels.reshape(batch_size * rollout_count, relevance_labels.size(-1))
+    return compute_reward(
+        query_embeddings=flat_query_embeddings,
+        candidate_embeddings=flat_candidate_embeddings,
+        relevance_labels=flat_relevance_labels,
+        reward_type=reward_type,
+        k=k,
+        mixed_contrastive_weight=mixed_contrastive_weight,
+        mixed_ndcg_weight=mixed_ndcg_weight,
+        contrastive_use_in_batch_negatives=contrastive_use_in_batch_negatives,
+        contrastive_temperature=contrastive_temperature,
+        relevance_scheme=relevance_scheme,
+    ).reshape(batch_size, *rollout_shape)

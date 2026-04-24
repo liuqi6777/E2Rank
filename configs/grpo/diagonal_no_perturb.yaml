@@ -1,6 +1,6 @@
-grpo_mode: query_only
+grpo_mode: diagonal
 group_size: 8
 sigma: 0.05
 sigma_learnable: false
-perturb_negatives: true
+perturb_negatives: false
 advantage_norm: true

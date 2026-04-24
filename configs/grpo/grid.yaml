@@ -1,4 +1,4 @@
-grpo_mode: query_only
+grpo_mode: grid
 group_size: 8
 sigma: 0.05
 sigma_learnable: false

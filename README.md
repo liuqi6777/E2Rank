@@ -154,9 +154,11 @@ run_name: E2Rank-Full-GRPO-0.6B
 
 Important RL-related fields exposed by [`src/config.py`](src/config.py):
 
+- `grpo_mode`
 - `group_size`
 - `sigma`
 - `sigma_learnable`
+- `perturb_negatives`
 - `reward_type`
 - `reward_ndcg_k`
 - `mixed_contrastive_weight`
