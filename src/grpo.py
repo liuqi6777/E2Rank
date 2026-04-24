@@ -236,7 +236,9 @@ class GRPO(nn.Module):
             sampled_document_embeddings.detach() - policy_document_embeddings.unsqueeze(1)
         ).pow(2).sum(dim=-1)
         log_prob = -0.5 * squared_distance / sigma.pow(2) - policy_document_embeddings.size(-1) * torch.log(sigma)
-        return (log_prob * perturb_mask.unsqueeze(1).to(dtype=log_prob.dtype)).sum(dim=-1)
+        mask = perturb_mask.unsqueeze(1).to(dtype=log_prob.dtype)
+        num_perturbed = mask.sum(dim=-1).clamp_min(1.0)
+        return (log_prob * mask).sum(dim=-1) / num_perturbed
 
     def _compute_query_only_loss(
         self,
