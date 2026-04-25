@@ -8,9 +8,17 @@ from peft import LoraConfig, PeftModel, get_peft_model
 from transformers import AutoConfig, AutoModel, AutoTokenizer
 from transformers import HfArgumentParser, set_seed
 
-from config import DataArguments, LoraArguments, ModelArguments, RLArguments, TrainingArguments
+from config import (
+    DataArguments,
+    LoraArguments,
+    ModelArguments,
+    MTEBEvalArguments,
+    RLArguments,
+    TrainingArguments,
+)
 from grpo import GRPOModel
 from grpo_trainer import GRPOTrainer
+from mteb_eval_callback import MTEBEvalCallback
 from ranking_data import RankingDataCollator, RankingDataset
 from utils import (
     parse_config_file,
@@ -30,6 +38,7 @@ def split_launcher_args(cli_args: list[str]) -> tuple[dict[str, str], list[str]]
         "--base-model": "model",
         "--base-grpo": "grpo",
         "--base-reward": "reward",
+        "--base-eval": "eval",
     }
 
     base_overrides: dict[str, str] = {}
@@ -52,14 +61,14 @@ def split_launcher_args(cli_args: list[str]) -> tuple[dict[str, str], list[str]]
 
 def main() -> None:
     parser = HfArgumentParser(
-        (ModelArguments, DataArguments, TrainingArguments, LoraArguments, RLArguments)
+        (ModelArguments, DataArguments, TrainingArguments, LoraArguments, RLArguments, MTEBEvalArguments)
     )
 
     base_overrides, cli_args = split_launcher_args(sys.argv[1:])
 
     if cli_args and pathlib.Path(cli_args[0]).suffix.lower() in {".json", ".yaml", ".yml"}:
         config_path = cli_args[0]
-        model_args, data_args, training_args, lora_args, rl_args = parse_config_file(
+        model_args, data_args, training_args, lora_args, rl_args, mteb_eval_args = parse_config_file(
             parser=parser,
             config_path=config_path,
             cli_args=cli_args[1:],
@@ -67,14 +76,16 @@ def main() -> None:
         )
     elif base_overrides:
         config_path = None
-        model_args, data_args, training_args, lora_args, rl_args = parse_config_from_base_overrides(
+        model_args, data_args, training_args, lora_args, rl_args, mteb_eval_args = parse_config_from_base_overrides(
             parser=parser,
             base_overrides=base_overrides,
             cli_args=cli_args,
         )
     else:
         config_path = None
-        model_args, data_args, training_args, lora_args, rl_args = parser.parse_args_into_dataclasses(cli_args)
+        model_args, data_args, training_args, lora_args, rl_args, mteb_eval_args = (
+            parser.parse_args_into_dataclasses(cli_args)
+        )
 
     resolve_run_name_and_output_dir(
         config_path=config_path,
@@ -109,6 +120,7 @@ def main() -> None:
     logger.info("Training/evaluation parameters %s", training_args)
     logger.info("Model parameters %s", model_args)
     logger.info("RL parameters %s", rl_args)
+    logger.info("MTEB eval parameters %s", mteb_eval_args)
 
     set_seed(training_args.seed)
 
@@ -184,6 +196,9 @@ def main() -> None:
         train_dataset=train_dataset,
         data_collator=data_collator,
     )
+    mteb_callback = MTEBEvalCallback(mteb_eval_args)
+    if mteb_callback.enabled:
+        trainer.add_callback(mteb_callback.bind_trainer(trainer))
 
     if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")) and not training_args.overwrite_output_dir:
         trainer.train(resume_from_checkpoint=True)

@@ -44,6 +44,46 @@ class TrainingArguments(HFTrainingArguments):
 
 
 @dataclass
+class MTEBEvalArguments:
+    mteb_eval_tasks: Optional[str] = field(
+        default=None,
+        metadata={"help": "Comma-separated MTEB task names to run after each checkpoint save"},
+    )
+    mteb_eval_benchmark: Optional[str] = field(
+        default=None,
+        metadata={"help": "MTEB benchmark name to run after each checkpoint save"},
+    )
+    mteb_eval_langs: Optional[str] = field(
+        default=None,
+        metadata={"help": "Comma-separated MTEB languages used when selecting tasks"},
+    )
+    mteb_eval_output_dir: Optional[str] = field(
+        default=None,
+        metadata={"help": "Directory for in-training MTEB results. Defaults to <output_dir>/mteb_eval"},
+    )
+    mteb_eval_batch_size: int = field(
+        default=16,
+        metadata={"help": "Batch size used by MTEB encoding during in-training eval"},
+    )
+    mteb_eval_precision: str = field(
+        default="fp16",
+        metadata={"help": "MTEB model precision: amp_fp16, amp_bf16, fp16, bf16, or fp32"},
+    )
+    mteb_eval_model_kwargs: Optional[str] = field(
+        default=None,
+        metadata={"help": "JSON object passed as model_kwargs to the MTEB wrapper"},
+    )
+    mteb_eval_encode_kwargs: Optional[str] = field(
+        default=None,
+        metadata={"help": "JSON object passed as encode_kwargs to MTEB.run()"},
+    )
+    mteb_eval_run_kwargs: Optional[str] = field(
+        default=None,
+        metadata={"help": "JSON object passed as extra kwargs to MTEB.run()"},
+    )
+
+
+@dataclass
 class LoraArguments:
     lora_enabled: bool = False
     lora_path: Optional[str] = None

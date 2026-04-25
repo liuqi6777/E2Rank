@@ -14,7 +14,7 @@ from config import DataArguments, LoraArguments, ModelArguments, RLArguments, Tr
 
 logger = logging.getLogger(__name__)
 
-BASE_CONFIG_SLOTS = ("train", "model", "grpo", "reward")
+BASE_CONFIG_SLOTS = ("train", "model", "grpo", "reward", "eval")
 BASELINE_CONFIG_SLOTS = ("train", "model", "baseline")
 
 
@@ -255,7 +255,7 @@ def parse_config_file(
     config_path: str,
     cli_args: list[str] | None = None,
     base_overrides: dict[str, str] | None = None,
-) -> tuple[ModelArguments, DataArguments, TrainingArguments, LoraArguments, RLArguments]:
+) -> tuple:
     root_config = load_raw_config_file(config_path)
     root_config = apply_base_overrides(
         config_path=config_path,
@@ -280,7 +280,7 @@ def parse_config_from_base_overrides(
     base_overrides: dict[str, str],
     cli_args: list[str] | None = None,
     base_slots: tuple[str, ...] = BASE_CONFIG_SLOTS,
-) -> tuple[ModelArguments, DataArguments, TrainingArguments, LoraArguments, RLArguments]:
+) -> tuple:
     config = resolve_config_from_base_overrides(base_overrides, base_slots=base_slots)
     if cli_args:
         override_config = parse_cli_overrides(

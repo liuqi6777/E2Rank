@@ -62,6 +62,7 @@ bash ./scripts/run.sh \
   --base-model configs/model/e2rank_0.6b_embedding_only.yaml \
   --base-grpo configs/grpo/default.yaml \
   --base-reward configs/reward/contrastive_in_batch.yaml \
+  --base-eval configs/eval/default.yaml \
   --data_path data/train.jsonl
 ```
 
@@ -76,6 +77,7 @@ Supported base config flags:
 - `--base-model`
 - `--base-grpo`
 - `--base-reward`
+- `--base-eval`
 
 Regular training arguments can still be appended after that:
 
@@ -85,6 +87,7 @@ bash ./scripts/run.sh \
   --base-model configs/model/qwen3_embedding_0.6b.yaml \
   --base-grpo configs/grpo/default.yaml \
   --base-reward configs/reward/mrr.yaml \
+  --base-eval configs/eval/default.yaml \
   --data_path data/train.jsonl \
   --learning_rate 5e-5 \
   --sigma 0.03
@@ -98,6 +101,7 @@ bash ./scripts/run.sh \
   --base-model configs/model/qwen3_embedding_0.6b.yaml \
   --base-grpo configs/grpo/default.yaml \
   --base-reward configs/reward/mrr.yaml \
+  --base-eval configs/eval/default.yaml \
   --data_path data/train.jsonl \
   --run_name qwen3-embed-mrr
 ```
@@ -110,7 +114,7 @@ If you still want to keep a top-level experiment template, the old form also wor
 bash ./scripts/run.sh configs/exp/template.yaml
 ```
 
-For simple sweeps over `train/model/grpo/reward` entries, use [`scripts/run_grid.py`](scripts/run_grid.py):
+For simple sweeps over `train/model/grpo/reward/eval` entries, use [`scripts/run_grid.py`](scripts/run_grid.py):
 
 ```bash
 uv run python scripts/run_grid.py \
@@ -118,6 +122,7 @@ uv run python scripts/run_grid.py \
   --set-base model=configs/model/qwen3_0.6b.yaml,configs/model/e2rank_0.6b_embedding_only.yaml \
   --set-base grpo=configs/grpo/default.yaml \
   --set-base reward=configs/reward/ndcg.yaml,configs/reward/contrastive_in_batch.yaml \
+  --set-base eval=configs/eval/default.yaml,configs/eval/mteb_retrieval.yaml \
   --run-name-prefix sweep \
   --output-root checkpoints/sweep \
   --dry-run \
@@ -135,6 +140,7 @@ configs/
   model/
   grpo/
   reward/
+  eval/
   exp/
 ```
 
@@ -146,6 +152,7 @@ _base_:
   - ../model/e2rank_0.6b_embedding_only.yaml
   - ../grpo/default.yaml
   - ../reward/ndcg.yaml
+  - ../eval/default.yaml
 
 data_path: data/train.jsonl
 output_dir: checkpoints/E2Rank-Full-GRPO-0.6B
@@ -193,6 +200,21 @@ Example:
 ```yaml
 reward_type: contrastive
 contrastive_temperature: 0.03
+```
+
+MTEB eval during GRPO training is disabled by default through [`configs/eval/default.yaml`](configs/eval/default.yaml). To evaluate every saved checkpoint with the existing `MTEB(eng, v1, subset)` benchmark preset, use:
+
+```bash
+bash ./scripts/run.sh configs/exp/template.yaml \
+  --base-eval configs/eval/mteb_retrieval.yaml
+```
+
+The preset sets:
+
+```yaml
+mteb_eval_benchmark: "MTEB(eng, v1, subset)"
+mteb_eval_langs: eng
+mteb_eval_batch_size: 16
 ```
 
 By default the training config enables:

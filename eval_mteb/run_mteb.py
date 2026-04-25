@@ -8,7 +8,11 @@ from typing import Optional
 import mteb
 import torch
 from transformers import HfArgumentParser
-from qwen3_embedding_model import Qwen3Embedding
+
+try:
+    from .qwen3_embedding_model import Qwen3Embedding
+except ImportError:
+    from qwen3_embedding_model import Qwen3Embedding
 
 
 logging.basicConfig(
@@ -131,6 +135,7 @@ def run_bright(t, model, args, **kwargs):
         eval_subsets=Instructions.keys(),
         **kwargs
     )
+    return results
 
 
 def run_eval(model, tasks: list, args: EvalArguments, **kwargs):
@@ -138,6 +143,7 @@ def run_eval(model, tasks: list, args: EvalArguments, **kwargs):
         raise RuntimeError("No task selected")
 
     encode_kwargs = args.encode_kwargs or dict()
+    all_results = []
 
     _num_gpus, _started = torch.cuda.device_count(), False
     if _num_gpus > 1 and not _started and hasattr(model, 'start'):
@@ -146,7 +152,7 @@ def run_eval(model, tasks: list, args: EvalArguments, **kwargs):
 
     for t in tasks:
         if t.metadata.name == 'BrightRetrieval':
-            run_bright(t, model, args, **kwargs)
+            all_results.extend(run_bright(t, model, args, **kwargs) or [])
             continue
         evaluation = mteb.MTEB(tasks=[t])
         
@@ -158,12 +164,13 @@ def run_eval(model, tasks: list, args: EvalArguments, **kwargs):
                 **kwargs
             )
         except Exception as e:
-            print(f'meet error when running task: {t.metadata.name}. {str(e)}')
+            logger.warning(f'meet error when running task: {t.metadata.name}. {str(e)}')
             continue
+        all_results.extend(results or [])
 
     if model is not None and _started and hasattr(model, 'stop'):
         model.stop()
-    return
+    return all_results
 
 
 def main():
