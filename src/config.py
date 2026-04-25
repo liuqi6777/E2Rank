@@ -104,7 +104,7 @@ class LoraArguments:
 class RLArguments:
     grpo_mode: str = field(
         default="query_only",
-        metadata={"help": "GRPO sampling mode: query_only, diagonal, or grid"},
+        metadata={"help": "GRPO sampling mode: query_only, diagonal, grid, or factorized"},
     )
     group_size: int = field(
         default=8,

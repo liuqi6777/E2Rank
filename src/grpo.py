@@ -17,7 +17,7 @@ from rewards import (
 )
 
 
-SUPPORTED_GRPO_MODES = {"query_only", "diagonal", "grid"}
+SUPPORTED_GRPO_MODES = {"query_only", "diagonal", "grid", "factorized"}
 
 
 def pool_last_token_embedding(
@@ -187,6 +187,21 @@ class GRPO(nn.Module):
         perturb_mask.scatter_(dim=1, index=positive_indices, value=True)
         return perturb_mask
 
+    @staticmethod
+    def _build_positive_document_mask(
+        relevance_labels: torch.Tensor,
+        slate_length: int,
+    ) -> torch.Tensor:
+        positive_indices = relevance_labels.argmax(dim=-1, keepdim=True)
+        positive_mask = torch.zeros(
+            relevance_labels.size(0),
+            slate_length,
+            device=relevance_labels.device,
+            dtype=torch.bool,
+        )
+        positive_mask.scatter_(dim=1, index=positive_indices, value=True)
+        return positive_mask
+
     def _sample_document_embeddings(
         self,
         rollout_document_embeddings: torch.Tensor,
@@ -336,6 +351,80 @@ class GRPO(nn.Module):
         document_loss = -(document_advantages.detach() * document_log_prob).mean()
         return query_loss + document_loss, rewards, torch.cat((query_advantages, document_advantages), dim=1)
 
+    def _compute_factorized_loss(
+        self,
+        policy_embeddings: torch.Tensor,
+        policy_document_embeddings: torch.Tensor,
+        sampled_query_embeddings: torch.Tensor,
+        sampled_positive_document_embeddings: torch.Tensor,
+        sampled_negative_document_embeddings: torch.Tensor,
+        relevance_labels: torch.Tensor,
+        sigma: torch.Tensor,
+        positive_mask: torch.Tensor,
+        negative_mask: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        batch_size, group_size = sampled_query_embeddings.shape[:2]
+        positive_grid = sampled_positive_document_embeddings.unsqueeze(2).expand(
+            batch_size,
+            group_size,
+            group_size,
+            sampled_positive_document_embeddings.size(-2),
+            sampled_positive_document_embeddings.size(-1),
+        )
+        negative_grid = sampled_negative_document_embeddings.unsqueeze(1).expand_as(positive_grid)
+        document_grid = torch.where(
+            positive_mask.unsqueeze(1).unsqueeze(2).unsqueeze(-1),
+            positive_grid,
+            negative_grid,
+        )
+        query_grid = sampled_query_embeddings.unsqueeze(2).unsqueeze(3).expand(
+            batch_size,
+            group_size,
+            group_size,
+            group_size,
+            sampled_query_embeddings.size(-1),
+        )
+        document_grid = document_grid.unsqueeze(1).expand(
+            batch_size,
+            group_size,
+            group_size,
+            group_size,
+            document_grid.size(-2),
+            document_grid.size(-1),
+        )
+
+        rewards = self._compute_rewards(
+            query_embeddings=query_grid,
+            candidate_embeddings=document_grid,
+            relevance_labels=relevance_labels,
+        )
+
+        query_advantages = self._compute_advantages(rewards.mean(dim=(2, 3)), sample_dims=(1,))
+        positive_advantages = self._compute_advantages(rewards.mean(dim=(1, 3)), sample_dims=(1,))
+        negative_advantages = self._compute_advantages(rewards.mean(dim=(1, 2)), sample_dims=(1,))
+        query_log_prob = self._gaussian_log_prob(
+            policy_embeddings=policy_embeddings,
+            sampled_embeddings=sampled_query_embeddings,
+            sigma=sigma,
+        )
+        positive_log_prob = self._document_gaussian_log_prob(
+            policy_document_embeddings=policy_document_embeddings,
+            sampled_document_embeddings=sampled_positive_document_embeddings,
+            sigma=sigma,
+            perturb_mask=positive_mask,
+        )
+        negative_log_prob = self._document_gaussian_log_prob(
+            policy_document_embeddings=policy_document_embeddings,
+            sampled_document_embeddings=sampled_negative_document_embeddings,
+            sigma=sigma,
+            perturb_mask=negative_mask,
+        )
+        query_loss = -(query_advantages.detach() * query_log_prob).mean()
+        positive_loss = -(positive_advantages.detach() * positive_log_prob).mean()
+        negative_loss = -(negative_advantages.detach() * negative_log_prob).mean()
+        advantages = torch.cat((query_advantages, positive_advantages, negative_advantages), dim=1)
+        return query_loss + positive_loss + negative_loss, rewards, advantages
+
     def forward(
         self,
         policy_embeddings: torch.Tensor,
@@ -380,35 +469,63 @@ class GRPO(nn.Module):
         else:
             if policy_document_embeddings is None:
                 raise ValueError(f"policy_document_embeddings is required for GRPO mode {self.grpo_mode}")
-            perturb_mask = self._build_document_perturb_mask(
-                relevance_labels=relevance_labels,
-                slate_length=document_embeddings.size(1),
-            )
-            sampled_document_embeddings = self._sample_document_embeddings(
-                rollout_document_embeddings=document_embeddings,
-                sigma=sigma,
-                perturb_mask=perturb_mask,
-            )
-            if self.grpo_mode == "diagonal":
-                loss, rewards, advantages = self._compute_diagonal_loss(
+            if self.grpo_mode == "factorized":
+                positive_mask = self._build_positive_document_mask(
+                    relevance_labels=relevance_labels,
+                    slate_length=document_embeddings.size(1),
+                )
+                negative_mask = ~positive_mask if self.perturb_negatives else torch.zeros_like(positive_mask)
+                sampled_positive_document_embeddings = self._sample_document_embeddings(
+                    rollout_document_embeddings=document_embeddings,
+                    sigma=sigma,
+                    perturb_mask=positive_mask,
+                )
+                sampled_negative_document_embeddings = self._sample_document_embeddings(
+                    rollout_document_embeddings=document_embeddings,
+                    sigma=sigma,
+                    perturb_mask=negative_mask,
+                )
+                loss, rewards, advantages = self._compute_factorized_loss(
                     policy_embeddings=policy_embeddings,
                     policy_document_embeddings=policy_document_embeddings,
                     sampled_query_embeddings=sampled_query_embeddings,
-                    sampled_document_embeddings=sampled_document_embeddings,
+                    sampled_positive_document_embeddings=sampled_positive_document_embeddings,
+                    sampled_negative_document_embeddings=sampled_negative_document_embeddings,
                     relevance_labels=relevance_labels,
                     sigma=sigma,
-                    perturb_mask=perturb_mask,
+                    positive_mask=positive_mask,
+                    negative_mask=negative_mask,
                 )
             else:
-                loss, rewards, advantages = self._compute_grid_loss(
-                    policy_embeddings=policy_embeddings,
-                    policy_document_embeddings=policy_document_embeddings,
-                    sampled_query_embeddings=sampled_query_embeddings,
-                    sampled_document_embeddings=sampled_document_embeddings,
+                perturb_mask = self._build_document_perturb_mask(
                     relevance_labels=relevance_labels,
+                    slate_length=document_embeddings.size(1),
+                )
+                sampled_document_embeddings = self._sample_document_embeddings(
+                    rollout_document_embeddings=document_embeddings,
                     sigma=sigma,
                     perturb_mask=perturb_mask,
                 )
+                if self.grpo_mode == "diagonal":
+                    loss, rewards, advantages = self._compute_diagonal_loss(
+                        policy_embeddings=policy_embeddings,
+                        policy_document_embeddings=policy_document_embeddings,
+                        sampled_query_embeddings=sampled_query_embeddings,
+                        sampled_document_embeddings=sampled_document_embeddings,
+                        relevance_labels=relevance_labels,
+                        sigma=sigma,
+                        perturb_mask=perturb_mask,
+                    )
+                else:
+                    loss, rewards, advantages = self._compute_grid_loss(
+                        policy_embeddings=policy_embeddings,
+                        policy_document_embeddings=policy_document_embeddings,
+                        sampled_query_embeddings=sampled_query_embeddings,
+                        sampled_document_embeddings=sampled_document_embeddings,
+                        relevance_labels=relevance_labels,
+                        sigma=sigma,
+                        perturb_mask=perturb_mask,
+                    )
 
         reward_stats = self.summarize_tensor(rewards, prefix="reward")
         advantage_stats = self.summarize_tensor(advantages, prefix="advantages")

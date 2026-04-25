@@ -182,6 +182,13 @@ Important RL-related fields exposed by [`src/config.py`](src/config.py):
 - `advantage_norm`
 - `relevance_scheme`
 
+Supported `grpo_mode` values:
+
+- `query_only`: perturb query embeddings only
+- `diagonal`: pair the `g`-th query sample with the `g`-th document-slate sample
+- `grid`: evaluate all query/document-slate sample pairs and marginalize each side
+- `factorized`: separately sample query, positive document, and negative slate actions; evaluate the `G x G x G` grid and assign separate advantages
+
 Supported reward presets in [`configs/reward/`](configs/reward):
 
 - `ndcg.yaml`
