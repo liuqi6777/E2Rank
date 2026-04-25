@@ -59,11 +59,11 @@ You can run training without any `configs/exp/*.yaml` and compose the config dir
 ```bash
 bash ./scripts/run.sh \
   --base-train configs/train/default.yaml \
+  --base-dataset configs/dataset/default.yaml \
   --base-model configs/model/e2rank_0.6b_embedding_only.yaml \
   --base-grpo configs/grpo/default.yaml \
   --base-reward configs/reward/contrastive_in_batch.yaml \
-  --base-eval configs/eval/default.yaml \
-  --data_path data/train.jsonl
+  --base-eval configs/eval/default.yaml
 ```
 
 If you omit `run_name` and `output_dir`, they are auto-generated. For example, the command above becomes:
@@ -74,6 +74,7 @@ If you omit `run_name` and `output_dir`, they are auto-generated. For example, t
 Supported base config flags:
 
 - `--base-train`
+- `--base-dataset`
 - `--base-model`
 - `--base-grpo`
 - `--base-reward`
@@ -84,11 +85,11 @@ Regular training arguments can still be appended after that:
 ```bash
 bash ./scripts/run.sh \
   --base-train configs/train/default.yaml \
+  --base-dataset configs/dataset/default.yaml \
   --base-model configs/model/qwen3_embedding_0.6b.yaml \
   --base-grpo configs/grpo/default.yaml \
   --base-reward configs/reward/mrr.yaml \
   --base-eval configs/eval/default.yaml \
-  --data_path data/train.jsonl \
   --learning_rate 5e-5 \
   --sigma 0.03
 ```
@@ -98,11 +99,11 @@ You can still override either one manually:
 ```bash
 bash ./scripts/run.sh \
   --base-train configs/train/default.yaml \
+  --base-dataset configs/dataset/default.yaml \
   --base-model configs/model/qwen3_embedding_0.6b.yaml \
   --base-grpo configs/grpo/default.yaml \
   --base-reward configs/reward/mrr.yaml \
   --base-eval configs/eval/default.yaml \
-  --data_path data/train.jsonl \
   --run_name qwen3-embed-mrr
 ```
 
@@ -114,20 +115,19 @@ If you still want to keep a top-level experiment template, the old form also wor
 bash ./scripts/run.sh configs/exp/template.yaml
 ```
 
-For simple sweeps over `train/model/grpo/reward/eval` entries, use [`scripts/run_grid.py`](scripts/run_grid.py):
+For simple sweeps over `train/dataset/model/grpo/reward/eval` entries, use [`scripts/run_grid.py`](scripts/run_grid.py):
 
 ```bash
 uv run python scripts/run_grid.py \
   --set-base train=configs/train/default.yaml \
+  --set-base dataset=configs/dataset/default.yaml \
   --set-base model=configs/model/qwen3_0.6b.yaml,configs/model/e2rank_0.6b_embedding_only.yaml \
   --set-base grpo=configs/grpo/default.yaml \
   --set-base reward=configs/reward/ndcg.yaml,configs/reward/contrastive_in_batch.yaml \
   --set-base eval=configs/eval/default.yaml,configs/eval/mteb_retrieval.yaml \
   --run-name-prefix sweep \
   --output-root checkpoints/sweep \
-  --dry-run \
-  -- \
-  --data_path data/train.jsonl
+  --dry-run
 ```
 
 The example top-level config is `configs/exp/template.yaml`.
@@ -137,6 +137,7 @@ The config layout is:
 ```text
 configs/
   train/
+  dataset/
   model/
   grpo/
   reward/
@@ -149,15 +150,22 @@ Example inheritance:
 ```yaml
 _base_:
   - ../train/default.yaml
+  - ../dataset/default.yaml
   - ../model/e2rank_0.6b_embedding_only.yaml
   - ../grpo/default.yaml
   - ../reward/ndcg.yaml
   - ../eval/default.yaml
 
-data_path: data/train.jsonl
 output_dir: checkpoints/E2Rank-Full-GRPO-0.6B
 run_name: E2Rank-Full-GRPO-0.6B
 ```
+
+Important data fields exposed by [`src/config.py`](src/config.py):
+
+- `data_path`
+- `per_dataset_max_samples` (`null` keeps all samples)
+- `q_max_len`
+- `d_max_len`
 
 Important RL-related fields exposed by [`src/config.py`](src/config.py):
 

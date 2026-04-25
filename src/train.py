@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 def split_launcher_args(cli_args: list[str]) -> tuple[dict[str, str], list[str]]:
     base_flag_to_slot = {
         "--base-train": "train",
+        "--base-dataset": "dataset",
         "--base-model": "model",
         "--base-grpo": "grpo",
         "--base-reward": "reward",

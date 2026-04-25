@@ -27,6 +27,7 @@ from utils import (
 
 BASE_SLOT_TO_FLAG = {
     "train": "--base-train",
+    "dataset": "--base-dataset",
     "model": "--base-model",
     "grpo": "--base-grpo",
     "reward": "--base-reward",
@@ -53,7 +54,7 @@ def parse_args() -> tuple[argparse.Namespace, list[str]]:
         action="append",
         default=[],
         metavar="SLOT=PATH1,PATH2",
-        help="Grid over config slots. Supported slots: train, model, grpo, reward, eval.",
+        help="Grid over config slots. Supported slots: train, dataset, model, grpo, reward, eval.",
     )
     parser.add_argument(
         "--output-root",

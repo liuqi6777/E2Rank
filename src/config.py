@@ -28,6 +28,10 @@ class DataArguments:
     data_path: str = field(
         metadata={"help": "Path to the Stage II ranking dataset"}
     )
+    per_dataset_max_samples: Optional[int] = field(
+        default=None,
+        metadata={"help": "Maximum number of samples to keep from each source dataset. Use null to keep all samples."},
+    )
     q_max_len: int = field(
         default=512,
         metadata={"help": "Maximum token length for query inputs"},

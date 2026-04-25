@@ -18,6 +18,12 @@ TASK_PROMPTS = {
     "mmarco_chinese": "Given a Chinese web search query, retrieval the documents that answer the query",
     "cMedQAv2": "Given a Chinese medical question, retrieval the documents that answer the question",
     "miracl": "Given a question, retrieval Wikipedia documents that answer the question",
+    "allnli": "Given a premise, retrieve a hypothesis that is entailed by the premise",
+    "fever": "Given a claim, retrieve documents that support or refute the claim",
+    "eli5_question_answer": "Given a question, retrieval the answer that explains it",
+    "squad": "Given a question, retrieve a Wikipedia passage that answers the question",
+    "quora_duplicates": "Given a question, retrieve questions that are semantically equivalent to the given question",
+    "mrtydi": "Given a question, retrieval Wikipedia documents that answer the question",
 }
 
 DEFAULT_TASK_PROMPTS = "Given a query, retrieval the documents that are relevant to the query"
@@ -29,11 +35,10 @@ class RankingDataset(Dataset):
     def __init__(
         self,
         data_args: Any,
-        batch_size: int = 32,
-        per_dataset_max_samples: int = 10000,
+        batch_size: int | None = None,
     ):
-        self.batch_size = batch_size
-        self.per_dataset_max_samples = per_dataset_max_samples
+        self.batch_size = batch_size or 32
+        self.per_dataset_max_samples = data_args.per_dataset_max_samples
         self.samples: list[dict[str, Any]] = []
         self._load(data_args.data_path)
 
@@ -71,7 +76,11 @@ class RankingDataset(Dataset):
         ordered_batches = []
         for task_name, indices in sample_indices_by_task.items():
             random.shuffle(indices)
-            limited_indices = indices[: self.per_dataset_max_samples]
+            limited_indices = (
+                indices
+                if self.per_dataset_max_samples is None
+                else indices[: self.per_dataset_max_samples]
+            )
             for start in range(0, len(limited_indices), self.batch_size):
                 batch = limited_indices[start : start + self.batch_size]
                 if len(batch) == self.batch_size:
