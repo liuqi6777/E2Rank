@@ -4,7 +4,7 @@ import torch
 import torch.nn.functional as F
 
 
-SUPPORTED_REWARD_TYPES = {"ndcg", "ndcg_in_batch", "contrastive", "infonce", "mrr", "mixed"}
+SUPPORTED_REWARD_TYPES = {"ndcg", "ndcg_in_batch", "contrastive", "infonce", "mrr"}
 
 
 def build_relevance_labels(
@@ -181,6 +181,33 @@ def _append_in_batch_positive_negatives(
     )
 
 
+def _append_in_batch_candidate_negatives(
+    candidate_embeddings: torch.Tensor,
+    relevance_labels: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    batch_size, slate_length, embedding_dim = candidate_embeddings.shape
+    if batch_size <= 1:
+        return candidate_embeddings, relevance_labels
+
+    expanded_candidates = candidate_embeddings.unsqueeze(0).expand(batch_size, -1, -1, -1)
+    cross_batch_mask = ~torch.eye(batch_size, device=candidate_embeddings.device, dtype=torch.bool)
+    in_batch_negative_embeddings = expanded_candidates[cross_batch_mask].reshape(
+        batch_size,
+        (batch_size - 1) * slate_length,
+        embedding_dim,
+    )
+    in_batch_negative_labels = torch.zeros(
+        batch_size,
+        (batch_size - 1) * slate_length,
+        device=relevance_labels.device,
+        dtype=relevance_labels.dtype,
+    )
+    return (
+        torch.cat((candidate_embeddings, in_batch_negative_embeddings), dim=1),
+        torch.cat((relevance_labels, in_batch_negative_labels), dim=1),
+    )
+
+
 def compute_contrastive_reward(
     query_embeddings: torch.Tensor,
     candidate_embeddings: torch.Tensor,
@@ -228,10 +255,16 @@ def compute_ndcg_reward(
     relevance_labels: torch.Tensor,
     k: int = 10,
     use_in_batch_negatives: bool = False,
+    include_in_batch_negatives: bool = False,
 ) -> torch.Tensor:
     _validate_relevance_labels(relevance_labels, candidate_embeddings)
     if use_in_batch_negatives:
-        candidate_embeddings, relevance_labels = _append_in_batch_positive_negatives(
+        append_fn = (
+            _append_in_batch_candidate_negatives
+            if include_in_batch_negatives
+            else _append_in_batch_positive_negatives
+        )
+        candidate_embeddings, relevance_labels = append_fn(
             candidate_embeddings=candidate_embeddings,
             relevance_labels=relevance_labels,
         )
@@ -290,51 +323,13 @@ def compute_mrr_reward(
     return reciprocal_ranks.max(dim=-1).values
 
 
-def compute_mixed_reward(
-    query_embeddings: torch.Tensor,
-    candidate_embeddings: torch.Tensor,
-    relevance_labels: torch.Tensor,
-    k: int = 10,
-    contrastive_weight: float = 1.0,
-    ndcg_weight: float = 1.0,
-    contrastive_use_in_batch_negatives: bool = False,
-    contrastive_temperature: float = 0.03,
-) -> torch.Tensor:
-    if contrastive_weight == 0 and ndcg_weight == 0:
-        raise ValueError("At least one mixed reward weight must be non-zero")
-
-    reward = torch.zeros(
-        query_embeddings.size(0),
-        device=query_embeddings.device,
-        dtype=query_embeddings.dtype,
-    )
-    if contrastive_weight != 0:
-        reward = reward + contrastive_weight * compute_infonce_reward(
-            query_embeddings=query_embeddings,
-            candidate_embeddings=candidate_embeddings,
-            relevance_labels=relevance_labels,
-            use_in_batch_negatives=True,
-            temperature=contrastive_temperature,
-        )
-    if ndcg_weight != 0:
-        reward = reward + ndcg_weight * compute_ndcg_reward(
-            query_embeddings=query_embeddings,
-            candidate_embeddings=candidate_embeddings,
-            relevance_labels=relevance_labels,
-            k=k,
-            use_in_batch_negatives=True,
-        )
-    return reward
-
-
 def compute_reward(
     query_embeddings: torch.Tensor,
     candidate_embeddings: torch.Tensor,
     relevance_labels: torch.Tensor,
     reward_type: str = "ndcg",
     k: int = 10,
-    mixed_contrastive_weight: float = 1.0,
-    mixed_ndcg_weight: float = 1.0,
+    ndcg_in_batch_include_negatives: bool = False,
     contrastive_use_in_batch_negatives: bool = False,
     contrastive_temperature: float = 0.03,
     relevance_scheme: str = "graded",
@@ -359,6 +354,7 @@ def compute_reward(
             relevance_labels=relevance_labels,
             k=k,
             use_in_batch_negatives=True,
+            include_in_batch_negatives=ndcg_in_batch_include_negatives,
         )
     if reward_type == "contrastive":
         return compute_contrastive_reward(
@@ -384,16 +380,7 @@ def compute_reward(
             k=k,
             relevance_scheme=relevance_scheme,
         )
-    return compute_mixed_reward(
-        query_embeddings=query_embeddings,
-        candidate_embeddings=candidate_embeddings,
-        relevance_labels=relevance_labels,
-        k=k,
-        contrastive_weight=mixed_contrastive_weight,
-        ndcg_weight=mixed_ndcg_weight,
-        contrastive_use_in_batch_negatives=contrastive_use_in_batch_negatives,
-        contrastive_temperature=contrastive_temperature,
-    )
+    raise AssertionError(f"Unhandled reward type: {reward_type}")
 
 
 def _reward_uses_in_batch_negatives(
@@ -401,7 +388,7 @@ def _reward_uses_in_batch_negatives(
     contrastive_use_in_batch_negatives: bool = False,
 ) -> bool:
     reward_type = reward_type.lower()
-    if reward_type in {"ndcg_in_batch", "mixed"}:
+    if reward_type == "ndcg_in_batch":
         return True
     return reward_type in {"contrastive", "infonce"} and contrastive_use_in_batch_negatives
 
@@ -463,8 +450,7 @@ def compute_rollout_reward(
     relevance_labels: torch.Tensor,
     reward_type: str = "ndcg",
     k: int = 10,
-    mixed_contrastive_weight: float = 1.0,
-    mixed_ndcg_weight: float = 1.0,
+    ndcg_in_batch_include_negatives: bool = False,
     contrastive_use_in_batch_negatives: bool = False,
     contrastive_temperature: float = 0.03,
     relevance_scheme: str = "graded",
@@ -491,8 +477,7 @@ def compute_rollout_reward(
             relevance_labels=relevance_labels,
             reward_type=reward_type,
             k=k,
-            mixed_contrastive_weight=mixed_contrastive_weight,
-            mixed_ndcg_weight=mixed_ndcg_weight,
+            ndcg_in_batch_include_negatives=ndcg_in_batch_include_negatives,
             contrastive_use_in_batch_negatives=contrastive_use_in_batch_negatives,
             contrastive_temperature=contrastive_temperature,
             relevance_scheme=relevance_scheme,
@@ -533,8 +518,7 @@ def compute_rollout_reward(
                     relevance_labels=relevance_labels,
                     reward_type=reward_type,
                     k=k,
-                    mixed_contrastive_weight=mixed_contrastive_weight,
-                    mixed_ndcg_weight=mixed_ndcg_weight,
+                    ndcg_in_batch_include_negatives=ndcg_in_batch_include_negatives,
                     contrastive_use_in_batch_negatives=contrastive_use_in_batch_negatives,
                     contrastive_temperature=contrastive_temperature,
                     relevance_scheme=relevance_scheme,
@@ -560,8 +544,7 @@ def compute_rollout_reward(
         relevance_labels=flat_relevance_labels,
         reward_type=reward_type,
         k=k,
-        mixed_contrastive_weight=mixed_contrastive_weight,
-        mixed_ndcg_weight=mixed_ndcg_weight,
+        ndcg_in_batch_include_negatives=ndcg_in_batch_include_negatives,
         contrastive_use_in_batch_negatives=contrastive_use_in_batch_negatives,
         contrastive_temperature=contrastive_temperature,
         relevance_scheme=relevance_scheme,

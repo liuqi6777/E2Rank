@@ -1,7 +1,5 @@
 reward_type: infonce
 reward_ndcg_k: 16
-mixed_contrastive_weight: 1.0
-mixed_ndcg_weight: 1.0
 contrastive_use_in_batch_negatives: false
 contrastive_temperature: 0.03
 relevance_scheme: graded

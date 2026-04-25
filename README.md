@@ -168,8 +168,7 @@ Important RL-related fields exposed by [`src/config.py`](src/config.py):
 - `perturb_negatives`
 - `reward_type`
 - `reward_ndcg_k`
-- `mixed_contrastive_weight`
-- `mixed_ndcg_weight`
+- `ndcg_in_batch_include_negatives`
 - `contrastive_use_in_batch_negatives`
 - `contrastive_temperature`
 - `advantage_norm`
@@ -179,7 +178,6 @@ Supported reward presets in [`configs/reward/`](configs/reward):
 
 - `ndcg.yaml`
 - `ndcg_in_batch.yaml`
-- `mixed.yaml`
 - `contrastive_in_batch.yaml`
 - `contrastive_no_in_batch.yaml`
 - `infonce_in_batch.yaml`
@@ -189,10 +187,9 @@ Supported reward presets in [`configs/reward/`](configs/reward):
 Contrastive-style rewards now follow the paper appendix:
 
 - `ndcg`: per-query slate nDCG only, kept as the backward-compatible no-in-batch option
-- `ndcg_in_batch`: append positives from other samples in the batch as extra zero-relevance candidates
+- `ndcg_in_batch`: append positives from other samples in the batch as extra zero-relevance candidates; set `ndcg_in_batch_include_negatives: true` to append all candidates from other samples
 - `contrastive`: `s+ - tau * logsumexp(s- / tau)` over negatives only
 - `infonce`: `s+ - tau * logsumexp([s+, s-] / tau)` over the full partition
-- `mixed`: `infonce_in_batch + ndcg_in_batch` by default
 - `mrr`: under `graded` relevance, only labels with `relevance >= 2` count as relevant; under `binary`, the threshold remains `relevance > 0`
 
 Example:

@@ -120,19 +120,15 @@ class RLArguments:
     )
     reward_type: str = field(
         default="ndcg",
-        metadata={"help": "Reward type: ndcg, ndcg_in_batch, contrastive, infonce, mrr, or mixed"},
+        metadata={"help": "Reward type: ndcg, ndcg_in_batch, contrastive, infonce, or mrr"},
     )
     reward_ndcg_k: int = field(
         default=10,
         metadata={"help": "Ranking cutoff used by the nDCG/MRR reward component"},
     )
-    mixed_contrastive_weight: float = field(
-        default=1.0,
-        metadata={"help": "InfoNCE-in-batch reward weight when reward_type=mixed"},
-    )
-    mixed_ndcg_weight: float = field(
-        default=1.0,
-        metadata={"help": "nDCG-in-batch reward weight when reward_type=mixed"},
+    ndcg_in_batch_include_negatives: bool = field(
+        default=False,
+        metadata={"help": "Append all candidates from other samples, not only positives, for ndcg_in_batch"},
     )
     contrastive_use_in_batch_negatives: bool = field(
         default=False,

@@ -66,8 +66,7 @@ class GRPO(nn.Module):
         perturb_negatives: bool = True,
         reward_type: str = "ndcg",
         reward_ndcg_k: int = 10,
-        mixed_contrastive_weight: float = 1.0,
-        mixed_ndcg_weight: float = 1.0,
+        ndcg_in_batch_include_negatives: bool = False,
         contrastive_use_in_batch_negatives: bool = False,
         contrastive_temperature: float = 0.03,
         advantage_norm: bool = True,
@@ -98,8 +97,7 @@ class GRPO(nn.Module):
         self.perturb_negatives = perturb_negatives
         self.reward_type = reward_type
         self.reward_ndcg_k = reward_ndcg_k
-        self.mixed_contrastive_weight = mixed_contrastive_weight
-        self.mixed_ndcg_weight = mixed_ndcg_weight
+        self.ndcg_in_batch_include_negatives = ndcg_in_batch_include_negatives
         self.contrastive_use_in_batch_negatives = contrastive_use_in_batch_negatives
         self.contrastive_temperature = contrastive_temperature
         self.advantage_norm = advantage_norm
@@ -143,8 +141,7 @@ class GRPO(nn.Module):
             relevance_labels=relevance_labels,
             reward_type=self.reward_type,
             k=self.reward_ndcg_k,
-            mixed_contrastive_weight=self.mixed_contrastive_weight,
-            mixed_ndcg_weight=self.mixed_ndcg_weight,
+            ndcg_in_batch_include_negatives=self.ndcg_in_batch_include_negatives,
             contrastive_use_in_batch_negatives=self.contrastive_use_in_batch_negatives,
             contrastive_temperature=self.contrastive_temperature,
             relevance_scheme=self.relevance_scheme,
@@ -435,8 +432,7 @@ class GRPOModel(nn.Module):
             perturb_negatives=rl_args.perturb_negatives,
             reward_type=rl_args.reward_type,
             reward_ndcg_k=rl_args.reward_ndcg_k,
-            mixed_contrastive_weight=rl_args.mixed_contrastive_weight,
-            mixed_ndcg_weight=rl_args.mixed_ndcg_weight,
+            ndcg_in_batch_include_negatives=rl_args.ndcg_in_batch_include_negatives,
             contrastive_use_in_batch_negatives=rl_args.contrastive_use_in_batch_negatives,
             contrastive_temperature=rl_args.contrastive_temperature,
             advantage_norm=rl_args.advantage_norm,
