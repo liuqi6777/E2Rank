@@ -104,7 +104,7 @@ class LoraArguments:
 class RLArguments:
     grpo_mode: str = field(
         default="query_only",
-        metadata={"help": "GRPO sampling mode: query_only, diagonal, grid, or factorized"},
+        metadata={"help": "GRPO sampling mode: query_only, grid, or factorized"},
     )
     group_size: int = field(
         default=8,
@@ -117,10 +117,6 @@ class RLArguments:
     sigma_learnable: bool = field(
         default=False,
         metadata={"help": "Learn a global sigma scalar for GRPO"},
-    )
-    perturb_negatives: bool = field(
-        default=True,
-        metadata={"help": "Perturb negative documents in joint GRPO modes"},
     )
     reward_type: str = field(
         default="ndcg",

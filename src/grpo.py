@@ -17,7 +17,7 @@ from rewards import (
 )
 
 
-SUPPORTED_GRPO_MODES = {"query_only", "diagonal", "grid", "factorized"}
+SUPPORTED_GRPO_MODES = {"query_only", "grid", "factorized"}
 
 
 def pool_last_token_embedding(
@@ -63,7 +63,6 @@ class GRPO(nn.Module):
         group_size: int = 8,
         sigma: float = 0.05,
         sigma_learnable: bool = False,
-        perturb_negatives: bool = True,
         reward_type: str = "ndcg",
         reward_ndcg_k: int = 10,
         ndcg_in_batch_include_negatives: bool = False,
@@ -94,7 +93,6 @@ class GRPO(nn.Module):
 
         self.grpo_mode = grpo_mode
         self.group_size = group_size
-        self.perturb_negatives = perturb_negatives
         self.reward_type = reward_type
         self.reward_ndcg_k = reward_ndcg_k
         self.ndcg_in_batch_include_negatives = ndcg_in_batch_include_negatives
@@ -164,29 +162,6 @@ class GRPO(nn.Module):
             dim=-1,
         )
 
-    def _build_document_perturb_mask(
-        self,
-        relevance_labels: torch.Tensor,
-        slate_length: int,
-    ) -> torch.Tensor:
-        if self.perturb_negatives:
-            return torch.ones(
-                relevance_labels.size(0),
-                slate_length,
-                device=relevance_labels.device,
-                dtype=torch.bool,
-            )
-
-        positive_indices = relevance_labels.argmax(dim=-1, keepdim=True)
-        perturb_mask = torch.zeros(
-            relevance_labels.size(0),
-            slate_length,
-            device=relevance_labels.device,
-            dtype=torch.bool,
-        )
-        perturb_mask.scatter_(dim=1, index=positive_indices, value=True)
-        return perturb_mask
-
     @staticmethod
     def _build_positive_document_mask(
         relevance_labels: torch.Tensor,
@@ -206,7 +181,6 @@ class GRPO(nn.Module):
         self,
         rollout_document_embeddings: torch.Tensor,
         sigma: torch.Tensor,
-        perturb_mask: torch.Tensor,
     ) -> torch.Tensor:
         noise = torch.randn(
             rollout_document_embeddings.size(0),
@@ -217,15 +191,9 @@ class GRPO(nn.Module):
             dtype=rollout_document_embeddings.dtype,
         )
         base_document_embeddings = rollout_document_embeddings.detach().unsqueeze(1)
-        sampled_document_embeddings = F.normalize(
+        return F.normalize(
             base_document_embeddings + sigma.detach() * noise,
             dim=-1,
-        )
-        stable_document_embeddings = base_document_embeddings.expand_as(sampled_document_embeddings)
-        return torch.where(
-            perturb_mask.unsqueeze(1).unsqueeze(-1),
-            sampled_document_embeddings,
-            stable_document_embeddings,
         )
 
     @staticmethod
@@ -242,15 +210,18 @@ class GRPO(nn.Module):
         policy_document_embeddings: torch.Tensor,
         sampled_document_embeddings: torch.Tensor,
         sigma: torch.Tensor,
-        perturb_mask: torch.Tensor,
+        document_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         squared_distance = (
             sampled_document_embeddings.detach() - policy_document_embeddings.unsqueeze(1)
         ).pow(2).sum(dim=-1)
         log_prob = -0.5 * squared_distance / sigma.pow(2) - policy_document_embeddings.size(-1) * torch.log(sigma)
-        mask = perturb_mask.unsqueeze(1).to(dtype=log_prob.dtype)
-        num_perturbed = mask.sum(dim=-1).clamp_min(1.0)
-        return (log_prob * mask).sum(dim=-1) / num_perturbed
+        if document_mask is None:
+            return log_prob.mean(dim=-1)
+
+        mask = document_mask.unsqueeze(1).to(dtype=log_prob.dtype)
+        num_documents = mask.sum(dim=-1).clamp_min(1.0)
+        return (log_prob * mask).sum(dim=-1) / num_documents
 
     def _compute_query_only_loss(
         self,
@@ -274,36 +245,6 @@ class GRPO(nn.Module):
         loss = -(advantages.detach() * log_prob).mean()
         return loss, rewards, advantages
 
-    def _compute_diagonal_loss(
-        self,
-        policy_embeddings: torch.Tensor,
-        policy_document_embeddings: torch.Tensor,
-        sampled_query_embeddings: torch.Tensor,
-        sampled_document_embeddings: torch.Tensor,
-        relevance_labels: torch.Tensor,
-        sigma: torch.Tensor,
-        perturb_mask: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        rewards = self._compute_rewards(
-            query_embeddings=sampled_query_embeddings,
-            candidate_embeddings=sampled_document_embeddings,
-            relevance_labels=relevance_labels,
-        )
-        advantages = self._compute_advantages(rewards, sample_dims=(1,))
-        query_log_prob = self._gaussian_log_prob(
-            policy_embeddings=policy_embeddings,
-            sampled_embeddings=sampled_query_embeddings,
-            sigma=sigma,
-        )
-        document_log_prob = self._document_gaussian_log_prob(
-            policy_document_embeddings=policy_document_embeddings,
-            sampled_document_embeddings=sampled_document_embeddings,
-            sigma=sigma,
-            perturb_mask=perturb_mask,
-        )
-        loss = -(advantages.detach() * (query_log_prob + document_log_prob)).mean()
-        return loss, rewards, advantages
-
     def _compute_grid_loss(
         self,
         policy_embeddings: torch.Tensor,
@@ -312,7 +253,6 @@ class GRPO(nn.Module):
         sampled_document_embeddings: torch.Tensor,
         relevance_labels: torch.Tensor,
         sigma: torch.Tensor,
-        perturb_mask: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         batch_size, group_size = sampled_query_embeddings.shape[:2]
         query_grid = sampled_query_embeddings.unsqueeze(2).expand(
@@ -345,7 +285,6 @@ class GRPO(nn.Module):
             policy_document_embeddings=policy_document_embeddings,
             sampled_document_embeddings=sampled_document_embeddings,
             sigma=sigma,
-            perturb_mask=perturb_mask,
         )
         query_loss = -(query_advantages.detach() * query_log_prob).mean()
         document_loss = -(document_advantages.detach() * document_log_prob).mean()
@@ -411,13 +350,13 @@ class GRPO(nn.Module):
             policy_document_embeddings=policy_document_embeddings,
             sampled_document_embeddings=sampled_positive_document_embeddings,
             sigma=sigma,
-            perturb_mask=positive_mask,
+            document_mask=positive_mask,
         )
         negative_log_prob = self._document_gaussian_log_prob(
             policy_document_embeddings=policy_document_embeddings,
             sampled_document_embeddings=sampled_negative_document_embeddings,
             sigma=sigma,
-            perturb_mask=negative_mask,
+            document_mask=negative_mask,
         )
         query_loss = -(query_advantages.detach() * query_log_prob).mean()
         positive_loss = -(positive_advantages.detach() * positive_log_prob).mean()
@@ -474,16 +413,14 @@ class GRPO(nn.Module):
                     relevance_labels=relevance_labels,
                     slate_length=document_embeddings.size(1),
                 )
-                negative_mask = ~positive_mask if self.perturb_negatives else torch.zeros_like(positive_mask)
+                negative_mask = ~positive_mask
                 sampled_positive_document_embeddings = self._sample_document_embeddings(
                     rollout_document_embeddings=document_embeddings,
                     sigma=sigma,
-                    perturb_mask=positive_mask,
                 )
                 sampled_negative_document_embeddings = self._sample_document_embeddings(
                     rollout_document_embeddings=document_embeddings,
                     sigma=sigma,
-                    perturb_mask=negative_mask,
                 )
                 loss, rewards, advantages = self._compute_factorized_loss(
                     policy_embeddings=policy_embeddings,
@@ -497,35 +434,18 @@ class GRPO(nn.Module):
                     negative_mask=negative_mask,
                 )
             else:
-                perturb_mask = self._build_document_perturb_mask(
-                    relevance_labels=relevance_labels,
-                    slate_length=document_embeddings.size(1),
-                )
                 sampled_document_embeddings = self._sample_document_embeddings(
                     rollout_document_embeddings=document_embeddings,
                     sigma=sigma,
-                    perturb_mask=perturb_mask,
                 )
-                if self.grpo_mode == "diagonal":
-                    loss, rewards, advantages = self._compute_diagonal_loss(
-                        policy_embeddings=policy_embeddings,
-                        policy_document_embeddings=policy_document_embeddings,
-                        sampled_query_embeddings=sampled_query_embeddings,
-                        sampled_document_embeddings=sampled_document_embeddings,
-                        relevance_labels=relevance_labels,
-                        sigma=sigma,
-                        perturb_mask=perturb_mask,
-                    )
-                else:
-                    loss, rewards, advantages = self._compute_grid_loss(
-                        policy_embeddings=policy_embeddings,
-                        policy_document_embeddings=policy_document_embeddings,
-                        sampled_query_embeddings=sampled_query_embeddings,
-                        sampled_document_embeddings=sampled_document_embeddings,
-                        relevance_labels=relevance_labels,
-                        sigma=sigma,
-                        perturb_mask=perturb_mask,
-                    )
+                loss, rewards, advantages = self._compute_grid_loss(
+                    policy_embeddings=policy_embeddings,
+                    policy_document_embeddings=policy_document_embeddings,
+                    sampled_query_embeddings=sampled_query_embeddings,
+                    sampled_document_embeddings=sampled_document_embeddings,
+                    relevance_labels=relevance_labels,
+                    sigma=sigma,
+                )
 
         reward_stats = self.summarize_tensor(rewards, prefix="reward")
         advantage_stats = self.summarize_tensor(advantages, prefix="advantages")
@@ -546,7 +466,6 @@ class GRPOModel(nn.Module):
             group_size=rl_args.group_size,
             sigma=rl_args.sigma,
             sigma_learnable=rl_args.sigma_learnable,
-            perturb_negatives=rl_args.perturb_negatives,
             reward_type=rl_args.reward_type,
             reward_ndcg_k=rl_args.reward_ndcg_k,
             ndcg_in_batch_include_negatives=rl_args.ndcg_in_batch_include_negatives,
