@@ -12,6 +12,7 @@ logging_steps: 1
 save_strategy: steps
 save_steps: 200
 overwrite_output_dir: true
+remove_unused_column: false
 report_to: wandb
 
 lora_enabled: true
