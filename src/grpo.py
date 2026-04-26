@@ -597,13 +597,17 @@ class GRPOModel(nn.Module):
             rollout_query_embeddings = rollout_query_embeddings.detach()
             policy_query_embeddings = None
 
-        combined_document_inputs = {
-            key: torch.cat((positive_document[key], negative_document[key]), dim=0)
-            for key in positive_document
-        }
+        num_negatives = slate_length - 1
+        document_inputs = {}
+        for key in positive_document:
+            positive_value = positive_document[key]
+            negative_value = negative_document[key].reshape(batch_size, num_negatives, -1)
+            slate_value = torch.cat((positive_value.unsqueeze(1), negative_value), dim=1)
+            document_inputs[key] = slate_value.reshape(batch_size * slate_length, -1)
+
         sample_document = self.grpo.sample_positive or self.grpo.sample_negative
         if sample_document:
-            encoded_document_embeddings = self.encode(combined_document_inputs)
+            encoded_document_embeddings = self.encode(document_inputs)
             policy_document_embeddings = encoded_document_embeddings.reshape(batch_size, slate_length, -1)
             rollout_document_embeddings = policy_document_embeddings.detach()
             policy_positive_document_embeddings = (
@@ -614,7 +618,7 @@ class GRPOModel(nn.Module):
             )
         else:
             with torch.no_grad():
-                encoded_document_embeddings = self.encode(combined_document_inputs)
+                encoded_document_embeddings = self.encode(document_inputs)
             rollout_document_embeddings = encoded_document_embeddings.detach().reshape(batch_size, slate_length, -1)
             policy_positive_document_embeddings = None
             policy_negative_document_embeddings = None
