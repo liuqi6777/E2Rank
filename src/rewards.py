@@ -461,6 +461,170 @@ def _expand_rollout_candidates(
     return candidate_embeddings
 
 
+def _compute_scores_rollout(
+    query_embeddings: torch.Tensor,
+    candidate_embeddings: torch.Tensor,
+) -> torch.Tensor:
+    normalized_queries = F.normalize(query_embeddings, dim=-1)
+    normalized_candidates = F.normalize(candidate_embeddings, dim=-1)
+    return torch.einsum("brkd,brd->brk", normalized_candidates, normalized_queries)
+
+
+def _append_in_batch_positive_negatives_rollout(
+    candidate_embeddings: torch.Tensor,
+    relevance_labels: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    batch_size, rollout_count, _, embedding_dim = candidate_embeddings.shape
+    if batch_size <= 1:
+        return candidate_embeddings, relevance_labels
+
+    positive_indices = relevance_labels.argmax(dim=-1)
+    arange_b = torch.arange(batch_size, device=candidate_embeddings.device)
+    positive_embeddings = candidate_embeddings[arange_b, :, positive_indices]
+    expanded_positive_embeddings = positive_embeddings.unsqueeze(0).expand(
+        batch_size, batch_size, rollout_count, embedding_dim
+    )
+    cross_batch_mask = ~torch.eye(batch_size, device=candidate_embeddings.device, dtype=torch.bool)
+    in_batch_negative_embeddings = expanded_positive_embeddings[cross_batch_mask].reshape(
+        batch_size, batch_size - 1, rollout_count, embedding_dim
+    ).permute(0, 2, 1, 3).contiguous()
+    in_batch_negative_labels = torch.zeros(
+        batch_size,
+        batch_size - 1,
+        device=relevance_labels.device,
+        dtype=relevance_labels.dtype,
+    )
+    return (
+        torch.cat((candidate_embeddings, in_batch_negative_embeddings), dim=2),
+        torch.cat((relevance_labels, in_batch_negative_labels), dim=1),
+    )
+
+
+def _append_in_batch_candidate_negatives_rollout(
+    candidate_embeddings: torch.Tensor,
+    relevance_labels: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    batch_size, rollout_count, slate_length, embedding_dim = candidate_embeddings.shape
+    if batch_size <= 1:
+        return candidate_embeddings, relevance_labels
+
+    expanded_candidates = candidate_embeddings.unsqueeze(0).expand(
+        batch_size, batch_size, rollout_count, slate_length, embedding_dim
+    )
+    cross_batch_mask = ~torch.eye(batch_size, device=candidate_embeddings.device, dtype=torch.bool)
+    in_batch_negative_embeddings = expanded_candidates[cross_batch_mask].reshape(
+        batch_size, batch_size - 1, rollout_count, slate_length, embedding_dim
+    ).permute(0, 2, 1, 3, 4).reshape(
+        batch_size, rollout_count, (batch_size - 1) * slate_length, embedding_dim
+    )
+    in_batch_negative_labels = torch.zeros(
+        batch_size,
+        (batch_size - 1) * slate_length,
+        device=relevance_labels.device,
+        dtype=relevance_labels.dtype,
+    )
+    return (
+        torch.cat((candidate_embeddings, in_batch_negative_embeddings), dim=2),
+        torch.cat((relevance_labels, in_batch_negative_labels), dim=1),
+    )
+
+
+def _compute_ndcg_reward_rollout(
+    query_embeddings: torch.Tensor,
+    candidate_embeddings: torch.Tensor,
+    relevance_labels: torch.Tensor,
+    k: int,
+) -> torch.Tensor:
+    batch_size, rollout_count, slate_length, _ = candidate_embeddings.shape
+    cutoff = min(k, slate_length)
+    if cutoff <= 0:
+        return torch.zeros(
+            batch_size, rollout_count, device=query_embeddings.device, dtype=query_embeddings.dtype
+        )
+
+    scores = _compute_scores_rollout(query_embeddings, candidate_embeddings)
+    topk_indices = scores.topk(k=cutoff, dim=-1).indices
+    expanded_labels = relevance_labels.unsqueeze(1).expand(batch_size, rollout_count, slate_length)
+    topk_relevance = expanded_labels.gather(dim=-1, index=topk_indices)
+
+    discounts = 1.0 / torch.log2(
+        torch.arange(2, cutoff + 2, device=query_embeddings.device, dtype=query_embeddings.dtype)
+    )
+    dcg = (((2.0 ** topk_relevance) - 1.0) * discounts).sum(dim=-1)
+
+    ideal_relevance = expanded_labels.topk(k=cutoff, dim=-1).values
+    idcg = (((2.0 ** ideal_relevance) - 1.0) * discounts).sum(dim=-1)
+    return torch.where(idcg > 0, dcg / idcg, torch.zeros_like(dcg))
+
+
+def _gather_positive_and_negative_scores_rollout(
+    query_embeddings: torch.Tensor,
+    candidate_embeddings: torch.Tensor,
+    relevance_labels: torch.Tensor,
+    use_in_batch_negatives: bool,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    batch_size, _, slate_length, _ = candidate_embeddings.shape
+    scores = _compute_scores_rollout(query_embeddings, candidate_embeddings)
+
+    positive_indices = relevance_labels.argmax(dim=-1)
+    arange_b = torch.arange(batch_size, device=candidate_embeddings.device)
+    positive_scores = scores[arange_b, :, positive_indices]
+
+    positive_one_hot = F.one_hot(positive_indices, num_classes=slate_length).bool()
+    negative_scores = scores.masked_fill(positive_one_hot.unsqueeze(1), float("-inf"))
+    all_negative_scores = [negative_scores]
+
+    if use_in_batch_negatives and batch_size > 1:
+        normalized_candidates = F.normalize(candidate_embeddings, dim=-1)
+        positive_embeddings = normalized_candidates[arange_b, :, positive_indices]
+        normalized_queries = F.normalize(query_embeddings, dim=-1)
+        in_batch_scores = torch.einsum("brd,crd->brc", normalized_queries, positive_embeddings)
+        eye_mask = torch.eye(batch_size, device=candidate_embeddings.device, dtype=torch.bool)
+        in_batch_scores = in_batch_scores.masked_fill(eye_mask.unsqueeze(1), float("-inf"))
+        all_negative_scores.append(in_batch_scores)
+
+    return positive_scores, torch.cat(all_negative_scores, dim=-1)
+
+
+def _compute_contrastive_reward_rollout(
+    query_embeddings: torch.Tensor,
+    candidate_embeddings: torch.Tensor,
+    relevance_labels: torch.Tensor,
+    use_in_batch_negatives: bool,
+    temperature: float,
+) -> torch.Tensor:
+    positive_scores, negative_scores = _gather_positive_and_negative_scores_rollout(
+        query_embeddings=query_embeddings,
+        candidate_embeddings=candidate_embeddings,
+        relevance_labels=relevance_labels,
+        use_in_batch_negatives=use_in_batch_negatives,
+    )
+    return positive_scores - _temperature_scaled_logsumexp(
+        negative_scores,
+        temperature=temperature,
+    )
+
+
+def _compute_infonce_reward_rollout(
+    query_embeddings: torch.Tensor,
+    candidate_embeddings: torch.Tensor,
+    relevance_labels: torch.Tensor,
+    use_in_batch_negatives: bool,
+    temperature: float,
+) -> torch.Tensor:
+    positive_scores, negative_scores = _gather_positive_and_negative_scores_rollout(
+        query_embeddings=query_embeddings,
+        candidate_embeddings=candidate_embeddings,
+        relevance_labels=relevance_labels,
+        use_in_batch_negatives=use_in_batch_negatives,
+    )
+    partition_scores = torch.cat((positive_scores.unsqueeze(-1), negative_scores), dim=-1)
+    return positive_scores - _temperature_scaled_logsumexp(
+        partition_scores,
+        temperature=temperature,
+    )
+
+
 def compute_rollout_reward(
     query_embeddings: torch.Tensor,
     candidate_embeddings: torch.Tensor,
@@ -526,22 +690,43 @@ def compute_rollout_reward(
             candidate_embeddings.size(-2),
             candidate_embeddings.size(-1),
         )
-        rewards = []
-        for rollout_idx in range(rollout_count):
-            rewards.append(
-                compute_reward(
-                    query_embeddings=query_by_rollout[:, rollout_idx],
-                    candidate_embeddings=candidate_by_rollout[:, rollout_idx],
-                    relevance_labels=relevance_labels,
-                    reward_type=reward_type,
-                    k=k,
-                    ndcg_in_batch_include_negatives=ndcg_in_batch_include_negatives,
-                    contrastive_use_in_batch_negatives=contrastive_use_in_batch_negatives,
-                    contrastive_temperature=contrastive_temperature,
-                    relevance_scheme=relevance_scheme,
-                )
+        if reward_type == "ndcg_in_batch":
+            append_fn = (
+                _append_in_batch_candidate_negatives_rollout
+                if ndcg_in_batch_include_negatives
+                else _append_in_batch_positive_negatives_rollout
             )
-        return torch.stack(rewards, dim=1).reshape(batch_size, *rollout_shape)
+            augmented_candidates, augmented_labels = append_fn(
+                candidate_embeddings=candidate_by_rollout,
+                relevance_labels=relevance_labels,
+            )
+            rewards = _compute_ndcg_reward_rollout(
+                query_embeddings=query_by_rollout,
+                candidate_embeddings=augmented_candidates,
+                relevance_labels=augmented_labels,
+                k=k,
+            )
+        elif reward_type == "contrastive":
+            rewards = _compute_contrastive_reward_rollout(
+                query_embeddings=query_by_rollout,
+                candidate_embeddings=candidate_by_rollout,
+                relevance_labels=relevance_labels,
+                use_in_batch_negatives=contrastive_use_in_batch_negatives,
+                temperature=contrastive_temperature,
+            )
+        elif reward_type == "infonce":
+            rewards = _compute_infonce_reward_rollout(
+                query_embeddings=query_by_rollout,
+                candidate_embeddings=candidate_by_rollout,
+                relevance_labels=relevance_labels,
+                use_in_batch_negatives=contrastive_use_in_batch_negatives,
+                temperature=contrastive_temperature,
+            )
+        else:
+            raise AssertionError(
+                f"Unhandled in-batch reward type in vectorized path: {reward_type}"
+            )
+        return rewards.reshape(batch_size, *rollout_shape)
 
     expanded_labels = relevance_labels.reshape(
         batch_size,
