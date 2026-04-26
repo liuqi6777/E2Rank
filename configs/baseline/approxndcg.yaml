@@ -1,4 +1,3 @@
 baseline_type: approxndcg
-relevance_scheme: graded
 baseline_ndcg_k: 16
 approxndcg_alpha: 10.0

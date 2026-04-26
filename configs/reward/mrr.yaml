@@ -1,3 +1,2 @@
 reward_type: mrr
 reward_ndcg_k: 16
-relevance_scheme: graded

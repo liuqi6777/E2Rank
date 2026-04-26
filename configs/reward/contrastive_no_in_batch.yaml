@@ -2,4 +2,3 @@ reward_type: contrastive
 reward_ndcg_k: 16
 contrastive_use_in_batch_negatives: false
 contrastive_temperature: 0.03
-relevance_scheme: graded

@@ -188,6 +188,7 @@ def main() -> None:
         tokenizer=tokenizer,
         query_max_length=data_args.q_max_len,
         doc_max_length=data_args.d_max_len,
+        relevance_scheme=data_args.relevance_scheme,
     )
 
     trainer = GRPOTrainer(

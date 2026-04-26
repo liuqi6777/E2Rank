@@ -5,6 +5,22 @@ import torch
 from baselines.losses import _compute_discounts, _compute_gains, _compute_idcg, _resolve_cutoff
 
 
+def _resolve_relevant_mask(
+    ranked_relevance: torch.Tensor,
+    relevance_labels: torch.Tensor,
+    relevance_scheme: str | None = None,
+) -> torch.Tensor:
+    if relevance_scheme is not None and relevance_scheme not in {"graded", "binary"}:
+        raise ValueError(f"Unsupported relevance scheme: {relevance_scheme}")
+
+    use_graded_threshold = (
+        relevance_scheme == "graded"
+        if relevance_scheme is not None
+        else bool((relevance_labels > 1).any().item())
+    )
+    return ranked_relevance >= 2.0 if use_graded_threshold else ranked_relevance > 0.0
+
+
 def compute_ndcg_at_k(
     scores: torch.Tensor,
     relevance_labels: torch.Tensor,
@@ -30,19 +46,19 @@ def compute_mrr_at_k(
     scores: torch.Tensor,
     relevance_labels: torch.Tensor,
     k: int | None = None,
-    relevance_scheme: str = "graded",
+    relevance_scheme: str | None = None,
 ) -> torch.Tensor:
-    if relevance_scheme not in {"graded", "binary"}:
-        raise ValueError(f"Unsupported relevance scheme: {relevance_scheme}")
-
     cutoff = _resolve_cutoff(k, scores.size(1))
     if cutoff <= 0:
         return torch.zeros(scores.size(0), device=scores.device, dtype=scores.dtype)
 
     ranked_indices = scores.topk(k=cutoff, dim=-1).indices
     ranked_relevance = relevance_labels.gather(dim=1, index=ranked_indices)
-    relevant_threshold = 2.0 if relevance_scheme == "graded" else 0.0
-    relevant_mask = ranked_relevance >= relevant_threshold if relevance_scheme == "graded" else ranked_relevance > relevant_threshold
+    relevant_mask = _resolve_relevant_mask(
+        ranked_relevance=ranked_relevance,
+        relevance_labels=relevance_labels,
+        relevance_scheme=relevance_scheme,
+    )
     reciprocal_ranks = relevant_mask.to(scores.dtype) / torch.arange(
         1,
         cutoff + 1,

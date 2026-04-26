@@ -1,6 +1,0 @@
-grpo_mode: diagonal
-group_size: 8
-sigma: 0.05
-sigma_learnable: false
-perturb_negatives: true
-advantage_norm: true

@@ -7,6 +7,22 @@ import torch.nn.functional as F
 SUPPORTED_REWARD_TYPES = {"ndcg", "ndcg_in_batch", "contrastive", "infonce", "mrr"}
 
 
+def _resolve_relevant_mask(
+    ranked_relevance: torch.Tensor,
+    relevance_labels: torch.Tensor,
+    relevance_scheme: str | None = None,
+) -> torch.Tensor:
+    if relevance_scheme is not None and relevance_scheme not in {"graded", "binary"}:
+        raise ValueError(f"Unsupported relevance scheme: {relevance_scheme}")
+
+    use_graded_threshold = (
+        relevance_scheme == "graded"
+        if relevance_scheme is not None
+        else bool((relevance_labels > 1).any().item())
+    )
+    return ranked_relevance >= 2.0 if use_graded_threshold else ranked_relevance > 0.0
+
+
 def build_relevance_labels(
     ranking: torch.Tensor,
     scheme: str = "graded",
@@ -295,11 +311,9 @@ def compute_mrr_reward(
     candidate_embeddings: torch.Tensor,
     relevance_labels: torch.Tensor,
     k: int | None = None,
-    relevance_scheme: str = "graded",
+    relevance_scheme: str | None = None,
 ) -> torch.Tensor:
     _validate_relevance_labels(relevance_labels, candidate_embeddings)
-    if relevance_scheme not in {"graded", "binary"}:
-        raise ValueError(f"Unsupported relevance scheme: {relevance_scheme}")
 
     cutoff = candidate_embeddings.size(1) if k is None else min(k, candidate_embeddings.size(1))
     if cutoff <= 0:
@@ -311,8 +325,11 @@ def compute_mrr_reward(
     )
     ranked_indices = scores.topk(k=cutoff, dim=-1).indices
     ranked_relevance = relevance_labels.gather(dim=1, index=ranked_indices)
-    relevant_threshold = 2.0 if relevance_scheme == "graded" else 0.0
-    relevant_mask = ranked_relevance >= relevant_threshold if relevance_scheme == "graded" else ranked_relevance > relevant_threshold
+    relevant_mask = _resolve_relevant_mask(
+        ranked_relevance=ranked_relevance,
+        relevance_labels=relevance_labels,
+        relevance_scheme=relevance_scheme,
+    )
 
     reciprocal_ranks = relevant_mask.to(query_embeddings.dtype) / torch.arange(
         1,
@@ -332,7 +349,7 @@ def compute_reward(
     ndcg_in_batch_include_negatives: bool = False,
     contrastive_use_in_batch_negatives: bool = False,
     contrastive_temperature: float = 0.03,
-    relevance_scheme: str = "graded",
+    relevance_scheme: str | None = None,
 ) -> torch.Tensor:
     reward_type = reward_type.lower()
     if reward_type not in SUPPORTED_REWARD_TYPES:
@@ -453,7 +470,7 @@ def compute_rollout_reward(
     ndcg_in_batch_include_negatives: bool = False,
     contrastive_use_in_batch_negatives: bool = False,
     contrastive_temperature: float = 0.03,
-    relevance_scheme: str = "graded",
+    relevance_scheme: str | None = None,
 ) -> torch.Tensor:
     if query_embeddings.dim() < 2:
         raise ValueError(

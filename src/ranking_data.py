@@ -7,6 +7,8 @@ import torch
 import transformers
 from torch.utils.data import Dataset
 
+from rewards import build_relevance_labels
+
 
 TASK_PROMPTS = {
     "msmarco": "Given a web search query, retrieval the documents that answer the query",
@@ -100,11 +102,15 @@ class RankingDataCollator:
         tokenizer: transformers.PreTrainedTokenizer,
         query_max_length: int = 512,
         doc_max_length: int = 1024,
+        relevance_scheme: str = "binary",
         **_: Any,
     ):
+        if relevance_scheme not in {"binary", "graded"}:
+            raise ValueError(f"Unsupported relevance_scheme: {relevance_scheme}")
         self.tokenizer = tokenizer
         self.query_max_length = query_max_length
         self.doc_max_length = doc_max_length
+        self.relevance_scheme = relevance_scheme
         if not self.tokenizer.pad_token:
             if getattr(self.tokenizer, "eot_token", None):
                 self.tokenizer.pad_token = self.tokenizer.eot_token
@@ -122,8 +128,34 @@ class RankingDataCollator:
             return_tensors="pt",
         )
 
-        documents = sum([instance["document"] for instance in instances], [])
-        documents = [doc + self.tokenizer.pad_token for doc in documents]
+        ranking = torch.tensor([instance["ranking"] for instance in instances], dtype=torch.long) - 1
+        original_relevance_labels = build_relevance_labels(
+            ranking=ranking,
+            scheme=self.relevance_scheme,
+        )
+
+        positive_documents: list[str] = []
+        negative_documents: list[str] = []
+        relevance_labels: list[torch.Tensor] = []
+        for sample_idx, instance in enumerate(instances):
+            documents_for_sample = instance["document"]
+            positive_index = int(ranking[sample_idx, 0].item())
+            negative_indices = [
+                document_idx
+                for document_idx in range(len(documents_for_sample))
+                if document_idx != positive_index
+            ]
+
+            positive_documents.append(documents_for_sample[positive_index])
+            negative_documents.extend(documents_for_sample[document_idx] for document_idx in negative_indices)
+            ordered_indices = torch.tensor(
+                [positive_index, *negative_indices],
+                device=original_relevance_labels.device,
+                dtype=torch.long,
+            )
+            relevance_labels.append(original_relevance_labels[sample_idx].gather(dim=0, index=ordered_indices))
+
+        documents = [doc + self.tokenizer.pad_token for doc in [*positive_documents, *negative_documents]]
         document_inputs = self.tokenizer(
             documents,
             padding=True,
@@ -132,9 +164,16 @@ class RankingDataCollator:
             return_tensors="pt",
         )
 
-        ranking = torch.tensor([instance["ranking"] for instance in instances]) - 1
+        batch_size = len(instances)
         return {
             "query": query_inputs,
-            "document": document_inputs,
-            "ranking": ranking,
+            "positive_document": {
+                key: value[:batch_size]
+                for key, value in document_inputs.items()
+            },
+            "negative_document": {
+                key: value[batch_size:]
+                for key, value in document_inputs.items()
+            },
+            "relevance_labels": torch.stack(relevance_labels),
         }

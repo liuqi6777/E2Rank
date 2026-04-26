@@ -9,10 +9,6 @@ class BaselineArguments:
             "help": "Baseline ranking loss: ranknet, lambdaloss, neuralndcg, approxndcg, softrank, or infonce"
         },
     )
-    relevance_scheme: str = field(
-        default="graded",
-        metadata={"help": "Relevance labels: binary or graded"},
-    )
     baseline_ndcg_k: int = field(
         default=10,
         metadata={"help": "Ranking cutoff used by LambdaLoss and training metrics"},

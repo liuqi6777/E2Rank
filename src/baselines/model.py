@@ -12,7 +12,6 @@ from baselines.losses import SUPPORTED_BASELINE_TYPES, compute_baseline_loss
 from baselines.metrics import compute_mrr_at_k, compute_ndcg_at_k
 from baselines.config import BaselineArguments
 from grpo import pool_last_token_embedding
-from rewards import build_relevance_labels
 
 
 @dataclass
@@ -34,8 +33,6 @@ class BaselineModel(nn.Module):
             raise ValueError(
                 f"Unsupported baseline_type: {baseline_type}. Supported types: {sorted(SUPPORTED_BASELINE_TYPES)}"
             )
-        if baseline_args.relevance_scheme not in {"graded", "binary"}:
-            raise ValueError(f"Unsupported relevance_scheme: {baseline_args.relevance_scheme}")
 
         self.model = model
         self.config = self.model.config
@@ -51,25 +48,28 @@ class BaselineModel(nn.Module):
     def forward(
         self,
         query: Dict[str, torch.Tensor] = None,
-        document: Dict[str, torch.Tensor] = None,
-        ranking: torch.Tensor = None,
+        positive_document: Dict[str, torch.Tensor] = None,
+        negative_document: Dict[str, torch.Tensor] = None,
+        relevance_labels: torch.Tensor = None,
     ) -> BaselineModelOutput:
-        if ranking is None:
-            raise ValueError("ranking is required for baseline training")
         if query is None:
             raise ValueError("query inputs are required for baseline training")
-        if document is None:
-            raise ValueError("document inputs are required for baseline training")
+        if positive_document is None:
+            raise ValueError("positive document inputs are required for baseline training")
+        if negative_document is None:
+            raise ValueError("negative document inputs are required for baseline training")
+        if relevance_labels is None:
+            raise ValueError("relevance_labels are required for baseline training")
 
-        batch_size, slate_length = ranking.shape
+        batch_size, slate_length = relevance_labels.shape
         query_embeddings = self.encode(query)
+        document = {
+            key: torch.cat((positive_document[key], negative_document[key]), dim=0)
+            for key in positive_document
+        }
         document_embeddings = self.encode(document).reshape(batch_size, slate_length, -1)
         scores = torch.matmul(document_embeddings, query_embeddings.unsqueeze(-1)).squeeze(-1)
 
-        relevance_labels = build_relevance_labels(
-            ranking=ranking,
-            scheme=self.baseline_args.relevance_scheme,
-        )
         per_sample_loss = compute_baseline_loss(
             scores=scores,
             relevance_labels=relevance_labels,
@@ -91,7 +91,6 @@ class BaselineModel(nn.Module):
             scores=scores,
             relevance_labels=relevance_labels,
             k=self.baseline_args.baseline_ndcg_k,
-            relevance_scheme=self.baseline_args.relevance_scheme,
         )
         return BaselineModelOutput(
             loss=per_sample_loss.mean(),

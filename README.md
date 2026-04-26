@@ -166,28 +166,29 @@ Important data fields exposed by [`src/config.py`](src/config.py):
 - `per_dataset_max_samples` (`null` keeps all samples)
 - `q_max_len`
 - `d_max_len`
+- `relevance_scheme`
 
 Important RL-related fields exposed by [`src/config.py`](src/config.py):
 
-- `grpo_mode`
+- `action_components`
 - `group_size`
 - `sigma`
 - `sigma_learnable`
-- `perturb_negatives`
 - `reward_type`
 - `reward_ndcg_k`
 - `ndcg_in_batch_include_negatives`
 - `contrastive_use_in_batch_negatives`
 - `contrastive_temperature`
 - `advantage_norm`
-- `relevance_scheme`
 
-Supported `grpo_mode` values:
+Common GRPO component settings:
 
-- `query_only`: perturb query embeddings only
-- `diagonal`: pair the `g`-th query sample with the `g`-th document-slate sample
-- `grid`: evaluate all query/document-slate sample pairs and marginalize each side
-- `factorized`: separately sample query, positive document, and negative slate actions; evaluate the `G x G x G` grid and assign separate advantages
+- Query-only: `action_components: [[query]]`
+- Old grid: `action_components: [[query], [positive, negative]]`
+- Old factorized: `action_components: [[query], [positive], [negative]]`
+- Doc-only joint: `action_components: [[positive, negative]]`
+- Pos-only: `action_components: [[positive]]`
+- Neg-only: `action_components: [[negative]]`
 
 Supported reward presets in [`configs/reward/`](configs/reward):
 

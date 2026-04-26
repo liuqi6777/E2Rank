@@ -1,6 +1,7 @@
-grpo_mode: grid
-group_size: 8
+action_components:
+  - [query]
+  - [positive, negative]
+group_size: 32
 sigma: 0.05
 sigma_learnable: false
-perturb_negatives: true
 advantage_norm: true
