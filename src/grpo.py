@@ -148,6 +148,96 @@ class GRPO(nn.Module):
             contrastive_temperature=self.contrastive_temperature,
         )
 
+    def _compute_rewards_from_scores(
+        self,
+        scores: torch.Tensor,
+        relevance_labels: torch.Tensor,
+        in_batch_positive_scores: torch.Tensor | None = None,
+        in_batch_candidate_scores: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        if scores.dim() < 3:
+            raise ValueError(f"scores must be [batch, *rollout, slate], got shape {tuple(scores.shape)}")
+        batch_size = scores.size(0)
+        rollout_shape = scores.shape[1:-1]
+        slate_length = scores.size(-1)
+        rollout_count = 1
+        for rollout_dim in rollout_shape:
+            rollout_count *= rollout_dim
+        scores = scores.reshape(batch_size, rollout_count, slate_length)
+        if in_batch_positive_scores is not None:
+            in_batch_positive_scores = in_batch_positive_scores.reshape(batch_size, rollout_count, -1)
+        if in_batch_candidate_scores is not None:
+            in_batch_candidate_scores = in_batch_candidate_scores.reshape(batch_size, rollout_count, -1)
+        expanded_labels = relevance_labels.unsqueeze(1).expand(batch_size, rollout_count, slate_length)
+
+        if self.reward_type in {"ndcg", "ndcg_in_batch"}:
+            ranking_scores = scores
+            ranking_labels = expanded_labels
+            if self.reward_type == "ndcg_in_batch":
+                extra_scores = in_batch_candidate_scores if self.ndcg_in_batch_include_negatives else in_batch_positive_scores
+                if extra_scores is not None:
+                    ranking_scores = torch.cat((ranking_scores, extra_scores), dim=-1)
+                    ranking_labels = torch.cat((ranking_labels, torch.zeros_like(extra_scores)), dim=-1)
+
+            cutoff = min(self.reward_ndcg_k, ranking_scores.size(-1))
+            if cutoff <= 0:
+                return torch.zeros(batch_size, *rollout_shape, device=scores.device, dtype=scores.dtype)
+
+            topk_indices = ranking_scores.topk(k=cutoff, dim=-1).indices
+            topk_relevance = ranking_labels.gather(dim=-1, index=topk_indices)
+            discounts = 1.0 / torch.log2(
+                torch.arange(2, cutoff + 2, device=scores.device, dtype=scores.dtype)
+            )
+            dcg = (((2.0 ** topk_relevance) - 1.0) * discounts).sum(dim=-1)
+            ideal_relevance = ranking_labels.topk(k=cutoff, dim=-1).values
+            idcg = (((2.0 ** ideal_relevance) - 1.0) * discounts).sum(dim=-1)
+            return torch.where(idcg > 0, dcg / idcg, torch.zeros_like(dcg)).reshape(batch_size, *rollout_shape)
+
+        if self.reward_type == "mrr":
+            cutoff = min(self.reward_ndcg_k, slate_length)
+            if cutoff <= 0:
+                return torch.zeros(batch_size, *rollout_shape, device=scores.device, dtype=scores.dtype)
+            ranked_indices = scores.topk(k=cutoff, dim=-1).indices
+            ranked_relevance = expanded_labels.gather(dim=-1, index=ranked_indices)
+            relevant_mask = (
+                ranked_relevance >= 2.0
+                if bool((relevance_labels > 1).any().item())
+                else ranked_relevance > 0.0
+            )
+            reciprocal_ranks = relevant_mask.to(scores.dtype) / torch.arange(
+                1,
+                cutoff + 1,
+                device=scores.device,
+                dtype=scores.dtype,
+            )
+            return reciprocal_ranks.max(dim=-1).values.reshape(batch_size, *rollout_shape)
+
+        positive_indices = relevance_labels.argmax(dim=-1)
+        arange_b = torch.arange(batch_size, device=scores.device)
+        positive_scores = scores[arange_b, :, positive_indices]
+        positive_one_hot = F.one_hot(positive_indices, num_classes=slate_length).bool()
+        negative_scores = scores.masked_fill(positive_one_hot.unsqueeze(1), float("-inf"))
+        if self.contrastive_use_in_batch_negatives and in_batch_positive_scores is not None:
+            negative_scores = torch.cat((negative_scores, in_batch_positive_scores), dim=-1)
+
+        temperature = torch.as_tensor(
+            self.contrastive_temperature,
+            device=scores.device,
+            dtype=scores.dtype,
+        )
+        if self.reward_type == "contrastive":
+            return (positive_scores - temperature * torch.logsumexp(negative_scores / temperature, dim=-1)).reshape(
+                batch_size,
+                *rollout_shape,
+            )
+        if self.reward_type == "infonce":
+            partition_scores = torch.cat((positive_scores.unsqueeze(-1), negative_scores), dim=-1)
+            return (positive_scores - temperature * torch.logsumexp(partition_scores / temperature, dim=-1)).reshape(
+                batch_size,
+                *rollout_shape,
+            )
+        raise AssertionError(f"Unhandled reward type: {self.reward_type}")
+
     def _sample_query_embeddings(
         self,
         rollout_embeddings: torch.Tensor,
@@ -237,6 +327,112 @@ class GRPO(nn.Module):
                 raise ValueError("action component group sizes must match")
 
     @staticmethod
+    def _compute_score_table(
+        query_component: _ActionComponent,
+        document_component: _ActionComponent,
+    ) -> torch.Tensor:
+        query_embeddings = (
+            query_component.sampled_embeddings
+            if query_component.is_active
+            else query_component.rollout_embeddings.detach()
+        )
+        document_embeddings = (
+            document_component.sampled_embeddings
+            if document_component.is_active
+            else document_component.rollout_embeddings.detach()
+        )
+        query_embeddings = F.normalize(query_embeddings, dim=-1)
+        document_embeddings = F.normalize(document_embeddings, dim=-1)
+
+        if query_component.is_active and document_component.is_active:
+            return torch.einsum("bqd,bksd->bqks", query_embeddings, document_embeddings)
+        if query_component.is_active:
+            return torch.einsum("bqd,bsd->bqs", query_embeddings, document_embeddings)
+        if document_component.is_active:
+            return torch.einsum("bd,bksd->bks", query_embeddings, document_embeddings)
+        return torch.einsum("bd,bsd->bs", query_embeddings, document_embeddings)
+
+    @staticmethod
+    def _compute_cross_score_table(
+        query_component: _ActionComponent,
+        document_component: _ActionComponent,
+    ) -> torch.Tensor:
+        query_embeddings = (
+            query_component.sampled_embeddings
+            if query_component.is_active
+            else query_component.rollout_embeddings.detach()
+        )
+        document_embeddings = (
+            document_component.sampled_embeddings
+            if document_component.is_active
+            else document_component.rollout_embeddings.detach()
+        )
+        query_embeddings = F.normalize(query_embeddings, dim=-1)
+        document_embeddings = F.normalize(document_embeddings, dim=-1)
+
+        if query_component.is_active and document_component.is_active:
+            return torch.einsum("bqd,cksd->bcqks", query_embeddings, document_embeddings)
+        if query_component.is_active:
+            return torch.einsum("bqd,csd->bcqs", query_embeddings, document_embeddings)
+        if document_component.is_active:
+            return torch.einsum("bd,cksd->bcks", query_embeddings, document_embeddings)
+        return torch.einsum("bd,csd->bcs", query_embeddings, document_embeddings)
+
+    @staticmethod
+    def _expand_score_table(
+        score_table: torch.Tensor,
+        query_component: _ActionComponent,
+        document_component: _ActionComponent,
+        active_index_by_id: dict[int, int],
+        num_components: int,
+        group_size: int,
+    ) -> torch.Tensor:
+        batch_size = score_table.size(0)
+        slate_length = score_table.size(-1)
+        if query_component.is_active and document_component.is_active:
+            view_shape = [batch_size, *([1] * num_components), slate_length]
+            view_shape[1 + active_index_by_id[id(query_component)]] = group_size
+            view_shape[1 + active_index_by_id[id(document_component)]] = group_size
+            return score_table.reshape(view_shape).expand(batch_size, *([group_size] * num_components), slate_length)
+        if query_component.is_active:
+            view_shape = [batch_size, *([1] * num_components), slate_length]
+            view_shape[1 + active_index_by_id[id(query_component)]] = group_size
+            return score_table.reshape(view_shape).expand(batch_size, *([group_size] * num_components), slate_length)
+        if document_component.is_active:
+            view_shape = [batch_size, *([1] * num_components), slate_length]
+            view_shape[1 + active_index_by_id[id(document_component)]] = group_size
+            return score_table.reshape(view_shape).expand(batch_size, *([group_size] * num_components), slate_length)
+        return score_table.reshape(batch_size, *([1] * num_components), slate_length).expand(
+            batch_size,
+            *([group_size] * num_components),
+            slate_length,
+        )
+
+    @staticmethod
+    def _expand_cross_score_table(
+        score_table: torch.Tensor,
+        query_component: _ActionComponent,
+        document_component: _ActionComponent,
+        active_index_by_id: dict[int, int],
+        num_components: int,
+        group_size: int,
+    ) -> torch.Tensor:
+        batch_size, candidate_batch_size = score_table.shape[:2]
+        slate_length = score_table.size(-1)
+        view_shape = [batch_size, candidate_batch_size, *([1] * num_components), slate_length]
+        if query_component.is_active:
+            view_shape[2 + active_index_by_id[id(query_component)]] = group_size
+        if document_component.is_active:
+            view_shape[2 + active_index_by_id[id(document_component)]] = group_size
+        expanded = score_table.reshape(view_shape).expand(
+            batch_size,
+            candidate_batch_size,
+            *([group_size] * num_components),
+            slate_length,
+        )
+        return expanded.permute(0, *range(2, 2 + num_components), 1, 2 + num_components)
+
+    @staticmethod
     def _expand_query_samples(
         sampled_embeddings: torch.Tensor,
         component_index: int,
@@ -288,7 +484,7 @@ class GRPO(nn.Module):
         self,
         relevance_labels: torch.Tensor,
         components: Sequence[_ActionComponent],
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, dict[str, torch.Tensor], torch.Tensor]:
         active_components = tuple(component for component in components if component.is_active)
         query_components = [component for component in components if component.role == "query"]
         document_components = [component for component in components if component.role == "document"]
@@ -311,40 +507,6 @@ class GRPO(nn.Module):
             id(component): component_index
             for component_index, component in enumerate(active_components)
         }
-        query_component = query_components[0]
-        if query_component.is_active:
-            query_grid = self._expand_query_samples(
-                sampled_embeddings=query_component.sampled_embeddings,
-                component_index=active_index_by_id[id(query_component)],
-                num_components=num_components,
-            )
-        else:
-            query_grid = self._expand_fixed_query(
-                fixed_query_embeddings=query_component.rollout_embeddings,
-                group_size=group_size,
-                num_components=num_components,
-            )
-
-        document_grids = []
-        for document_component in document_components:
-            if document_component.is_active:
-                document_grids.append(
-                    self._expand_document_samples(
-                        sampled_document_embeddings=document_component.sampled_embeddings,
-                        component_index=active_index_by_id[id(document_component)],
-                        num_components=num_components,
-                    )
-                )
-            else:
-                document_grids.append(
-                    self._expand_fixed_documents(
-                        fixed_document_embeddings=document_component.rollout_embeddings,
-                        group_size=group_size,
-                        num_components=num_components,
-                    )
-                )
-        document_grid = torch.cat(document_grids, dim=-2)
-
         for component in active_components:
             if component.role == "query":
                 log_probs.append(
@@ -365,23 +527,93 @@ class GRPO(nn.Module):
             else:
                 raise ValueError(f"Unsupported action component role: {component.role}")
 
-        rewards = self._compute_rewards(
-            query_embeddings=query_grid,
-            candidate_embeddings=document_grid,
+        query_component = query_components[0]
+        batch_size = relevance_labels.size(0)
+        score_grids = []
+        for document_component in document_components:
+            score_table = self._compute_score_table(
+                query_component=query_component,
+                document_component=document_component,
+            )
+            score_grids.append(
+                self._expand_score_table(
+                    score_table=score_table,
+                    query_component=query_component,
+                    document_component=document_component,
+                    active_index_by_id=active_index_by_id,
+                    num_components=num_components,
+                    group_size=group_size,
+                )
+            )
+        scores = torch.cat(score_grids, dim=-1)
+
+        in_batch_positive_scores = None
+        in_batch_candidate_scores = None
+        uses_positive_in_batch = self.reward_type == "ndcg_in_batch" and not self.ndcg_in_batch_include_negatives
+        uses_positive_in_batch = uses_positive_in_batch or (
+            self.reward_type in {"contrastive", "infonce"} and self.contrastive_use_in_batch_negatives
+        )
+        if batch_size > 1 and uses_positive_in_batch:
+            positive_component = document_components[0]
+            positive_cross_scores = self._expand_cross_score_table(
+                score_table=self._compute_cross_score_table(
+                    query_component=query_component,
+                    document_component=positive_component,
+                ),
+                query_component=query_component,
+                document_component=positive_component,
+                active_index_by_id=active_index_by_id,
+                num_components=num_components,
+                group_size=group_size,
+            )[..., 0]
+            diagonal_mask = torch.eye(batch_size, device=scores.device, dtype=torch.bool)
+            diagonal_mask = diagonal_mask.reshape(batch_size, *([1] * num_components), batch_size)
+            in_batch_positive_scores = positive_cross_scores.masked_fill(diagonal_mask, float("-inf"))
+
+        if batch_size > 1 and self.reward_type == "ndcg_in_batch" and self.ndcg_in_batch_include_negatives:
+            cross_candidate_scores = []
+            diagonal_mask = torch.eye(batch_size, device=scores.device, dtype=torch.bool)
+            for document_component in document_components:
+                expanded_cross_scores = self._expand_cross_score_table(
+                    score_table=self._compute_cross_score_table(
+                        query_component=query_component,
+                        document_component=document_component,
+                    ),
+                    query_component=query_component,
+                    document_component=document_component,
+                    active_index_by_id=active_index_by_id,
+                    num_components=num_components,
+                    group_size=group_size,
+                )
+                mask_shape = [batch_size, *([1] * num_components), batch_size, 1]
+                expanded_cross_scores = expanded_cross_scores.masked_fill(
+                    diagonal_mask.reshape(mask_shape),
+                    float("-inf"),
+                )
+                cross_candidate_scores.append(
+                    expanded_cross_scores.reshape(batch_size, *([group_size] * num_components), -1)
+                )
+            in_batch_candidate_scores = torch.cat(cross_candidate_scores, dim=-1)
+
+        rewards = self._compute_rewards_from_scores(
+            scores=scores,
             relevance_labels=relevance_labels,
+            in_batch_positive_scores=in_batch_positive_scores,
+            in_batch_candidate_scores=in_batch_candidate_scores,
         )
 
-        sample_dims = tuple(range(1, 1 + num_components))
         losses = []
         advantages = []
         for component_index, log_prob in enumerate(log_probs):
+            sample_dims = tuple(range(1, 1 + num_components))
             other_dims = tuple(dim for dim in sample_dims if dim != component_index + 1)
             component_rewards = rewards.mean(dim=other_dims) if other_dims else rewards
             component_advantages = self._compute_advantages(component_rewards, sample_dims=(1,))
             losses.append(-(component_advantages.detach() * log_prob).mean())
             advantages.append(component_advantages)
 
-        return sum(losses), rewards, torch.cat(advantages, dim=1)
+        reward_stats = self.summarize_tensor(rewards, prefix="reward")
+        return sum(losses), reward_stats, torch.cat(advantages, dim=1)
 
     def forward(
         self,
@@ -532,12 +764,11 @@ class GRPO(nn.Module):
                 rollout_embeddings=rollout_negative_document_embeddings,
             ))
 
-        loss, rewards, advantages = self._compute_component_loss(
+        loss, reward_stats, advantages = self._compute_component_loss(
             relevance_labels=relevance_labels,
             components=tuple(components),
         )
 
-        reward_stats = self.summarize_tensor(rewards, prefix="reward")
         advantage_stats = self.summarize_tensor(advantages, prefix="advantages")
         return loss, reward_stats, advantage_stats, sigma.detach()
 
