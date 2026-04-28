@@ -10,10 +10,7 @@ from transformers import PreTrainedModel
 from transformers.file_utils import ModelOutput
 
 from config import RLArguments, normalize_action_components
-from rewards import (
-    SUPPORTED_REWARD_TYPES,
-    compute_rollout_reward,
-)
+from rewards import SUPPORTED_REWARD_TYPES
 
 
 @dataclass
@@ -130,23 +127,6 @@ class GRPO(nn.Module):
         if self.advantage_norm:
             advantages = advantages / (advantages.std(dim=sample_dims, keepdim=True, unbiased=False) + 1e-8)
         return advantages
-
-    def _compute_rewards(
-        self,
-        query_embeddings: torch.Tensor,
-        candidate_embeddings: torch.Tensor,
-        relevance_labels: torch.Tensor,
-    ) -> torch.Tensor:
-        return compute_rollout_reward(
-            query_embeddings=query_embeddings,
-            candidate_embeddings=candidate_embeddings,
-            relevance_labels=relevance_labels,
-            reward_type=self.reward_type,
-            k=self.reward_ndcg_k,
-            ndcg_in_batch_include_negatives=self.ndcg_in_batch_include_negatives,
-            contrastive_use_in_batch_negatives=self.contrastive_use_in_batch_negatives,
-            contrastive_temperature=self.contrastive_temperature,
-        )
 
     def _compute_rewards_from_scores(
         self,
@@ -330,6 +310,7 @@ class GRPO(nn.Module):
     def _compute_score_table(
         query_component: _ActionComponent,
         document_component: _ActionComponent,
+        cross: bool = False,
     ) -> torch.Tensor:
         query_embeddings = (
             query_component.sampled_embeddings
@@ -344,39 +325,20 @@ class GRPO(nn.Module):
         query_embeddings = F.normalize(query_embeddings, dim=-1)
         document_embeddings = F.normalize(document_embeddings, dim=-1)
 
-        if query_component.is_active and document_component.is_active:
-            return torch.einsum("bqd,bksd->bqks", query_embeddings, document_embeddings)
+        # query: 'bqd' if active else 'bd'; document (same-batch): 'bksd' if active else 'bsd';
+        # document (cross-batch): swaps the leading 'b' for 'c' to pair every query with every other batch's docs.
+        query_spec = "bqd" if query_component.is_active else "bd"
+        doc_batch = "c" if cross else "b"
+        doc_spec = f"{doc_batch}ksd" if document_component.is_active else f"{doc_batch}sd"
+        out_spec = "b"
+        if cross:
+            out_spec += "c"
         if query_component.is_active:
-            return torch.einsum("bqd,bsd->bqs", query_embeddings, document_embeddings)
+            out_spec += "q"
         if document_component.is_active:
-            return torch.einsum("bd,bksd->bks", query_embeddings, document_embeddings)
-        return torch.einsum("bd,bsd->bs", query_embeddings, document_embeddings)
-
-    @staticmethod
-    def _compute_cross_score_table(
-        query_component: _ActionComponent,
-        document_component: _ActionComponent,
-    ) -> torch.Tensor:
-        query_embeddings = (
-            query_component.sampled_embeddings
-            if query_component.is_active
-            else query_component.rollout_embeddings.detach()
-        )
-        document_embeddings = (
-            document_component.sampled_embeddings
-            if document_component.is_active
-            else document_component.rollout_embeddings.detach()
-        )
-        query_embeddings = F.normalize(query_embeddings, dim=-1)
-        document_embeddings = F.normalize(document_embeddings, dim=-1)
-
-        if query_component.is_active and document_component.is_active:
-            return torch.einsum("bqd,cksd->bcqks", query_embeddings, document_embeddings)
-        if query_component.is_active:
-            return torch.einsum("bqd,csd->bcqs", query_embeddings, document_embeddings)
-        if document_component.is_active:
-            return torch.einsum("bd,cksd->bcks", query_embeddings, document_embeddings)
-        return torch.einsum("bd,csd->bcs", query_embeddings, document_embeddings)
+            out_spec += "k"
+        out_spec += "s"
+        return torch.einsum(f"{query_spec},{doc_spec}->{out_spec}", query_embeddings, document_embeddings)
 
     @staticmethod
     def _expand_score_table(
@@ -386,99 +348,38 @@ class GRPO(nn.Module):
         active_index_by_id: dict[int, int],
         num_components: int,
         group_size: int,
+        cross: bool = False,
     ) -> torch.Tensor:
-        batch_size = score_table.size(0)
-        slate_length = score_table.size(-1)
+        # _compute_score_table emits dims in the order (query, document); the reshape below relies on
+        # active_index_by_id[query] < active_index_by_id[document] so the non-singleton slots line up.
         if query_component.is_active and document_component.is_active:
-            view_shape = [batch_size, *([1] * num_components), slate_length]
-            view_shape[1 + active_index_by_id[id(query_component)]] = group_size
-            view_shape[1 + active_index_by_id[id(document_component)]] = group_size
-            return score_table.reshape(view_shape).expand(batch_size, *([group_size] * num_components), slate_length)
-        if query_component.is_active:
-            view_shape = [batch_size, *([1] * num_components), slate_length]
-            view_shape[1 + active_index_by_id[id(query_component)]] = group_size
-            return score_table.reshape(view_shape).expand(batch_size, *([group_size] * num_components), slate_length)
-        if document_component.is_active:
-            view_shape = [batch_size, *([1] * num_components), slate_length]
-            view_shape[1 + active_index_by_id[id(document_component)]] = group_size
-            return score_table.reshape(view_shape).expand(batch_size, *([group_size] * num_components), slate_length)
-        return score_table.reshape(batch_size, *([1] * num_components), slate_length).expand(
-            batch_size,
-            *([group_size] * num_components),
-            slate_length,
-        )
+            assert active_index_by_id[id(query_component)] < active_index_by_id[id(document_component)], (
+                "query component must precede document component in active_index_by_id"
+            )
 
-    @staticmethod
-    def _expand_cross_score_table(
-        score_table: torch.Tensor,
-        query_component: _ActionComponent,
-        document_component: _ActionComponent,
-        active_index_by_id: dict[int, int],
-        num_components: int,
-        group_size: int,
-    ) -> torch.Tensor:
-        batch_size, candidate_batch_size = score_table.shape[:2]
         slate_length = score_table.size(-1)
-        view_shape = [batch_size, candidate_batch_size, *([1] * num_components), slate_length]
+        if cross:
+            batch_size, candidate_batch_size = score_table.shape[:2]
+            leading = [batch_size, candidate_batch_size]
+            offset = 2
+        else:
+            batch_size = score_table.size(0)
+            leading = [batch_size]
+            offset = 1
+
+        view_shape = [*leading, *([1] * num_components), slate_length]
         if query_component.is_active:
-            view_shape[2 + active_index_by_id[id(query_component)]] = group_size
+            view_shape[offset + active_index_by_id[id(query_component)]] = group_size
         if document_component.is_active:
-            view_shape[2 + active_index_by_id[id(document_component)]] = group_size
+            view_shape[offset + active_index_by_id[id(document_component)]] = group_size
         expanded = score_table.reshape(view_shape).expand(
-            batch_size,
-            candidate_batch_size,
+            *leading,
             *([group_size] * num_components),
             slate_length,
         )
-        return expanded.permute(0, *range(2, 2 + num_components), 1, 2 + num_components)
-
-    @staticmethod
-    def _expand_query_samples(
-        sampled_embeddings: torch.Tensor,
-        component_index: int,
-        num_components: int,
-    ) -> torch.Tensor:
-        batch_size, group_size, embedding_dim = sampled_embeddings.shape
-        before = [1] * component_index
-        after = [1] * (num_components - component_index - 1)
-        view_shape = [batch_size, *before, group_size, *after, embedding_dim]
-        expand_shape = [batch_size, *([group_size] * num_components), embedding_dim]
-        return sampled_embeddings.reshape(view_shape).expand(expand_shape)
-
-    @staticmethod
-    def _expand_fixed_query(
-        fixed_query_embeddings: torch.Tensor,
-        group_size: int,
-        num_components: int,
-    ) -> torch.Tensor:
-        batch_size, embedding_dim = fixed_query_embeddings.shape
-        view_shape = [batch_size, *([1] * num_components), embedding_dim]
-        expand_shape = [batch_size, *([group_size] * num_components), embedding_dim]
-        return fixed_query_embeddings.detach().reshape(view_shape).expand(expand_shape)
-
-    @staticmethod
-    def _expand_document_samples(
-        sampled_document_embeddings: torch.Tensor,
-        component_index: int,
-        num_components: int,
-    ) -> torch.Tensor:
-        batch_size, group_size, slate_length, embedding_dim = sampled_document_embeddings.shape
-        before = [1] * component_index
-        after = [1] * (num_components - component_index - 1)
-        view_shape = [batch_size, *before, group_size, *after, slate_length, embedding_dim]
-        expand_shape = [batch_size, *([group_size] * num_components), slate_length, embedding_dim]
-        return sampled_document_embeddings.reshape(view_shape).expand(expand_shape)
-
-    @staticmethod
-    def _expand_fixed_documents(
-        fixed_document_embeddings: torch.Tensor,
-        group_size: int,
-        num_components: int,
-    ) -> torch.Tensor:
-        batch_size, slate_length, embedding_dim = fixed_document_embeddings.shape
-        view_shape = [batch_size, *([1] * num_components), slate_length, embedding_dim]
-        expand_shape = [batch_size, *([group_size] * num_components), slate_length, embedding_dim]
-        return fixed_document_embeddings.detach().reshape(view_shape).expand(expand_shape)
+        if cross:
+            return expanded.permute(0, *range(2, 2 + num_components), 1, 2 + num_components)
+        return expanded
 
     def _compute_component_loss(
         self,
@@ -555,16 +456,18 @@ class GRPO(nn.Module):
         )
         if batch_size > 1 and uses_positive_in_batch:
             positive_component = document_components[0]
-            positive_cross_scores = self._expand_cross_score_table(
-                score_table=self._compute_cross_score_table(
+            positive_cross_scores = self._expand_score_table(
+                score_table=self._compute_score_table(
                     query_component=query_component,
                     document_component=positive_component,
+                    cross=True,
                 ),
                 query_component=query_component,
                 document_component=positive_component,
                 active_index_by_id=active_index_by_id,
                 num_components=num_components,
                 group_size=group_size,
+                cross=True,
             )[..., 0]
             diagonal_mask = torch.eye(batch_size, device=scores.device, dtype=torch.bool)
             diagonal_mask = diagonal_mask.reshape(batch_size, *([1] * num_components), batch_size)
@@ -574,16 +477,18 @@ class GRPO(nn.Module):
             cross_candidate_scores = []
             diagonal_mask = torch.eye(batch_size, device=scores.device, dtype=torch.bool)
             for document_component in document_components:
-                expanded_cross_scores = self._expand_cross_score_table(
-                    score_table=self._compute_cross_score_table(
+                expanded_cross_scores = self._expand_score_table(
+                    score_table=self._compute_score_table(
                         query_component=query_component,
                         document_component=document_component,
+                        cross=True,
                     ),
                     query_component=query_component,
                     document_component=document_component,
                     active_index_by_id=active_index_by_id,
                     num_components=num_components,
                     group_size=group_size,
+                    cross=True,
                 )
                 mask_shape = [batch_size, *([1] * num_components), batch_size, 1]
                 expanded_cross_scores = expanded_cross_scores.masked_fill(
