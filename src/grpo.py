@@ -10,7 +10,7 @@ from transformers import PreTrainedModel
 from transformers.file_utils import ModelOutput
 
 from config import RLArguments, normalize_action_components
-from rewards import SUPPORTED_REWARD_TYPES
+from rewards import SUPPORTED_REWARD_TYPES, compute_reward_from_scores
 
 
 @dataclass
@@ -127,96 +127,6 @@ class GRPO(nn.Module):
         if self.advantage_norm:
             advantages = advantages / (advantages.std(dim=sample_dims, keepdim=True, unbiased=False) + 1e-8)
         return advantages
-
-    def _compute_rewards_from_scores(
-        self,
-        scores: torch.Tensor,
-        relevance_labels: torch.Tensor,
-        in_batch_positive_scores: torch.Tensor | None = None,
-        in_batch_candidate_scores: torch.Tensor | None = None,
-    ) -> torch.Tensor:
-        if scores.dim() < 3:
-            raise ValueError(f"scores must be [batch, *rollout, slate], got shape {tuple(scores.shape)}")
-        batch_size = scores.size(0)
-        rollout_shape = scores.shape[1:-1]
-        slate_length = scores.size(-1)
-        rollout_count = 1
-        for rollout_dim in rollout_shape:
-            rollout_count *= rollout_dim
-        scores = scores.reshape(batch_size, rollout_count, slate_length)
-        if in_batch_positive_scores is not None:
-            in_batch_positive_scores = in_batch_positive_scores.reshape(batch_size, rollout_count, -1)
-        if in_batch_candidate_scores is not None:
-            in_batch_candidate_scores = in_batch_candidate_scores.reshape(batch_size, rollout_count, -1)
-        expanded_labels = relevance_labels.unsqueeze(1).expand(batch_size, rollout_count, slate_length)
-
-        if self.reward_type in {"ndcg", "ndcg_in_batch"}:
-            ranking_scores = scores
-            ranking_labels = expanded_labels
-            if self.reward_type == "ndcg_in_batch":
-                extra_scores = in_batch_candidate_scores if self.ndcg_in_batch_include_negatives else in_batch_positive_scores
-                if extra_scores is not None:
-                    ranking_scores = torch.cat((ranking_scores, extra_scores), dim=-1)
-                    ranking_labels = torch.cat((ranking_labels, torch.zeros_like(extra_scores)), dim=-1)
-
-            cutoff = min(self.reward_ndcg_k, ranking_scores.size(-1))
-            if cutoff <= 0:
-                return torch.zeros(batch_size, *rollout_shape, device=scores.device, dtype=scores.dtype)
-
-            topk_indices = ranking_scores.topk(k=cutoff, dim=-1).indices
-            topk_relevance = ranking_labels.gather(dim=-1, index=topk_indices)
-            discounts = 1.0 / torch.log2(
-                torch.arange(2, cutoff + 2, device=scores.device, dtype=scores.dtype)
-            )
-            dcg = (((2.0 ** topk_relevance) - 1.0) * discounts).sum(dim=-1)
-            ideal_relevance = ranking_labels.topk(k=cutoff, dim=-1).values
-            idcg = (((2.0 ** ideal_relevance) - 1.0) * discounts).sum(dim=-1)
-            return torch.where(idcg > 0, dcg / idcg, torch.zeros_like(dcg)).reshape(batch_size, *rollout_shape)
-
-        if self.reward_type == "mrr":
-            cutoff = min(self.reward_ndcg_k, slate_length)
-            if cutoff <= 0:
-                return torch.zeros(batch_size, *rollout_shape, device=scores.device, dtype=scores.dtype)
-            ranked_indices = scores.topk(k=cutoff, dim=-1).indices
-            ranked_relevance = expanded_labels.gather(dim=-1, index=ranked_indices)
-            relevant_mask = (
-                ranked_relevance >= 2.0
-                if bool((relevance_labels > 1).any().item())
-                else ranked_relevance > 0.0
-            )
-            reciprocal_ranks = relevant_mask.to(scores.dtype) / torch.arange(
-                1,
-                cutoff + 1,
-                device=scores.device,
-                dtype=scores.dtype,
-            )
-            return reciprocal_ranks.max(dim=-1).values.reshape(batch_size, *rollout_shape)
-
-        positive_indices = relevance_labels.argmax(dim=-1)
-        arange_b = torch.arange(batch_size, device=scores.device)
-        positive_scores = scores[arange_b, :, positive_indices]
-        positive_one_hot = F.one_hot(positive_indices, num_classes=slate_length).bool()
-        negative_scores = scores.masked_fill(positive_one_hot.unsqueeze(1), float("-inf"))
-        if self.contrastive_use_in_batch_negatives and in_batch_positive_scores is not None:
-            negative_scores = torch.cat((negative_scores, in_batch_positive_scores), dim=-1)
-
-        temperature = torch.as_tensor(
-            self.contrastive_temperature,
-            device=scores.device,
-            dtype=scores.dtype,
-        )
-        if self.reward_type == "contrastive":
-            return (positive_scores - temperature * torch.logsumexp(negative_scores / temperature, dim=-1)).reshape(
-                batch_size,
-                *rollout_shape,
-            )
-        if self.reward_type == "infonce":
-            partition_scores = torch.cat((positive_scores.unsqueeze(-1), negative_scores), dim=-1)
-            return (positive_scores - temperature * torch.logsumexp(partition_scores / temperature, dim=-1)).reshape(
-                batch_size,
-                *rollout_shape,
-            )
-        raise AssertionError(f"Unhandled reward type: {self.reward_type}")
 
     def _sample_query_embeddings(
         self,
@@ -500,9 +410,14 @@ class GRPO(nn.Module):
                 )
             in_batch_candidate_scores = torch.cat(cross_candidate_scores, dim=-1)
 
-        rewards = self._compute_rewards_from_scores(
+        rewards = compute_reward_from_scores(
             scores=scores,
             relevance_labels=relevance_labels,
+            reward_type=self.reward_type,
+            k=self.reward_ndcg_k,
+            ndcg_in_batch_include_negatives=self.ndcg_in_batch_include_negatives,
+            contrastive_use_in_batch_negatives=self.contrastive_use_in_batch_negatives,
+            contrastive_temperature=self.contrastive_temperature,
             in_batch_positive_scores=in_batch_positive_scores,
             in_batch_candidate_scores=in_batch_candidate_scores,
         )

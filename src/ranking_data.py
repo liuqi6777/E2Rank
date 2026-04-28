@@ -7,8 +7,6 @@ import torch
 import transformers
 from torch.utils.data import Dataset
 
-from rewards import build_relevance_labels
-
 
 TASK_PROMPTS = {
     "msmarco": "Given a web search query, retrieval the documents that answer the query",
@@ -94,6 +92,37 @@ class RankingDataset(Dataset):
         ordered_indices = [idx for batch in ordered_batches for idx in batch]
         self.samples = [normalized_samples[idx] for idx in ordered_indices]
         print(f"Loaded {len(self.samples)} samples.")
+
+
+def build_relevance_labels(
+    ranking: torch.Tensor,
+    scheme: str = "graded",
+) -> torch.Tensor:
+    if ranking is None:
+        raise ValueError("ranking is required to build relevance labels")
+    if ranking.dim() != 2:
+        raise ValueError(f"ranking must be a 2D tensor, got shape {tuple(ranking.shape)}")
+    if scheme not in {"graded", "binary"}:
+        raise ValueError(f"Unsupported relevance scheme: {scheme}")
+
+    batch_size, slate_length = ranking.shape
+    relevance = torch.zeros(batch_size, slate_length, device=ranking.device, dtype=torch.float32)
+
+    rank_scores = torch.zeros(slate_length, device=ranking.device, dtype=torch.float32)
+    if slate_length > 0:
+        rank_scores[0] = 3.0 if scheme == "graded" else 1.0
+    if scheme == "graded":
+        if slate_length > 1:
+            rank_scores[1:min(5, slate_length)] = 2.0
+        if slate_length > 5:
+            rank_scores[5:min(10, slate_length)] = 1.0
+
+    relevance.scatter_(
+        dim=1,
+        index=ranking,
+        src=rank_scores.unsqueeze(0).expand(batch_size, -1),
+    )
+    return relevance
 
 
 class RankingDataCollator:
