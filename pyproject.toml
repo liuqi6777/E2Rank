@@ -11,6 +11,7 @@ dependencies = [
     "flash>=1.0.3",
     "mteb==1.38.32",
     "peft>=0.18.1",
+    "setuptools>=82.0.1",
     "tabulate>=0.10.0",
     "torch==2.6.0",
     "torchaudio==2.6.0",
