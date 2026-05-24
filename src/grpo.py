@@ -123,9 +123,15 @@ class GRPO(nn.Module):
         }
 
     def _compute_advantages(self, rewards: torch.Tensor, sample_dims: tuple[int, ...]) -> torch.Tensor:
+        # Promote to fp32: bf16 round-off in mean/std introduces a systematic, distribution-
+        # dependent bias in the normalized advantages (especially after marginalization).
+        rewards = rewards.float()
         advantages = rewards - rewards.mean(dim=sample_dims, keepdim=True)
         if self.advantage_norm:
-            advantages = advantages / (advantages.std(dim=sample_dims, keepdim=True, unbiased=False) + 1e-8)
+            std = advantages.std(dim=sample_dims, keepdim=True, unbiased=False)
+            # Degenerate groups (all rollouts gave the same reward) carry no learning signal;
+            # zero them out instead of dividing by a near-zero std and amplifying noise.
+            advantages = torch.where(std > 1e-4, advantages / std, torch.zeros_like(advantages))
         return advantages
 
     def _sample_query_embeddings(
@@ -420,7 +426,7 @@ class GRPO(nn.Module):
             contrastive_temperature=self.contrastive_temperature,
             in_batch_positive_scores=in_batch_positive_scores,
             in_batch_candidate_scores=in_batch_candidate_scores,
-        )
+        ).float()
 
         losses = []
         advantages = []
