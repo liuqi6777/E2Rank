@@ -21,6 +21,7 @@ class GRPOTrainer(HFTrainer):
         "advantages_std",
         "advantages_min",
         "advantages_max",
+        "advantages_degenerate_frac",
         "sigma",
         "kl",
     )
@@ -34,6 +35,7 @@ class GRPOTrainer(HFTrainer):
         "advantages_std": "advantages/std",
         "advantages_min": "advantages/min",
         "advantages_max": "advantages/max",
+        "advantages_degenerate_frac": "advantages/degenerate_frac",
         "sigma": "sigma",
         "kl": "kl",
     }

@@ -59,6 +59,7 @@ class GRPOModelOutput(ModelOutput):
     advantages_std: Optional[Tensor] = None
     advantages_min: Optional[Tensor] = None
     advantages_max: Optional[Tensor] = None
+    advantages_degenerate_frac: Optional[Tensor] = None
     sigma: Optional[Tensor] = None
     kl: Optional[Tensor] = None
 
@@ -127,17 +128,26 @@ class GRPO(nn.Module):
             f"{prefix}_max": flattened_values.max(),
         }
 
-    def _compute_advantages(self, rewards: torch.Tensor, sample_dims: tuple[int, ...]) -> torch.Tensor:
+    def _compute_advantages(
+        self,
+        rewards: torch.Tensor,
+        sample_dims: tuple[int, ...],
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         # Promote to fp32: bf16 round-off in mean/std introduces a systematic, distribution-
         # dependent bias in the normalized advantages (especially after marginalization).
         rewards = rewards.float()
         advantages = rewards - rewards.mean(dim=sample_dims, keepdim=True)
+        batch_size = rewards.size(0)
         if self.advantage_norm:
             std = advantages.std(dim=sample_dims, keepdim=True, unbiased=False)
+            is_degenerate = std <= 1e-4
             # Degenerate groups (all rollouts gave the same reward) carry no learning signal;
             # zero them out instead of dividing by a near-zero std and amplifying noise.
-            advantages = torch.where(std > 1e-4, advantages / std, torch.zeros_like(advantages))
-        return advantages
+            advantages = torch.where(~is_degenerate, advantages / std, torch.zeros_like(advantages))
+            degenerate_mask = is_degenerate.reshape(batch_size, -1).any(dim=-1)
+        else:
+            degenerate_mask = torch.zeros(batch_size, device=rewards.device, dtype=torch.bool)
+        return advantages, degenerate_mask
 
     def _sample_query_embeddings(
         self,
@@ -306,7 +316,7 @@ class GRPO(nn.Module):
         self,
         relevance_labels: torch.Tensor,
         components: Sequence[_ActionComponent],
-    ) -> tuple[torch.Tensor, dict[str, torch.Tensor], torch.Tensor]:
+    ) -> tuple[torch.Tensor, dict[str, torch.Tensor], torch.Tensor, torch.Tensor]:
         active_components = tuple(component for component in components if component.is_active)
         query_components = [component for component in components if component.role == "query"]
         document_components = [component for component in components if component.role == "document"]
@@ -435,16 +445,23 @@ class GRPO(nn.Module):
 
         losses = []
         advantages = []
+        degenerate_masks = []
         for component_index, log_prob in enumerate(log_probs):
             sample_dims = tuple(range(1, 1 + num_components))
             other_dims = tuple(dim for dim in sample_dims if dim != component_index + 1)
             component_rewards = rewards.mean(dim=other_dims) if other_dims else rewards
-            component_advantages = self._compute_advantages(component_rewards, sample_dims=(1,))
+            component_advantages, component_degenerate = self._compute_advantages(
+                component_rewards, sample_dims=(1,)
+            )
             losses.append(-(component_advantages.detach() * log_prob).mean())
             advantages.append(component_advantages)
+            degenerate_masks.append(component_degenerate)
 
+        # Fraction of (batch-element, component) rows whose reward variance collapsed.
+        # These rows received zero advantage and contributed no learning signal.
+        degenerate_frac = torch.cat(degenerate_masks).float().mean()
         reward_stats = self.summarize_tensor(rewards, prefix="reward")
-        return sum(losses), reward_stats, torch.cat(advantages, dim=1)
+        return sum(losses), reward_stats, torch.cat(advantages, dim=1), degenerate_frac
 
     @staticmethod
     def _kl_term(
@@ -611,7 +628,7 @@ class GRPO(nn.Module):
                 rollout_embeddings=rollout_negative_document_embeddings,
             ))
 
-        loss, reward_stats, advantages = self._compute_component_loss(
+        loss, reward_stats, advantages, degenerate_frac = self._compute_component_loss(
             relevance_labels=relevance_labels,
             components=tuple(components),
         )
@@ -648,6 +665,7 @@ class GRPO(nn.Module):
                 loss = loss + self.kl_coef * kl
 
         advantage_stats = self.summarize_tensor(advantages, prefix="advantages")
+        advantage_stats["advantages_degenerate_frac"] = degenerate_frac.detach()
         return loss, reward_stats, advantage_stats, sigma.detach(), kl.detach()
 
 
@@ -788,6 +806,7 @@ class GRPOModel(nn.Module):
             advantages_std=advantage_stats["advantages_std"],
             advantages_min=advantage_stats["advantages_min"],
             advantages_max=advantage_stats["advantages_max"],
+            advantages_degenerate_frac=advantage_stats["advantages_degenerate_frac"],
             sigma=sigma,
             kl=kl,
         )
