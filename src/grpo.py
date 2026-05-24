@@ -60,6 +60,7 @@ class GRPOModelOutput(ModelOutput):
     advantages_min: Optional[Tensor] = None
     advantages_max: Optional[Tensor] = None
     sigma: Optional[Tensor] = None
+    kl: Optional[Tensor] = None
 
 
 class GRPO(nn.Module):
@@ -75,6 +76,7 @@ class GRPO(nn.Module):
         contrastive_use_in_batch_negatives: bool = False,
         contrastive_temperature: float = 0.03,
         advantage_norm: bool = True,
+        kl_coef: float = 0.0,
     ):
         super().__init__()
         reward_type = reward_type.lower()
@@ -89,6 +91,8 @@ class GRPO(nn.Module):
             )
         if contrastive_temperature <= 0:
             raise ValueError(f"contrastive_temperature must be positive, got {contrastive_temperature}")
+        if kl_coef < 0:
+            raise ValueError(f"kl_coef must be non-negative, got {kl_coef}")
 
         self.action_components = action_components
         self.sample_query = any(group == ("query",) for group in action_components)
@@ -102,6 +106,7 @@ class GRPO(nn.Module):
         self.contrastive_temperature = contrastive_temperature
         self.advantage_norm = advantage_norm
         self.sigma_learnable = sigma_learnable
+        self.kl_coef = float(kl_coef)
 
         if sigma_learnable:
             self.log_sigma = nn.Parameter(torch.log(torch.tensor(float(sigma), dtype=torch.float32)))
@@ -441,6 +446,19 @@ class GRPO(nn.Module):
         reward_stats = self.summarize_tensor(rewards, prefix="reward")
         return sum(losses), reward_stats, torch.cat(advantages, dim=1)
 
+    @staticmethod
+    def _kl_term(
+        policy_embeddings: torch.Tensor,
+        reference_embeddings: torch.Tensor,
+        sigma: torch.Tensor,
+    ) -> torch.Tensor:
+        # KL between two isotropic Gaussians with the same sigma:
+        #   KL(N(μ_pol, σ²I) || N(μ_ref, σ²I)) = ||μ_pol - μ_ref||² / (2σ²)
+        # Averaged over batch (and slate, for document components).
+        reference_embeddings = F.normalize(reference_embeddings, dim=-1).detach()
+        squared_distance = (policy_embeddings - reference_embeddings).pow(2).sum(dim=-1)
+        return squared_distance.float().mean() / (2.0 * sigma.float().pow(2))
+
     def forward(
         self,
         rollout_query_embeddings: torch.Tensor,
@@ -450,7 +468,10 @@ class GRPO(nn.Module):
         policy_query_embeddings: torch.Tensor | None = None,
         policy_positive_document_embeddings: torch.Tensor | None = None,
         policy_negative_document_embeddings: torch.Tensor | None = None,
-    ) -> tuple[torch.Tensor, dict[str, torch.Tensor], dict[str, torch.Tensor], torch.Tensor]:
+        reference_query_embeddings: torch.Tensor | None = None,
+        reference_positive_document_embeddings: torch.Tensor | None = None,
+        reference_negative_document_embeddings: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, dict[str, torch.Tensor], dict[str, torch.Tensor], torch.Tensor, torch.Tensor]:
         if relevance_labels is None:
             raise ValueError("relevance_labels are required for GRPO training")
         if rollout_positive_document_embeddings.dim() != 3:
@@ -595,8 +616,39 @@ class GRPO(nn.Module):
             components=tuple(components),
         )
 
+        kl = torch.zeros((), device=loss.device, dtype=torch.float32)
+        if self.kl_coef > 0:
+            kl_terms = []
+            if self.sample_query:
+                if reference_query_embeddings is None:
+                    raise ValueError("reference_query_embeddings are required when kl_coef > 0 and query is sampled")
+                kl_terms.append(self._kl_term(policy_query_embeddings, reference_query_embeddings, sigma))
+            if joint_document_group:
+                if reference_positive_document_embeddings is None or reference_negative_document_embeddings is None:
+                    raise ValueError(
+                        "reference_positive_document_embeddings and reference_negative_document_embeddings "
+                        "are required when kl_coef > 0 and the joint document group is sampled"
+                    )
+                reference_document_embeddings = torch.cat(
+                    (reference_positive_document_embeddings, reference_negative_document_embeddings),
+                    dim=1,
+                )
+                kl_terms.append(self._kl_term(policy_document_embeddings, reference_document_embeddings, sigma))
+            else:
+                if self.sample_positive:
+                    if reference_positive_document_embeddings is None:
+                        raise ValueError("reference_positive_document_embeddings required when kl_coef > 0 and positive is sampled")
+                    kl_terms.append(self._kl_term(policy_positive_document_embeddings, reference_positive_document_embeddings, sigma))
+                if self.sample_negative:
+                    if reference_negative_document_embeddings is None:
+                        raise ValueError("reference_negative_document_embeddings required when kl_coef > 0 and negative is sampled")
+                    kl_terms.append(self._kl_term(policy_negative_document_embeddings, reference_negative_document_embeddings, sigma))
+            if kl_terms:
+                kl = torch.stack(kl_terms).sum()
+                loss = loss + self.kl_coef * kl
+
         advantage_stats = self.summarize_tensor(advantages, prefix="advantages")
-        return loss, reward_stats, advantage_stats, sigma.detach()
+        return loss, reward_stats, advantage_stats, sigma.detach(), kl.detach()
 
 
 class GRPOModel(nn.Module):
@@ -619,6 +671,7 @@ class GRPOModel(nn.Module):
             contrastive_use_in_batch_negatives=rl_args.contrastive_use_in_batch_negatives,
             contrastive_temperature=rl_args.contrastive_temperature,
             advantage_norm=rl_args.advantage_norm,
+            kl_coef=rl_args.kl_coef,
         )
 
     def encode(self, model_inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
@@ -683,7 +736,34 @@ class GRPOModel(nn.Module):
         rollout_positive_document_embeddings = rollout_document_embeddings[:, :1]
         rollout_negative_document_embeddings = rollout_document_embeddings[:, 1:]
 
-        loss, reward_stats, advantage_stats, sigma = self.grpo(
+        reference_query_embeddings = None
+        reference_positive_document_embeddings = None
+        reference_negative_document_embeddings = None
+        if self.grpo.kl_coef > 0:
+            if not hasattr(self.model, "disable_adapter"):
+                raise RuntimeError(
+                    "kl_coef > 0 requires a PEFT/LoRA model exposing .disable_adapter(); "
+                    "either enable LoRA or set kl_coef=0."
+                )
+            was_training = self.model.training
+            self.model.eval()
+            try:
+                with torch.no_grad():
+                    with self.model.disable_adapter():
+                        if self.grpo.sample_query:
+                            reference_query_embeddings = self.encode(query)
+                        if sample_document:
+                            encoded_reference_documents = self.encode(document_inputs).reshape(
+                                batch_size, slate_length, -1
+                            )
+                            if self.grpo.sample_positive:
+                                reference_positive_document_embeddings = encoded_reference_documents[:, :1]
+                            if self.grpo.sample_negative:
+                                reference_negative_document_embeddings = encoded_reference_documents[:, 1:]
+            finally:
+                self.model.train(was_training)
+
+        loss, reward_stats, advantage_stats, sigma, kl = self.grpo(
             rollout_query_embeddings=rollout_query_embeddings,
             rollout_positive_document_embeddings=rollout_positive_document_embeddings,
             rollout_negative_document_embeddings=rollout_negative_document_embeddings,
@@ -691,6 +771,9 @@ class GRPOModel(nn.Module):
             policy_query_embeddings=policy_query_embeddings,
             policy_positive_document_embeddings=policy_positive_document_embeddings,
             policy_negative_document_embeddings=policy_negative_document_embeddings,
+            reference_query_embeddings=reference_query_embeddings,
+            reference_positive_document_embeddings=reference_positive_document_embeddings,
+            reference_negative_document_embeddings=reference_negative_document_embeddings,
         )
         reward = reward_stats["reward_mean"]
 
@@ -706,6 +789,7 @@ class GRPOModel(nn.Module):
             advantages_min=advantage_stats["advantages_min"],
             advantages_max=advantage_stats["advantages_max"],
             sigma=sigma,
+            kl=kl,
         )
 
     def gradient_checkpointing_enable(self, *args, **kwargs):

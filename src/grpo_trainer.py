@@ -22,6 +22,7 @@ class GRPOTrainer(HFTrainer):
         "advantages_min",
         "advantages_max",
         "sigma",
+        "kl",
     )
     train_metric_log_names = {
         "reward": "reward",
@@ -34,6 +35,7 @@ class GRPOTrainer(HFTrainer):
         "advantages_min": "advantages/min",
         "advantages_max": "advantages/max",
         "sigma": "sigma",
+        "kl": "kl",
     }
 
     @classmethod

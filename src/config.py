@@ -204,6 +204,17 @@ class RLArguments:
         default=True,
         metadata={"help": "Normalize GRPO advantages for each sample group"},
     )
+    kl_coef: float = field(
+        default=0.0,
+        metadata={
+            "help": (
+                "KL penalty coefficient between the adapter-enabled policy and the base "
+                "(LoRA-disabled) reference. 0 disables the KL term. Requires a PEFT/LoRA model."
+            )
+        },
+    )
 
     def __post_init__(self) -> None:
         self.action_components = normalize_action_components(self.action_components)
+        if self.kl_coef < 0:
+            raise ValueError(f"kl_coef must be non-negative, got {self.kl_coef}")
