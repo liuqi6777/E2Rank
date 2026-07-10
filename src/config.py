@@ -7,6 +7,26 @@ from transformers import TrainingArguments as HFTrainingArguments
 
 SUPPORTED_ACTION_COMPONENTS = {"query", "positive", "negative"}
 
+SUPPORTED_ADVANTAGE_NORM_MODES = ("per_component", "shared", "none")
+
+
+def normalize_advantage_norm_mode(mode) -> str:
+    """Map legacy bool values (and their YAML/CLI string forms) onto the mode names."""
+    if isinstance(mode, bool):
+        return "per_component" if mode else "none"
+    if isinstance(mode, str):
+        lowered = mode.strip().lower()
+        if lowered in {"true", "1", "yes"}:
+            return "per_component"
+        if lowered in {"false", "0", "no"}:
+            return "none"
+        if lowered in SUPPORTED_ADVANTAGE_NORM_MODES:
+            return lowered
+    raise ValueError(
+        f"Unsupported advantage_norm mode: {mode!r}. "
+        f"Expected one of {SUPPORTED_ADVANTAGE_NORM_MODES} (or a legacy bool)."
+    )
+
 
 def normalize_action_components(action_components) -> tuple[tuple[str, ...], ...]:
     if isinstance(action_components, str):
@@ -174,11 +194,34 @@ class RLArguments:
     )
     sigma: float = field(
         default=0.05,
-        metadata={"help": "Initial Gaussian exploration scale"},
+        metadata={
+            "help": (
+                "Exploration scale; the vMF policy concentration is kappa = 1/sigma^2. "
+                "Ignored when kappa is set explicitly."
+            )
+        },
+    )
+    kappa: Optional[float] = field(
+        default=None,
+        metadata={
+            "help": (
+                "vMF concentration override. When set, sigma is derived as 1/sqrt(kappa). "
+                "E.g. kappa=755 matches the sampling concentration (mean cosine 0.53 at d=1024) "
+                "of the legacy projected-Gaussian sampler with sigma=0.05."
+            )
+        },
     )
     sigma_learnable: bool = field(
         default=False,
         metadata={"help": "Learn a global sigma scalar for GRPO"},
+    )
+    sigma_min: float = field(
+        default=1e-3,
+        metadata={"help": "Lower clamp for learnable sigma (prevents exploration collapse)"},
+    )
+    sigma_max: float = field(
+        default=0.5,
+        metadata={"help": "Upper clamp for learnable sigma"},
     )
     reward_type: str = field(
         default="ndcg",
@@ -200,9 +243,27 @@ class RLArguments:
         default=0.03,
         metadata={"help": "Temperature used by the contrastive/infonce reward"},
     )
-    advantage_norm: bool = field(
-        default=True,
-        metadata={"help": "Normalize GRPO advantages for each sample group"},
+    advantage_norm: str = field(
+        default="per_component",
+        metadata={
+            "help": (
+                "Advantage normalization: 'per_component' divides each component's group by its own "
+                "std (legacy true), 'shared' divides all components by the per-sample std of the raw "
+                "reward tensor (preserves relative effect sizes between components), 'none' only "
+                "centers (legacy false)."
+            )
+        },
+    )
+    in_batch_use_sampled_documents: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "Legacy behavior: score in-batch candidates with their sampled (perturbed) embeddings, "
+                "which leaks other samples' perturbations into each sample's advantages via the shared "
+                "group index. Default False scores them with detached mean embeddings so per-sample "
+                "credit assignment stays exact."
+            )
+        },
     )
     kl_coef: float = field(
         default=0.0,
@@ -216,5 +277,10 @@ class RLArguments:
 
     def __post_init__(self) -> None:
         self.action_components = normalize_action_components(self.action_components)
+        self.advantage_norm = normalize_advantage_norm_mode(self.advantage_norm)
+        if self.kappa is not None:
+            if self.kappa <= 0:
+                raise ValueError(f"kappa must be positive, got {self.kappa}")
+            self.sigma = self.kappa ** -0.5
         if self.kl_coef < 0:
             raise ValueError(f"kl_coef must be non-negative, got {self.kl_coef}")
