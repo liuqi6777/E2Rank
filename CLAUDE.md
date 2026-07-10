@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-GRPO-based reinforcement-learning training for embedding models. Treats an embedding as a Gaussian-perturbed action and reuses an HF Trainer for the optimization loop. Ships with several reward presets (nDCG / contrastive / InfoNCE / MRR), a layered YAML config system, and an in-training MTEB/BEIR eval callback. Also includes listwise/pairwise supervised baselines (`src/baselines/`, `src/train_baseline.py`) sharing the same data and trainer plumbing.
+GRPO-based reinforcement-learning training for embedding models. Treats an embedding as a stochastic action on the unit hypersphere (von Mises–Fisher policy, sampled exactly with Wood's algorithm) and reuses an HF Trainer for the optimization loop. Ships with several reward presets (nDCG / contrastive / InfoNCE / MRR), a layered YAML config system, and an in-training MTEB/BEIR eval callback. Also includes listwise/pairwise supervised baselines (`src/baselines/`, `src/train_baseline.py`) sharing the same data and trainer plumbing.
 
 Python 3.10, managed with `uv` (`.python-version` pinned). Single-source-of-truth deps in `pyproject.toml`; `uv sync` installs them.
 
@@ -49,13 +49,14 @@ Both files share the same shape: parse args via `HfArgumentParser` over a tuple 
 Configs compose via a `_base_` list at the YAML top level. Inheritance is resolved recursively; later entries (and CLI args) win. Slot names in `BASE_CONFIG_SLOTS = ("train", "dataset", "model", "grpo", "reward", "eval")` map to `--base-<slot>` launcher flags — the **parent directory name** of each `_base_` entry decides which slot it occupies (so move a file between slot dirs only with intent). `run_name`/`output_dir` are auto-derived from non-default slot stems when omitted; `checkpoints/<run_name>` is the default output.
 
 ### GRPO core (`src/grpo.py`)
-`GRPO.forward` takes detached rollout embeddings, samples `group_size` Gaussian-perturbed actions per **active action component**, recomputes log-probs against the live policy embeddings, builds a score table (with optional cross-batch in-batch positives/negatives), passes scores to a reward function (`src/rewards.py`), and returns `-(advantage.detach() * log_prob).mean()` per component summed. Key design points:
+`GRPO.forward` takes detached rollout embeddings, samples `group_size` vMF actions per **active action component** (exact Wood rejection sampler, concentration `kappa = 1/sigma^2`), computes exact vMF log-probs `kappa * h^T e` against the live policy embeddings (the normalizer cancels under group-centered advantages), builds a score table (with optional cross-batch in-batch positives/negatives), passes scores to a reward function (`src/rewards.py`), and returns `-(advantage.detach() * log_prob).mean()` per component summed. Key design points:
 
 - **Action components** (`RLArguments.action_components`) are groups like `[[query]]`, `[[query], [positive, negative]]`, `[[positive]]`. Each unique role appears in at most one group; `query` must be solo. The joint `[positive, negative]` group encodes positive+negative documents together so one sigma noise term covers them.
 - When a component is *not* sampled, its rollout embedding is reused as a detached score input; only sampled components contribute to log-probs.
-- Advantages are computed per-component by **marginalizing rewards over the other sampled components' axes**, then normalized within the group (when `advantage_norm=True`). Mean/std are promoted to fp32 to dodge bf16 round-off bias (`_compute_advantages`). Degenerate groups (std≈0) are zeroed instead of dividing.
-- Optional KL term (`kl_coef > 0`): isotropic-Gaussian KL between policy μ and the **LoRA-disabled base model** μ (so the reference is the un-adapted policy, not a frozen copy). Requires a PEFT/LoRA model exposing `disable_adapter()`.
-- `sigma` is either a fixed buffer or `log_sigma` nn.Parameter (`sigma_learnable=True`).
+- Advantages are computed per-component by **marginalizing rewards over the other sampled components' axes**, then normalized within the group per `advantage_norm` mode: `per_component` (each component's group → unit std; legacy `true`), `shared` (all components divided by the per-sample std of the raw reward tensor, preserving relative effect sizes), or `none` (centering only; legacy `false`). Mean/std are promoted to fp32 to dodge bf16 round-off bias (`_compute_advantages`). Degenerate groups (std≈0) are zeroed instead of dividing.
+- In-batch candidates from other samples are scored with **detached mean embeddings** by default (`in_batch_use_sampled_documents=False`); the legacy sampled-embedding behavior leaks other samples' perturbations into each sample's advantages via the shared group index.
+- Optional KL term (`kl_coef > 0`): vMF KL `kappa * A_d(kappa) * (1 - mu_pol . mu_ref)` between policy μ and the **LoRA-disabled base model** μ (so the reference is the un-adapted policy, not a frozen copy). Requires a PEFT/LoRA model exposing `disable_adapter()`.
+- `sigma` is either a fixed buffer or `log_sigma` nn.Parameter (`sigma_learnable=True`), clamped to `[sigma_min, sigma_max]` to prevent exploration collapse; `kappa` in `RLArguments` overrides `sigma` directly (`sigma = 1/sqrt(kappa)`).
 
 ### Rewards (`src/rewards.py`)
 `compute_reward_from_scores` dispatches on `reward_type`:
