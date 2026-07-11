@@ -2,6 +2,6 @@ action_components:
   - [query]
   - [positive, negative]
 group_size: 32
-sigma: 0.05
+kappa: 755
 sigma_learnable: false
 advantage_norm: true

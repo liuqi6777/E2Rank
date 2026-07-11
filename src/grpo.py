@@ -422,17 +422,20 @@ class GRPO(nn.Module):
             return component
         return _ActionComponent(role=component.role, rollout_embeddings=component.rollout_embeddings)
 
-    def _frozen_cross_scale(self, document_component: _ActionComponent) -> torch.Tensor | None:
+    @staticmethod
+    def _frozen_doc_scale(document_components: Sequence[_ActionComponent]) -> torch.Tensor | None:
         # A sampled vMF embedding is attenuated toward the origin in expectation: E[e] = A_d(kappa) mu.
-        # When the slate documents are sampled but the in-batch candidates are frozen at their mean
-        # embeddings, the two kinds of candidates land on different score scales (A^2 vs A per side),
-        # and the frozen candidates systematically outrank every sampled document (~1/A = 3x at
-        # kappa=400, d=1024), collapsing ranking rewards to a constant. Rescale the frozen side by
-        # A_d(kappa) so both share the same expected score scale.
-        if self.in_batch_use_sampled_documents or not document_component.is_active:
+        # Any candidate scored at its frozen mean embedding (an unsampled slate component, or in-batch
+        # candidates under the default in_batch_use_sampled_documents=False) therefore lands on a score
+        # scale 1/A_d(kappa) above the sampled documents it competes with (~3x at kappa=400, d=1024)
+        # and systematically outranks them, collapsing ranking rewards to a constant. Whenever at
+        # least one document component is sampled, every frozen-document score table is rescaled by
+        # A_d(kappa) so all candidates share the same expected score scale.
+        sampled = [component for component in document_components if component.is_active]
+        if not sampled:
             return None
-        dim = document_component.rollout_embeddings.size(-1)
-        return bessel_ratio(dim / 2.0, document_component.kappa.detach())
+        dim = sampled[0].rollout_embeddings.size(-1)
+        return bessel_ratio(dim / 2.0, sampled[0].kappa.detach())
 
     def _compute_component_loss(
         self,
@@ -483,12 +486,15 @@ class GRPO(nn.Module):
 
         query_component = query_components[0]
         batch_size = relevance_labels.size(0)
+        frozen_doc_scale = self._frozen_doc_scale(document_components)
         score_grids = []
         for document_component in document_components:
             score_table = self._compute_score_table(
                 query_component=query_component,
                 document_component=document_component,
             )
+            if frozen_doc_scale is not None and not document_component.is_active:
+                score_table = score_table * frozen_doc_scale.to(score_table.dtype)
             score_grids.append(
                 self._expand_score_table(
                     score_table=score_table,
@@ -514,9 +520,8 @@ class GRPO(nn.Module):
                 document_component=positive_component,
                 cross=True,
             )
-            cross_scale = self._frozen_cross_scale(document_components[0])
-            if cross_scale is not None:
-                positive_cross_table = positive_cross_table * cross_scale.to(positive_cross_table.dtype)
+            if frozen_doc_scale is not None and not positive_component.is_active:
+                positive_cross_table = positive_cross_table * frozen_doc_scale.to(positive_cross_table.dtype)
             positive_cross_scores = self._expand_score_table(
                 score_table=positive_cross_table,
                 query_component=query_component,
@@ -540,9 +545,8 @@ class GRPO(nn.Module):
                     document_component=cross_document_component,
                     cross=True,
                 )
-                cross_scale = self._frozen_cross_scale(document_component)
-                if cross_scale is not None:
-                    cross_table = cross_table * cross_scale.to(cross_table.dtype)
+                if frozen_doc_scale is not None and not cross_document_component.is_active:
+                    cross_table = cross_table * frozen_doc_scale.to(cross_table.dtype)
                 expanded_cross_scores = self._expand_score_table(
                     score_table=cross_table,
                     query_component=query_component,

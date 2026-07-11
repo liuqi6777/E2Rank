@@ -1,5 +1,6 @@
 action_components:
   - [query]
+  - [positive]
 group_size: 32
 kappa: 755
 sigma_learnable: false
