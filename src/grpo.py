@@ -10,7 +10,14 @@ from torch import Tensor, nn
 from transformers import PreTrainedModel
 from transformers.file_utils import ModelOutput
 
-from config import RLArguments, normalize_action_components, normalize_advantage_norm_mode
+from config import (
+    SUPPORTED_ADVANTAGE_BASELINES,
+    SUPPORTED_ROLLOUTS,
+    SUPPORTED_SAMPLING_LAWS,
+    RLArguments,
+    normalize_action_components,
+    normalize_advantage_norm_mode,
+)
 from rewards import SUPPORTED_REWARD_TYPES, compute_reward_from_scores
 
 
@@ -89,6 +96,38 @@ def sample_vmf(
     return samples.to(mean_directions.dtype)
 
 
+def sample_projected_gaussian(
+    mean_directions: torch.Tensor,
+    sigma: float,
+    num_samples: int,
+) -> torch.Tensor:
+    """Draw e = normalize(mu + sigma * eps), eps ~ N(0, I_d) -- the projected-Gaussian shortcut.
+
+    Provided only as the sampling-fidelity ablation: the samples follow the projected
+    (angular) Gaussian while the surrogate scores them with the vMF log-density, so the
+    score-function estimator is evaluated under a law the samples were not drawn from.
+    The two laws agree only when sigma*sqrt(d) << 1. Returns [n, num_samples, d].
+    """
+    if mean_directions.dim() != 2:
+        raise ValueError(f"mean_directions must be [n, d], got shape {tuple(mean_directions.shape)}")
+    if sigma <= 0:
+        raise ValueError(f"sigma must be positive, got {sigma}")
+    means = F.normalize(mean_directions.float(), dim=-1)
+    n, dim = means.shape
+    noise = torch.randn(n, num_samples, dim, dtype=torch.float32, device=means.device)
+    samples = F.normalize(means.unsqueeze(1) + float(sigma) * noise, dim=-1)
+    return samples.to(mean_directions.dtype)
+
+
+def projected_gaussian_mean_alignment(sigma: float, dim: int) -> float:
+    """E[mu^T e] for e = normalize(mu + sigma*eps), from ||mu + sigma*eps||^2 -> 1 + sigma^2 d.
+
+    The projected-Gaussian counterpart of the vMF mean resultant length A_d(kappa); used to
+    put the frozen-candidate rescaling on the law actually being sampled from.
+    """
+    return 1.0 / math.sqrt(1.0 + float(sigma) ** 2 * int(dim))
+
+
 @dataclass
 class _ActionComponent:
     role: str
@@ -156,12 +195,28 @@ class GRPO(nn.Module):
         contrastive_use_in_batch_negatives: bool = False,
         contrastive_temperature: float = 0.03,
         advantage_norm: str | bool = "per_component",
+        sampling_law: str = "vmf",
+        rollout: str = "product",
+        frozen_doc_rescale: bool = True,
+        advantage_baseline: str = "group",
+        advantage_baseline_momentum: float = 0.99,
         in_batch_use_sampled_documents: bool = False,
         kl_coef: float = 0.0,
     ):
         super().__init__()
         reward_type = reward_type.lower()
         action_components = normalize_action_components(action_components)
+        if advantage_baseline not in SUPPORTED_ADVANTAGE_BASELINES:
+            raise ValueError(
+                f"Unsupported advantage_baseline: {advantage_baseline!r}. "
+                f"Expected one of {SUPPORTED_ADVANTAGE_BASELINES}."
+            )
+        if sampling_law not in SUPPORTED_SAMPLING_LAWS:
+            raise ValueError(
+                f"Unsupported sampling_law: {sampling_law!r}. Expected one of {SUPPORTED_SAMPLING_LAWS}."
+            )
+        if rollout not in SUPPORTED_ROLLOUTS:
+            raise ValueError(f"Unsupported rollout: {rollout!r}. Expected one of {SUPPORTED_ROLLOUTS}.")
         if group_size < 2:
             raise ValueError("group_size must be at least 2 for GRPO")
         if kappa is not None:
@@ -197,6 +252,11 @@ class GRPO(nn.Module):
         self.contrastive_use_in_batch_negatives = contrastive_use_in_batch_negatives
         self.contrastive_temperature = contrastive_temperature
         self.advantage_norm = normalize_advantage_norm_mode(advantage_norm)
+        self.sampling_law = sampling_law
+        self.rollout = rollout
+        self.frozen_doc_rescale = bool(frozen_doc_rescale)
+        self.advantage_baseline = advantage_baseline
+        self.advantage_baseline_momentum = float(advantage_baseline_momentum)
         self.in_batch_use_sampled_documents = in_batch_use_sampled_documents
         self.sigma_learnable = sigma_learnable
         self.sigma_min = float(sigma_min)
@@ -204,9 +264,22 @@ class GRPO(nn.Module):
         self.kl_coef = float(kl_coef)
 
         if sigma_learnable:
+            if advantage_baseline == "ema":
+                # log C_d(kappa) is dropped from the surrogate on the grounds that it cancels
+                # against advantages that sum to zero within each group. An EMA baseline does
+                # not center within the group, so that cancellation fails and the recovered
+                # d/d(log sigma) gradient would be missing its -A_d(kappa) term.
+                raise ValueError(
+                    "advantage_baseline='ema' is incompatible with sigma_learnable=True: the vMF "
+                    "normalizer only cancels under group-centered advantages."
+                )
             self.log_sigma = nn.Parameter(torch.log(torch.tensor(float(sigma), dtype=torch.float32)))
         else:
             self.register_buffer("fixed_sigma", torch.tensor(float(sigma), dtype=torch.float32))
+
+        if advantage_baseline == "ema":
+            self.register_buffer("reward_baseline", torch.zeros((), dtype=torch.float32))
+            self.register_buffer("reward_baseline_initialized", torch.zeros((), dtype=torch.bool))
 
     def current_sigma(self, device: torch.device, dtype: torch.dtype = torch.float32) -> torch.Tensor:
         if self.sigma_learnable:
@@ -229,6 +302,27 @@ class GRPO(nn.Module):
             f"{prefix}_max": flattened_values.max(),
         }
 
+    def _current_reward_baseline(self, component_rewards: torch.Tensor) -> torch.Tensor:
+        """Global running baseline for the REINFORCE ablation (advantage_baseline='ema').
+
+        Returns the baseline to subtract *before* updating it, so the baseline is
+        independent of the rewards it baselines and the estimator stays unbiased.
+        The update uses the local-rank batch mean; ranks therefore hold slightly
+        different baselines, which is the usual REINFORCE practice and is why this
+        exists only as a comparison point for the group baseline.
+        """
+        batch_mean = component_rewards.detach().mean()
+        if not bool(self.reward_baseline_initialized):
+            self.reward_baseline.copy_(batch_mean)
+            self.reward_baseline_initialized.fill_(True)
+            return self.reward_baseline.clone()
+
+        baseline = self.reward_baseline.clone()
+        if self.training:
+            momentum = self.advantage_baseline_momentum
+            self.reward_baseline.mul_(momentum).add_(batch_mean, alpha=1.0 - momentum)
+        return baseline
+
     def _compute_advantages(
         self,
         component_rewards: torch.Tensor,
@@ -237,7 +331,10 @@ class GRPO(nn.Module):
         # Promote to fp32: bf16 round-off in mean/std introduces a systematic, distribution-
         # dependent bias in the normalized advantages (especially after marginalization).
         component_rewards = component_rewards.float()
-        advantages = component_rewards - component_rewards.mean(dim=1, keepdim=True)
+        if self.advantage_baseline == "ema":
+            advantages = component_rewards - self._current_reward_baseline(component_rewards)
+        else:
+            advantages = component_rewards - component_rewards.mean(dim=1, keepdim=True)
         batch_size = component_rewards.size(0)
         if self.advantage_norm == "none":
             degenerate_mask = torch.zeros(batch_size, device=component_rewards.device, dtype=torch.bool)
@@ -253,22 +350,37 @@ class GRPO(nn.Module):
         # clamp_min(1) keeps this identical to the old absolute 1e-4 for bounded rewards.
         reward_scale = component_rewards.abs().mean(dim=1, keepdim=True).clamp_min(1.0)
         is_degenerate = std <= 1e-4 * reward_scale
-        # Degenerate groups (all rollouts gave the same reward) carry no learning signal;
-        # zero them out instead of dividing by a near-zero std and amplifying noise.
-        advantages = torch.where(~is_degenerate, advantages / std, torch.zeros_like(advantages))
+        if self.advantage_baseline == "ema":
+            # Under a global baseline a zero-spread group is NOT signal-free: every rollout can
+            # be uniformly better than the running baseline. Zeroing it would discard a real
+            # gradient, so only guard the division.
+            advantages = advantages / std.clamp_min(1e-4 * reward_scale)
+        else:
+            # Degenerate groups (all rollouts gave the same reward) carry no learning signal;
+            # zero them out instead of dividing by a near-zero std and amplifying noise.
+            advantages = torch.where(~is_degenerate, advantages / std, torch.zeros_like(advantages))
         degenerate_mask = is_degenerate.reshape(batch_size, -1).any(dim=-1)
         return advantages, degenerate_mask
+
+    def _draw(self, mean_directions: torch.Tensor, kappa: torch.Tensor) -> torch.Tensor:
+        if self.sampling_law == "gaussian":
+            return sample_projected_gaussian(
+                mean_directions,
+                sigma=float(kappa.detach()) ** -0.5,
+                num_samples=self.group_size,
+            )
+        return sample_vmf(
+            mean_directions,
+            kappa=float(kappa.detach()),
+            num_samples=self.group_size,
+        )
 
     def _sample_query_embeddings(
         self,
         rollout_embeddings: torch.Tensor,
         kappa: torch.Tensor,
     ) -> torch.Tensor:
-        return sample_vmf(
-            rollout_embeddings.detach(),
-            kappa=float(kappa.detach()),
-            num_samples=self.group_size,
-        )
+        return self._draw(rollout_embeddings.detach(), kappa)
 
     def _sample_document_embeddings(
         self,
@@ -276,10 +388,9 @@ class GRPO(nn.Module):
         kappa: torch.Tensor,
     ) -> torch.Tensor:
         batch_size, slate_length, dim = rollout_document_embeddings.shape
-        samples = sample_vmf(
+        samples = self._draw(
             rollout_document_embeddings.detach().reshape(batch_size * slate_length, dim),
-            kappa=float(kappa.detach()),
-            num_samples=self.group_size,
+            kappa,
         )
         return samples.reshape(batch_size, slate_length, self.group_size, dim).permute(0, 2, 1, 3)
 
@@ -347,6 +458,7 @@ class GRPO(nn.Module):
         query_component: _ActionComponent,
         document_component: _ActionComponent,
         cross: bool = False,
+        diagonal: bool = False,
     ) -> torch.Tensor:
         query_embeddings = (
             query_component.sampled_embeddings
@@ -368,15 +480,18 @@ class GRPO(nn.Module):
 
         # query: 'bqd' if active else 'bd'; document (same-batch): 'bksd' if active else 'bsd';
         # document (cross-batch): swaps the leading 'b' for 'c' to pair every query with every other batch's docs.
+        # Under the diagonal rollout the two sides share one group index, so the contraction
+        # emits only the paired entries r^(g,g) instead of the full G x G grid.
+        document_index = "q" if diagonal else "k"
         query_spec = "bqd" if query_component.is_active else "bd"
         doc_batch = "c" if cross else "b"
-        doc_spec = f"{doc_batch}ksd" if document_component.is_active else f"{doc_batch}sd"
+        doc_spec = f"{doc_batch}{document_index}sd" if document_component.is_active else f"{doc_batch}sd"
         out_spec = "b"
         if cross:
             out_spec += "c"
-        if query_component.is_active:
+        if query_component.is_active or (diagonal and document_component.is_active):
             out_spec += "q"
-        if document_component.is_active:
+        if document_component.is_active and not diagonal:
             out_spec += "k"
         out_spec += "s"
         return torch.einsum(f"{query_spec},{doc_spec}->{out_spec}", query_embeddings, document_embeddings)
@@ -406,7 +521,7 @@ class GRPO(nn.Module):
         # _compute_score_table emits dims in the order (query, document); the reshape below relies on
         # active_index_by_id[query] < active_index_by_id[document] so the non-singleton slots line up.
         if query_component.is_active and document_component.is_active:
-            assert active_index_by_id[id(query_component)] < active_index_by_id[id(document_component)], (
+            assert active_index_by_id[id(query_component)] <= active_index_by_id[id(document_component)], (
                 "query component must precede document component in active_index_by_id"
             )
 
@@ -443,8 +558,7 @@ class GRPO(nn.Module):
             return component
         return _ActionComponent(role=component.role, rollout_embeddings=component.rollout_embeddings)
 
-    @staticmethod
-    def _frozen_doc_scale(document_components: Sequence[_ActionComponent]) -> torch.Tensor | None:
+    def _frozen_doc_scale(self, document_components: Sequence[_ActionComponent]) -> torch.Tensor | None:
         # A sampled vMF embedding is attenuated toward the origin in expectation: E[e] = A_d(kappa) mu.
         # Any candidate scored at its frozen mean embedding (an unsampled slate component, or in-batch
         # candidates under the default in_batch_use_sampled_documents=False) therefore lands on a score
@@ -452,11 +566,19 @@ class GRPO(nn.Module):
         # and systematically outranks them, collapsing ranking rewards to a constant. Whenever at
         # least one document component is sampled, every frozen-document score table is rescaled by
         # A_d(kappa) so all candidates share the same expected score scale.
+        if not self.frozen_doc_rescale:
+            return None
         sampled = [component for component in document_components if component.is_active]
         if not sampled:
             return None
         dim = sampled[0].rollout_embeddings.size(-1)
-        return bessel_ratio(dim / 2.0, sampled[0].kappa.detach())
+        kappa = sampled[0].kappa.detach()
+        if self.sampling_law == "gaussian":
+            # Match the law actually sampled from, so the ablation compares sampling fidelity
+            # rather than an incidental miscalibration of the frozen candidates.
+            alignment = projected_gaussian_mean_alignment(float(kappa) ** -0.5, dim)
+            return torch.as_tensor(alignment, dtype=torch.float32, device=kappa.device)
+        return bessel_ratio(dim / 2.0, kappa)
 
     def _compute_component_loss(
         self,
@@ -471,7 +593,8 @@ class GRPO(nn.Module):
         if not document_components:
             raise ValueError("At least one document component is required")
 
-        num_components = len(active_components)
+        diagonal = self.rollout == "diagonal"
+        num_components = 1 if diagonal else len(active_components)
         group_size = self._get_component_group_size(
             active_components=active_components,
         )
@@ -481,8 +604,9 @@ class GRPO(nn.Module):
         )
 
         log_probs = []
+        # Diagonal rollout: every component writes into the single shared group axis.
         active_index_by_id = {
-            id(component): component_index
+            id(component): (0 if diagonal else component_index)
             for component_index, component in enumerate(active_components)
         }
         for component in active_components:
@@ -513,6 +637,7 @@ class GRPO(nn.Module):
             score_table = self._compute_score_table(
                 query_component=query_component,
                 document_component=document_component,
+                diagonal=diagonal,
             )
             if frozen_doc_scale is not None and not document_component.is_active:
                 score_table = score_table * frozen_doc_scale.to(score_table.dtype)
@@ -540,6 +665,7 @@ class GRPO(nn.Module):
                 query_component=query_component,
                 document_component=positive_component,
                 cross=True,
+                diagonal=diagonal,
             )
             if frozen_doc_scale is not None and not positive_component.is_active:
                 positive_cross_table = positive_cross_table * frozen_doc_scale.to(positive_cross_table.dtype)
@@ -562,6 +688,7 @@ class GRPO(nn.Module):
                     query_component=query_component,
                     document_component=cross_document_component,
                     cross=True,
+                    diagonal=diagonal,
                 )
                 if frozen_doc_scale is not None and not cross_document_component.is_active:
                     cross_table = cross_table * frozen_doc_scale.to(cross_table.dtype)
@@ -603,7 +730,11 @@ class GRPO(nn.Module):
         degenerate_masks = []
         for component_index, log_prob in enumerate(log_probs):
             sample_dims = tuple(range(1, 1 + num_components))
-            other_dims = tuple(dim for dim in sample_dims if dim != component_index + 1)
+            # Diagonal rollout has a single shared axis, so no axis is "the other side" and
+            # every component receives the same advantage vector -- the interaction is
+            # attributed to both sides at once, which is exactly the trade-off it makes.
+            axis = 0 if diagonal else component_index
+            other_dims = tuple(dim for dim in sample_dims if dim != axis + 1)
             component_rewards = rewards.mean(dim=other_dims) if other_dims else rewards
             component_advantages, component_degenerate = self._compute_advantages(
                 component_rewards, shared_std=shared_std
@@ -853,6 +984,11 @@ class GRPOModel(nn.Module):
             contrastive_use_in_batch_negatives=rl_args.contrastive_use_in_batch_negatives,
             contrastive_temperature=rl_args.contrastive_temperature,
             advantage_norm=rl_args.advantage_norm,
+            sampling_law=rl_args.sampling_law,
+            rollout=rl_args.rollout,
+            frozen_doc_rescale=rl_args.frozen_doc_rescale,
+            advantage_baseline=rl_args.advantage_baseline,
+            advantage_baseline_momentum=rl_args.advantage_baseline_momentum,
             in_batch_use_sampled_documents=rl_args.in_batch_use_sampled_documents,
             kl_coef=rl_args.kl_coef,
         )
@@ -863,6 +999,28 @@ class GRPOModel(nn.Module):
             model_inputs["attention_mask"],
             normalize=True,
         )
+
+    @torch.no_grad()
+    def eval_ranking_metrics(
+        self,
+        query: Dict[str, torch.Tensor] = None,
+        positive_document: Dict[str, torch.Tensor] = None,
+        negative_document: Dict[str, torch.Tensor] = None,
+        relevance_labels: torch.Tensor = None,
+        **_: object,
+    ) -> Dict[str, torch.Tensor]:
+        """Deterministic dev metrics: the policy MEAN, no sampling.
+
+        This is what deployment computes, and unlike the policy-gradient surrogate its
+        value is comparable across configurations -- which is what model selection needs.
+        """
+        from ranking_eval import ranking_eval_metrics, score_slate_deterministically
+
+        slate_length = relevance_labels.size(1)
+        scores = score_slate_deterministically(
+            self.encode, query, positive_document, negative_document, slate_length
+        )
+        return ranking_eval_metrics(scores.float(), relevance_labels, k=self.grpo.reward_ndcg_k)
 
     def forward(
         self,

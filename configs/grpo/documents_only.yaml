@@ -1,6 +1,5 @@
-# DEFAULT recipe: query + bundled document slate -> G x G reward tensor.
+# Documents-only policy: the query is a frozen anchor.
 action_components:
-  - [query]
   - [positive, negative]
 group_size: 32
 kappa: 755

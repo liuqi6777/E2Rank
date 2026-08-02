@@ -4,4 +4,8 @@ action_components:
 group_size: 32
 kappa: 755
 sigma_learnable: false
-advantage_norm: true
+advantage_norm: per_component
+sampling_law: vmf
+rollout: product
+frozen_doc_rescale: true
+advantage_baseline: group

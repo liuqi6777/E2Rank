@@ -9,6 +9,12 @@ SUPPORTED_ACTION_COMPONENTS = {"query", "positive", "negative"}
 
 SUPPORTED_ADVANTAGE_NORM_MODES = ("per_component", "shared", "none")
 
+SUPPORTED_ADVANTAGE_BASELINES = ("group", "ema")
+
+SUPPORTED_SAMPLING_LAWS = ("vmf", "gaussian")
+
+SUPPORTED_ROLLOUTS = ("product", "diagonal")
+
 
 def normalize_advantage_norm_mode(mode) -> str:
     """Map legacy bool values (and their YAML/CLI string forms) onto the mode names."""
@@ -113,10 +119,25 @@ class DataArguments:
         default="binary",
         metadata={"help": "Relevance labels: binary or graded"},
     )
+    dev_samples_per_source: int = field(
+        default=0,
+        metadata={
+            "help": (
+                "Hold out this many examples per source as a development split. 0 disables it. "
+                "The split is taken after the seeded per-source shuffle and before the training "
+                "cap, so it is disjoint from training data and stable across runs with the same "
+                "seed. Needed to tune smoothing/LR without touching the evaluation benchmark."
+            )
+        },
+    )
 
     def __post_init__(self) -> None:
         if self.relevance_scheme not in {"binary", "graded"}:
             raise ValueError(f"Unsupported relevance_scheme: {self.relevance_scheme}")
+        if self.dev_samples_per_source < 0:
+            raise ValueError(
+                f"dev_samples_per_source must be non-negative, got {self.dev_samples_per_source}"
+            )
 
 
 @dataclass
@@ -254,6 +275,52 @@ class RLArguments:
             )
         },
     )
+    sampling_law: str = field(
+        default="vmf",
+        metadata={
+            "help": (
+                "Law the actions are drawn from. 'vmf' samples exactly (Wood's rejection "
+                "sampler). 'gaussian' is the projected-Gaussian shortcut e = normalize(h + "
+                "sigma*eps), which is scored under the vMF log-density it was NOT drawn from; "
+                "it exists as an ablation of sampling fidelity, not as a supported mode."
+            )
+        },
+    )
+    rollout: str = field(
+        default="product",
+        metadata={
+            "help": (
+                "'product' evaluates the full cross product of per-component samples (one "
+                "reward-tensor axis per sampled component). 'diagonal' evaluates only the paired "
+                "entries r^(g,g,...,g), so every component shares one group index and one "
+                "advantage vector."
+            )
+        },
+    )
+    frozen_doc_rescale: bool = field(
+        default=True,
+        metadata={
+            "help": (
+                "Rescale frozen-document score tables by the policy's mean resultant length so "
+                "frozen and sampled candidates share a score scale. Disabling it reproduces the "
+                "reward-collapse failure mode and exists only as an ablation."
+            )
+        },
+    )
+    advantage_baseline: str = field(
+        default="group",
+        metadata={
+            "help": (
+                "Baseline subtracted from rewards. 'group' is GRPO's per-input group mean; "
+                "'ema' is a single global exponential-moving-average scalar, which reduces the "
+                "method to REINFORCE with a running baseline and exists as an ablation."
+            )
+        },
+    )
+    advantage_baseline_momentum: float = field(
+        default=0.99,
+        metadata={"help": "Momentum of the running baseline when advantage_baseline='ema'"},
+    )
     in_batch_use_sampled_documents: bool = field(
         default=False,
         metadata={
@@ -278,6 +345,24 @@ class RLArguments:
     def __post_init__(self) -> None:
         self.action_components = normalize_action_components(self.action_components)
         self.advantage_norm = normalize_advantage_norm_mode(self.advantage_norm)
+        if self.sampling_law not in SUPPORTED_SAMPLING_LAWS:
+            raise ValueError(
+                f"Unsupported sampling_law: {self.sampling_law!r}. "
+                f"Expected one of {SUPPORTED_SAMPLING_LAWS}."
+            )
+        if self.rollout not in SUPPORTED_ROLLOUTS:
+            raise ValueError(
+                f"Unsupported rollout: {self.rollout!r}. Expected one of {SUPPORTED_ROLLOUTS}."
+            )
+        if self.advantage_baseline not in SUPPORTED_ADVANTAGE_BASELINES:
+            raise ValueError(
+                f"Unsupported advantage_baseline: {self.advantage_baseline!r}. "
+                f"Expected one of {SUPPORTED_ADVANTAGE_BASELINES}."
+            )
+        if not 0.0 <= self.advantage_baseline_momentum < 1.0:
+            raise ValueError(
+                f"advantage_baseline_momentum must lie in [0, 1), got {self.advantage_baseline_momentum}"
+            )
         if self.kappa is not None:
             if self.kappa <= 0:
                 raise ValueError(f"kappa must be positive, got {self.kappa}")
