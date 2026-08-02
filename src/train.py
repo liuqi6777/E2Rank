@@ -7,6 +7,7 @@ import torch
 from peft import LoraConfig, PeftModel, get_peft_model
 from transformers import AutoConfig, AutoModel, AutoTokenizer
 from transformers import HfArgumentParser, set_seed
+from transformers.trainer_utils import get_last_checkpoint
 
 from config import (
     DataArguments,
@@ -17,7 +18,7 @@ from config import (
     TrainingArguments,
 )
 from grpo import GRPOModel
-from grpo_trainer import GRPOTrainer
+from grpo_trainer import GRPOTrainer, restore_grpo_state
 from mteb_eval_callback import MTEBEvalCallback
 from ranking_data import RankingDataCollator, RankingDataset
 from utils import (
@@ -171,6 +172,13 @@ def main() -> None:
     )
     model.train()
 
+    # Resolved before the trainer is built so the exploration scale can be restored while
+    # the parameter is still whole (DeepSpeed partitions it during trainer construction).
+    resume_checkpoint = None
+    if not training_args.overwrite_output_dir and os.path.isdir(training_args.output_dir):
+        resume_checkpoint = get_last_checkpoint(training_args.output_dir)
+    restore_grpo_state(model, resume_checkpoint)
+
     if training_args.gradient_checkpointing:
         training_args.gradient_checkpointing_kwargs = resolve_gradient_checkpointing_kwargs(
             training_args=training_args,
@@ -202,10 +210,7 @@ def main() -> None:
     if mteb_callback.enabled:
         trainer.add_callback(mteb_callback.bind_trainer(trainer))
 
-    if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")) and not training_args.overwrite_output_dir:
-        trainer.train(resume_from_checkpoint=True)
-    else:
-        trainer.train()
+    trainer.train(resume_from_checkpoint=True if resume_checkpoint else None)
 
     save_model_for_trainer(trainer=trainer, output_dir=training_args.output_dir)
     if trainer.is_world_process_zero():

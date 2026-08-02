@@ -1,11 +1,11 @@
 import json
 import random
 from collections import defaultdict
-from typing import Any, Dict, Sequence
+from typing import Any, Dict, Iterator, Sequence
 
 import torch
 import transformers
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, Sampler
 
 
 TASK_PROMPTS = {
@@ -91,7 +91,61 @@ class RankingDataset(Dataset):
         random.shuffle(ordered_batches)
         ordered_indices = [idx for batch in ordered_batches for idx in batch]
         self.samples = [normalized_samples[idx] for idx in ordered_indices]
-        print(f"Loaded {len(self.samples)} samples.")
+        self.num_batches = len(ordered_batches)
+        print(f"Loaded {len(self.samples)} samples in {self.num_batches} single-source batches.")
+
+
+class SingleSourceBatchSampler(Sampler[int]):
+    """Sample-level sampler that preserves ``RankingDataset``'s per-source batching.
+
+    ``RankingDataset`` lays its samples out as consecutive blocks of ``batch_size``
+    drawn from a single source, so that every micro-batch shares one task prompt and
+    in-batch negatives stay in-domain. The HF Trainer's default ``RandomSampler``
+    shuffles at the *sample* level and silently destroys that layout, mixing every
+    source into every batch. This sampler shuffles whole blocks instead, keeping the
+    intra-block order intact.
+
+    The block permutation is derived from ``seed + epoch`` only, so every rank walks
+    the same global batch order; accelerate then hands whole batches to ranks
+    round-robin (``split_batches=False``), and each rank still sees single-source
+    micro-batches.
+    """
+
+    def __init__(
+        self,
+        dataset: Dataset,
+        batch_size: int,
+        seed: int = 0,
+        shuffle: bool = True,
+    ):
+        if batch_size < 1:
+            raise ValueError(f"batch_size must be positive, got {batch_size}")
+        self.dataset = dataset
+        self.batch_size = batch_size
+        self.seed = seed
+        self.shuffle = shuffle
+        self.epoch = 0
+
+    def set_epoch(self, epoch: int) -> None:
+        self.epoch = int(epoch)
+
+    def __len__(self) -> int:
+        return len(self.dataset)
+
+    def __iter__(self) -> Iterator[int]:
+        num_samples = len(self.dataset)
+        num_blocks = num_samples // self.batch_size
+        if self.shuffle and num_blocks > 1:
+            generator = torch.Generator()
+            generator.manual_seed(self.seed + self.epoch)
+            block_order = torch.randperm(num_blocks, generator=generator).tolist()
+        else:
+            block_order = range(num_blocks)
+
+        for block in block_order:
+            yield from range(block * self.batch_size, (block + 1) * self.batch_size)
+        # RankingDataset drops partial per-source batches, so this is normally empty.
+        yield from range(num_blocks * self.batch_size, num_samples)
 
 
 def build_relevance_labels(

@@ -248,7 +248,11 @@ class GRPO(nn.Module):
         # components by the per-sample std of the raw reward tensor instead, preserving the
         # relative first-order effects of query vs. document perturbations.
         std = shared_std if shared_std is not None else advantages.std(dim=1, keepdim=True, unbiased=False)
-        is_degenerate = std <= 1e-4
+        # Scale-aware threshold: rewards range from nDCG in [0, 1] to contrastive margins of a
+        # very different magnitude, so a fixed absolute cutoff means something different for each.
+        # clamp_min(1) keeps this identical to the old absolute 1e-4 for bounded rewards.
+        reward_scale = component_rewards.abs().mean(dim=1, keepdim=True).clamp_min(1.0)
+        is_degenerate = std <= 1e-4 * reward_scale
         # Degenerate groups (all rollouts gave the same reward) carry no learning signal;
         # zero them out instead of dividing by a near-zero std and amplifying noise.
         advantages = torch.where(~is_degenerate, advantages / std, torch.zeros_like(advantages))
@@ -354,8 +358,13 @@ class GRPO(nn.Module):
             if document_component.is_active
             else document_component.rollout_embeddings.detach()
         )
-        query_embeddings = F.normalize(query_embeddings, dim=-1)
-        document_embeddings = F.normalize(document_embeddings, dim=-1)
+        # fp32: the reward ranks candidates by these scores, and bf16 resolves cosines only
+        # to ~4e-3 near 1.0 — coarser than the score gaps inside a hard-negative slate. The
+        # resulting ties are broken by topk toward the lowest index, which the collator
+        # always fills with the gold positive, so the round-off biases the reward upward
+        # instead of just adding noise.
+        query_embeddings = F.normalize(query_embeddings.float(), dim=-1)
+        document_embeddings = F.normalize(document_embeddings.float(), dim=-1)
 
         # query: 'bqd' if active else 'bd'; document (same-batch): 'bksd' if active else 'bsd';
         # document (cross-batch): swaps the leading 'b' for 'c' to pair every query with every other batch's docs.
@@ -371,6 +380,18 @@ class GRPO(nn.Module):
             out_spec += "k"
         out_spec += "s"
         return torch.einsum(f"{query_spec},{doc_spec}->{out_spec}", query_embeddings, document_embeddings)
+
+    @staticmethod
+    def _mask_cross_batch_diagonal(score_table: torch.Tensor, batch_size: int) -> torch.Tensor:
+        # Drop each sample's own documents from its cross-batch distractor pool. Masking the
+        # compact [batch, candidate_batch, ...] table here rather than the expanded grid avoids
+        # materializing a second copy of a tensor that carries one axis per action component.
+        diagonal_mask = torch.eye(batch_size, device=score_table.device, dtype=torch.bool)
+        trailing_dims = [1] * (score_table.dim() - 2)
+        return score_table.masked_fill(
+            diagonal_mask.reshape(batch_size, batch_size, *trailing_dims),
+            float("-inf"),
+        )
 
     @staticmethod
     def _expand_score_table(
@@ -522,7 +543,8 @@ class GRPO(nn.Module):
             )
             if frozen_doc_scale is not None and not positive_component.is_active:
                 positive_cross_table = positive_cross_table * frozen_doc_scale.to(positive_cross_table.dtype)
-            positive_cross_scores = self._expand_score_table(
+            positive_cross_table = self._mask_cross_batch_diagonal(positive_cross_table, batch_size)
+            in_batch_positive_scores = self._expand_score_table(
                 score_table=positive_cross_table,
                 query_component=query_component,
                 document_component=positive_component,
@@ -531,13 +553,9 @@ class GRPO(nn.Module):
                 group_size=group_size,
                 cross=True,
             )[..., 0]
-            diagonal_mask = torch.eye(batch_size, device=scores.device, dtype=torch.bool)
-            diagonal_mask = diagonal_mask.reshape(batch_size, *([1] * num_components), batch_size)
-            in_batch_positive_scores = positive_cross_scores.masked_fill(diagonal_mask, float("-inf"))
 
         if batch_size > 1 and self.reward_type == "ndcg_in_batch" and self.ndcg_in_batch_include_negatives:
             cross_candidate_scores = []
-            diagonal_mask = torch.eye(batch_size, device=scores.device, dtype=torch.bool)
             for document_component in document_components:
                 cross_document_component = self._cross_batch_component(document_component)
                 cross_table = self._compute_score_table(
@@ -547,6 +565,7 @@ class GRPO(nn.Module):
                 )
                 if frozen_doc_scale is not None and not cross_document_component.is_active:
                     cross_table = cross_table * frozen_doc_scale.to(cross_table.dtype)
+                cross_table = self._mask_cross_batch_diagonal(cross_table, batch_size)
                 expanded_cross_scores = self._expand_score_table(
                     score_table=cross_table,
                     query_component=query_component,
@@ -555,11 +574,6 @@ class GRPO(nn.Module):
                     num_components=num_components,
                     group_size=group_size,
                     cross=True,
-                )
-                mask_shape = [batch_size, *([1] * num_components), batch_size, 1]
-                expanded_cross_scores = expanded_cross_scores.masked_fill(
-                    diagonal_mask.reshape(mask_shape),
-                    float("-inf"),
                 )
                 cross_candidate_scores.append(
                     expanded_cross_scores.reshape(batch_size, *([group_size] * num_components), -1)

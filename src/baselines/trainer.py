@@ -1,7 +1,7 @@
-import os
-
 import torch
 from transformers import Trainer as HFTrainer
+
+from grpo_trainer import build_single_source_sampler, save_wrapped_backbone
 
 
 class BaselineTrainer(HFTrainer):
@@ -88,24 +88,12 @@ class BaselineTrainer(HFTrainer):
             logs = {**logs, **self._consume_train_metrics()}
         super().log(self._rename_log_keys(logs), start_time=start_time)
 
+    def _get_train_sampler(self, train_dataset=None):
+        dataset = train_dataset if train_dataset is not None else self.train_dataset
+        sampler = build_single_source_sampler(self, dataset)
+        if sampler is not None:
+            return sampler
+        return super()._get_train_sampler(train_dataset)
+
     def _save(self, output_dir=None, state_dict=None):
-        output_dir = output_dir if output_dir is not None else self.args.output_dir
-        os.makedirs(output_dir, exist_ok=True)
-        print(f"Saving model checkpoint to {output_dir}")
-
-        model_to_save = self.deepspeed.model if self.is_deepspeed_enabled else self.model.model
-        model_to_save.save_pretrained(
-            output_dir,
-            safe_serialization=self.args.save_safetensors,
-            state_dict={
-                key.removeprefix("model."): value
-                for key, value in state_dict.items()
-                if key.startswith("model.")
-            },
-        )
-
-        if self.tokenizer is not None and self.is_world_process_zero():
-            self.tokenizer.save_pretrained(
-                output_dir,
-                safe_serialization=self.args.save_safetensors,
-            )
+        save_wrapped_backbone(self, output_dir=output_dir, state_dict=state_dict)

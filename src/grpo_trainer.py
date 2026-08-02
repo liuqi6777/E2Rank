@@ -1,7 +1,96 @@
+import json
+import logging
+import math
 import os
 
 import torch
 from transformers import Trainer as HFTrainer
+
+from ranking_data import RankingDataset, SingleSourceBatchSampler
+
+
+logger = logging.getLogger(__name__)
+
+
+GRPO_STATE_FILENAME = "grpo_state.json"
+
+
+def restore_grpo_state(model, checkpoint_dir: str | None) -> None:
+    """Restore the learnable exploration scale saved next to a checkpoint.
+
+    Call before the trainer is built, i.e. before DeepSpeed partitions the parameter.
+    """
+    if not checkpoint_dir or not model.grpo.sigma_learnable:
+        return
+    state_path = os.path.join(checkpoint_dir, GRPO_STATE_FILENAME)
+    if not os.path.exists(state_path):
+        logger.warning("No %s in %s; sigma restarts from its configured init.", GRPO_STATE_FILENAME, checkpoint_dir)
+        return
+
+    with open(state_path, "r", encoding="utf-8") as fp:
+        sigma = float(json.load(fp)["sigma"])
+    with torch.no_grad():
+        model.grpo.log_sigma.fill_(math.log(sigma))
+    logger.info("Restored learnable sigma=%s from %s", sigma, state_path)
+
+
+def build_single_source_sampler(trainer: HFTrainer, train_dataset):
+    """Return a block-preserving sampler for ``RankingDataset``, else ``None``.
+
+    The Trainer's default ``RandomSampler`` shuffles at the sample level, which
+    destroys the per-source pre-batching that ``RankingDataset`` builds (and that
+    in-batch negatives depend on).
+    """
+    if not isinstance(train_dataset, RankingDataset):
+        return None
+
+    dataloader_batch_size = getattr(trainer, "_train_batch_size", None) or trainer.args.train_batch_size
+    if train_dataset.batch_size != dataloader_batch_size:
+        logger.warning(
+            "RankingDataset was pre-batched with batch_size=%s but the dataloader uses %s; "
+            "batches will span multiple sources. Rebuild the dataset with the dataloader batch size.",
+            train_dataset.batch_size,
+            dataloader_batch_size,
+        )
+    return SingleSourceBatchSampler(
+        dataset=train_dataset,
+        batch_size=train_dataset.batch_size,
+        seed=trainer.args.seed,
+    )
+
+
+def save_wrapped_backbone(trainer: HFTrainer, output_dir=None, state_dict=None) -> str:
+    """Save the wrapped backbone, stripping the ``"model."`` prefix added by the wrapper.
+
+    ``Trainer.save_model`` calls ``_save(output_dir)`` without a state dict on the
+    plain (non-DeepSpeed, non-FSDP) path, so fall back to the wrapper's own state
+    dict instead of dereferencing ``None``.
+    """
+    output_dir = output_dir if output_dir is not None else trainer.args.output_dir
+    os.makedirs(output_dir, exist_ok=True)
+    print(f"Saving model checkpoint to {output_dir}")
+
+    if state_dict is None:
+        state_dict = trainer.model.state_dict()
+
+    model_to_save = trainer.deepspeed.model if trainer.is_deepspeed_enabled else trainer.model.model
+    model_to_save.save_pretrained(
+        output_dir,
+        safe_serialization=trainer.args.save_safetensors,
+        state_dict={
+            key.removeprefix("model."): value
+            for key, value in state_dict.items()
+            if key.startswith("model.")
+        },
+    )
+
+    processing_class = getattr(trainer, "processing_class", None)
+    if processing_class is not None and trainer.is_world_process_zero():
+        processing_class.save_pretrained(
+            output_dir,
+            safe_serialization=trainer.args.save_safetensors,
+        )
+    return output_dir
 
 
 class GRPOTrainer(HFTrainer):
@@ -52,8 +141,16 @@ class GRPOTrainer(HFTrainer):
         super().__init__(*args, **kwargs)
         self._train_metric_sums: dict[str, torch.Tensor] = {}
         self._train_metric_updates = 0
+        # Sigma observed during the forward pass. Reading grpo.log_sigma directly at save
+        # time is unsafe under ZeRO-3 (the parameter is a rank-local shard outside a
+        # gather context, and _save runs on one rank only, so we cannot collect it there).
+        self._last_sigma: float | None = None
 
     def _accumulate_train_metrics(self, outputs) -> None:
+        sigma = outputs.get("sigma") if isinstance(outputs, dict) else getattr(outputs, "sigma", None)
+        if sigma is not None:
+            self._last_sigma = float(sigma)
+
         for metric_name in self.train_metric_names:
             if isinstance(outputs, dict):
                 metric_value = outputs.get(metric_name)
@@ -94,6 +191,13 @@ class GRPOTrainer(HFTrainer):
         self._train_metric_updates = 0
         return logs
 
+    def _get_train_sampler(self, train_dataset=None):
+        dataset = train_dataset if train_dataset is not None else self.train_dataset
+        sampler = build_single_source_sampler(self, dataset)
+        if sampler is not None:
+            return sampler
+        return super()._get_train_sampler(train_dataset)
+
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         loss, outputs = super().compute_loss(
             model,
@@ -111,23 +215,10 @@ class GRPOTrainer(HFTrainer):
         super().log(self._rename_log_keys(logs), start_time=start_time)
 
     def _save(self, output_dir=None, state_dict=None):
-        output_dir = output_dir if output_dir is not None else self.args.output_dir
-        os.makedirs(output_dir, exist_ok=True)
-        print(f"Saving model checkpoint to {output_dir}")
+        output_dir = save_wrapped_backbone(self, output_dir=output_dir, state_dict=state_dict)
 
-        model_to_save = self.deepspeed.model if self.is_deepspeed_enabled else self.model.model
-        model_to_save.save_pretrained(
-            output_dir,
-            safe_serialization=self.args.save_safetensors,
-            state_dict={
-                key.removeprefix("model."): value
-                for key, value in state_dict.items()
-                if key.startswith("model.")
-            },
-        )
-
-        if self.tokenizer is not None and self.is_world_process_zero():
-            self.tokenizer.save_pretrained(
-                output_dir,
-                safe_serialization=self.args.save_safetensors,
-            )
+        # The backbone save above only covers `model.*`; the learnable exploration scale
+        # lives on the GRPO head and would otherwise silently reset to its init on resume.
+        if self.model.grpo.sigma_learnable and self._last_sigma is not None and self.is_world_process_zero():
+            with open(os.path.join(output_dir, GRPO_STATE_FILENAME), "w", encoding="utf-8") as fp:
+                json.dump({"sigma": self._last_sigma}, fp)
