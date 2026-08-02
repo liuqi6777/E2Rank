@@ -1,0 +1,9 @@
+# Stage 2 (ranking RL). Listwise corpus with supervision permutations.
+data_path: data/train.jsonl
+per_dataset_max_samples: 10000
+q_max_len: 512
+d_max_len: 1024
+relevance_scheme: graded
+# Held-out dev split for model selection. Taken per source before the training cap, so it
+# is disjoint from training data and stable for a given --seed. Set to 0 to disable.
+dev_samples_per_source: 200

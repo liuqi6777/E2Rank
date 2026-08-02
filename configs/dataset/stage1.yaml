@@ -1,0 +1,6 @@
+# Stage 1 (contrastive). Large public corpus, no per-source cap.
+data_path: data/echo_train.jsonl
+per_dataset_max_samples: null
+q_max_len: 512
+d_max_len: 1024
+relevance_scheme: binary

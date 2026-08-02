@@ -45,6 +45,24 @@ class BaselineModel(nn.Module):
             normalize=True,
         )
 
+    @torch.no_grad()
+    def eval_ranking_metrics(
+        self,
+        query: Dict[str, torch.Tensor] = None,
+        positive_document: Dict[str, torch.Tensor] = None,
+        negative_document: Dict[str, torch.Tensor] = None,
+        relevance_labels: torch.Tensor = None,
+        **_: object,
+    ) -> Dict[str, Tensor]:
+        """Deterministic dev metrics, identical in form to the GRPO model's."""
+        from ranking_eval import ranking_eval_metrics, score_slate_deterministically
+
+        slate_length = relevance_labels.size(1)
+        scores = score_slate_deterministically(
+            self.encode, query, positive_document, negative_document, slate_length
+        )
+        return ranking_eval_metrics(scores.float(), relevance_labels, k=self.baseline_args.baseline_ndcg_k)
+
     def forward(
         self,
         query: Dict[str, torch.Tensor] = None,

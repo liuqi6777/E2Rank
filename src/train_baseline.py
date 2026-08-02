@@ -13,6 +13,7 @@ from baselines.model import BaselineModel
 from baselines.trainer import BaselineTrainer
 from config import DataArguments, LoraArguments, ModelArguments, TrainingArguments
 from ranking_data import RankingDataCollator, RankingDataset
+from ranking_eval import ranking_compute_metrics
 from utils import (
     BASELINE_CONFIG_SLOTS,
     parse_config_file,
@@ -173,7 +174,16 @@ def main() -> None:
     train_dataset = RankingDataset(
         data_args=data_args,
         batch_size=training_args.per_device_train_batch_size,
+        split="train",
     )
+    # Held-out dev split for model selection, so smoothing/LR are never tuned on MTEB.
+    eval_dataset = None
+    if data_args.dev_samples_per_source > 0:
+        eval_dataset = RankingDataset(
+            data_args=data_args,
+            batch_size=training_args.per_device_eval_batch_size,
+            split="dev",
+        )
     data_collator = RankingDataCollator(
         tokenizer=tokenizer,
         query_max_length=data_args.q_max_len,
@@ -186,6 +196,8 @@ def main() -> None:
         processing_class=tokenizer,
         args=training_args,
         train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+        compute_metrics=ranking_compute_metrics if eval_dataset is not None else None,
         data_collator=data_collator,
         metric_k=baseline_args.baseline_ndcg_k,
     )

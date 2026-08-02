@@ -7,6 +7,7 @@ import torch
 from transformers import Trainer as HFTrainer
 
 from ranking_data import RankingDataset, SingleSourceBatchSampler
+from ranking_eval import RankingEvalMixin
 
 
 logger = logging.getLogger(__name__)
@@ -93,7 +94,7 @@ def save_wrapped_backbone(trainer: HFTrainer, output_dir=None, state_dict=None) 
     return output_dir
 
 
-class GRPOTrainer(HFTrainer):
+class GRPOTrainer(RankingEvalMixin, HFTrainer):
     base_log_name_map = {
         "loss": "train/loss",
         "learning_rate": "train/lr",

@@ -36,9 +36,14 @@ class RankingDataset(Dataset):
         self,
         data_args: Any,
         batch_size: int | None = None,
+        split: str = "train",
     ):
+        if split not in {"train", "dev"}:
+            raise ValueError(f"split must be 'train' or 'dev', got {split!r}")
         self.batch_size = batch_size or 32
+        self.split = split
         self.per_dataset_max_samples = data_args.per_dataset_max_samples
+        self.dev_samples_per_source = getattr(data_args, "dev_samples_per_source", 0)
         self.samples: list[dict[str, Any]] = []
         self._load(data_args.data_path)
 
@@ -75,24 +80,38 @@ class RankingDataset(Dataset):
 
         ordered_batches = []
         for task_name, indices in sample_indices_by_task.items():
+            # Seeded by the caller's set_seed(), so the same seed yields the same split.
             random.shuffle(indices)
-            limited_indices = (
-                indices
-                if self.per_dataset_max_samples is None
-                else indices[: self.per_dataset_max_samples]
-            )
+            # Carve the dev slice off the FRONT, before the training cap, so changing
+            # per_dataset_max_samples can never leak a dev example into training.
+            if self.dev_samples_per_source > 0:
+                dev_indices = indices[: self.dev_samples_per_source]
+                train_indices = indices[self.dev_samples_per_source :]
+            else:
+                dev_indices, train_indices = [], indices
+            if self.split == "dev":
+                limited_indices = dev_indices
+            else:
+                limited_indices = (
+                    train_indices
+                    if self.per_dataset_max_samples is None
+                    else train_indices[: self.per_dataset_max_samples]
+                )
             for start in range(0, len(limited_indices), self.batch_size):
                 batch = limited_indices[start : start + self.batch_size]
                 if len(batch) == self.batch_size:
                     ordered_batches.append(batch)
                 else:
-                    print(f"Skip 1 batch for dataset {task_name}.")
+                    print(f"Skip 1 {self.split} batch for dataset {task_name}.")
 
         random.shuffle(ordered_batches)
         ordered_indices = [idx for batch in ordered_batches for idx in batch]
         self.samples = [normalized_samples[idx] for idx in ordered_indices]
         self.num_batches = len(ordered_batches)
-        print(f"Loaded {len(self.samples)} samples in {self.num_batches} single-source batches.")
+        print(
+            f"Loaded {len(self.samples)} {self.split} samples in "
+            f"{self.num_batches} single-source batches."
+        )
 
 
 class SingleSourceBatchSampler(Sampler[int]):

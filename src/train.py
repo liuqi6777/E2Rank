@@ -21,6 +21,7 @@ from grpo import GRPOModel
 from grpo_trainer import GRPOTrainer, restore_grpo_state
 from mteb_eval_callback import MTEBEvalCallback
 from ranking_data import RankingDataCollator, RankingDataset
+from ranking_eval import ranking_compute_metrics
 from utils import (
     parse_config_file,
     parse_config_from_base_overrides,
@@ -191,7 +192,16 @@ def main() -> None:
     train_dataset = RankingDataset(
         data_args=data_args,
         batch_size=training_args.per_device_train_batch_size,
+        split="train",
     )
+    # Held-out dev split for model selection, so smoothing/LR are never tuned on MTEB.
+    eval_dataset = None
+    if data_args.dev_samples_per_source > 0:
+        eval_dataset = RankingDataset(
+            data_args=data_args,
+            batch_size=training_args.per_device_eval_batch_size,
+            split="dev",
+        )
     data_collator = RankingDataCollator(
         tokenizer=tokenizer,
         query_max_length=data_args.q_max_len,
@@ -204,6 +214,8 @@ def main() -> None:
         processing_class=tokenizer,
         args=training_args,
         train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+        compute_metrics=ranking_compute_metrics if eval_dataset is not None else None,
         data_collator=data_collator,
     )
     mteb_callback = MTEBEvalCallback(mteb_eval_args)

@@ -2,9 +2,10 @@ import torch
 from transformers import Trainer as HFTrainer
 
 from grpo_trainer import build_single_source_sampler, save_wrapped_backbone
+from ranking_eval import RankingEvalMixin
 
 
-class BaselineTrainer(HFTrainer):
+class BaselineTrainer(RankingEvalMixin, HFTrainer):
     base_log_name_map = {
         "loss": "train/loss",
         "learning_rate": "train/lr",
