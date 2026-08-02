@@ -12,7 +12,16 @@ from typing import Any
 
 DEFAULT_INPUT_DIR = "results/mteb"
 DEFAULT_BENCHMARK = "MTEB(eng, v1, subset)"
-SUPPORTED_VIEWS = ("run", "type", "task")
+SUPPORTED_VIEWS = ("run", "type", "task", "retrieval")
+
+# The paper reports MTEB Retrieval as the quantity the ranking reward proxies, so it needs
+# to be readable on its own and not only inside the overall mean.
+RETRIEVAL_TASK_TYPE = "Retrieval"
+
+# Retrieval tasks whose training split appears in our Stage-2 corpus. The paper marks
+# these and reports an out-of-domain-only average alongside the full one, because an
+# in-domain gain and a zero-shot gain are different claims.
+IN_DOMAIN_RETRIEVAL_TASKS = {"NQ", "HotpotQA", "FEVER"}
 
 
 @dataclass
@@ -44,6 +53,33 @@ class RunSummary:
             task_type: sum(scores) / len(scores)
             for task_type, scores in grouped_scores.items()
         }
+
+    @property
+    def retrieval_task_scores(self) -> dict[str, float]:
+        return {
+            task_name: score
+            for task_name, score in self.task_scores.items()
+            if self.task_types.get(task_name) == RETRIEVAL_TASK_TYPE
+        }
+
+    @property
+    def retrieval_mean_pct(self) -> float | None:
+        scores = list(self.retrieval_task_scores.values())
+        if not scores:
+            return None
+        return sum(scores) / len(scores) * 100.0
+
+    @property
+    def retrieval_ood_mean_pct(self) -> float | None:
+        """Retrieval mean excluding tasks whose training split we trained on."""
+        scores = [
+            score
+            for task_name, score in self.retrieval_task_scores.items()
+            if task_name not in IN_DOMAIN_RETRIEVAL_TASKS
+        ]
+        if not scores:
+            return None
+        return sum(scores) / len(scores) * 100.0
 
     @property
     def type_mean_pct(self) -> float | None:
@@ -264,11 +300,51 @@ def make_run_rows(
                 "types_found": len(summary.type_scores),
                 "mean_task_score": round(summary.task_mean_pct or 0.0, 2),
                 "mean_type_score": round(summary.type_mean_pct or 0.0, 2),
+                "retrieval": round(summary.retrieval_mean_pct or 0.0, 2),
+                "retrieval_ood": round(summary.retrieval_ood_mean_pct or 0.0, 2),
                 "errors": len(summary.errors),
                 "result_dir": summary.result_dir.as_posix(),
             }
         )
     return rows
+
+
+def make_retrieval_rows(summaries: list[RunSummary]) -> list[dict[str, Any]]:
+    """Per-task Retrieval breakdown, one row per run, columns in a stable order.
+
+    This is the appendix table: per-dataset nDCG@10 with in-domain tasks marked and an
+    out-of-domain-only average. Column order is fixed across runs so rows can be pasted
+    straight into LaTeX without re-aligning them by hand.
+    """
+    task_names = sorted({
+        task_name for summary in summaries for task_name in summary.retrieval_task_scores
+    })
+    rows = []
+    for summary in summaries:
+        scores = summary.retrieval_task_scores
+        row: dict[str, Any] = {"run": summary.run_id}
+        for task_name in task_names:
+            label = f"{task_name}*" if task_name in IN_DOMAIN_RETRIEVAL_TASKS else task_name
+            row[label] = round(scores[task_name] * 100.0, 2) if task_name in scores else None
+        row["avg"] = round(summary.retrieval_mean_pct or 0.0, 2)
+        row["ood_avg"] = round(summary.retrieval_ood_mean_pct or 0.0, 2)
+        rows.append(row)
+    return rows
+
+
+def print_retrieval_view(summaries: list[RunSummary]) -> None:
+    rows = make_retrieval_rows(summaries)
+    if not rows or len(rows[0]) <= 3:
+        print("\n[Retrieval] no retrieval tasks in these results")
+        return
+    columns = [(key, key) for key in rows[0]]
+    display = [
+        {key: (format_score(value) if isinstance(value, float) else ("-" if value is None else value))
+         for key, value in row.items()}
+        for row in rows
+    ]
+    print("\n[Retrieval per task]  * = training split seen during Stage-2 training")
+    print(build_table(display, columns))
 
 
 def make_type_rows(summaries: list[RunSummary]) -> list[dict[str, Any]]:
@@ -365,6 +441,8 @@ def print_run_summary(summaries: list[RunSummary], task_catalog: dict[str, str])
                 **row,
                 "mean_task_score": format_score(row["mean_task_score"]),
                 "mean_type_score": format_score(row["mean_type_score"]),
+                "retrieval": format_score(row["retrieval"]),
+                "retrieval_ood": format_score(row["retrieval_ood"]),
             }
         )
 
@@ -379,6 +457,8 @@ def print_run_summary(summaries: list[RunSummary], task_catalog: dict[str, str])
                 ("types_found", "Types"),
                 ("mean_task_score", "Mean(Task)"),
                 ("mean_type_score", "Mean(Type)"),
+                ("retrieval", "Retr."),
+                ("retrieval_ood", "Retr.(OOD)"),
                 ("errors", "Errors"),
                 ("result_dir", "Result Dir"),
             ],
@@ -407,6 +487,9 @@ def print_grouped_view(
     summaries: list[RunSummary],
     view: str,
 ) -> None:
+    if view == "retrieval":
+        print_retrieval_view(summaries)
+        return
     if view == "type":
         print("\n[Type Summary]")
         for summary in summaries:
