@@ -1,0 +1,3 @@
+_base_:
+  - ./stage2.yaml
+num_train_epochs: 2

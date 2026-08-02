@@ -1,0 +1,10 @@
+# Full English v2 benchmark: main-table rows only.
+mteb_eval_tasks: null
+mteb_eval_benchmark: "MTEB(eng, v2)"
+mteb_eval_langs: eng
+mteb_eval_output_dir: null
+mteb_eval_batch_size: 16
+mteb_eval_precision: fp16
+mteb_eval_model_kwargs: null
+mteb_eval_encode_kwargs: null
+mteb_eval_run_kwargs: null

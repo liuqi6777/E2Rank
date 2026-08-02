@@ -1,0 +1,6 @@
+# Stage-2 entrypoint: points at a MERGED Stage-1 checkpoint.
+# Produce it with:  python scripts/merge_lora.py --base <base_llm> --adapter <stage1_out> --out <path>
+# Merging (rather than passing lora_path) matters when kl_coef > 0: the KL anchor is taken
+# by disabling the adapter, so the reference must be the Stage-1 model, not the base LLM.
+model_name_or_path: checkpoints/stage1-qwen3-0.6b-merged
+deepspeed: ./scripts/zero3.json
