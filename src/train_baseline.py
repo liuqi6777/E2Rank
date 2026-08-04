@@ -9,7 +9,7 @@ from baselines.trainer import BaselineTrainer
 from config import DataArguments, LoraArguments, ModelArguments, TrainingArguments
 from train import (
     apply_gradient_checkpointing,
-    build_ranking_data,
+    build_embedding_data,
     guard_output_dir,
     load_backbone_and_tokenizer,
     parse_arguments,
@@ -46,7 +46,7 @@ def main() -> None:
 
     apply_gradient_checkpointing(model, training_args, lora_args)
 
-    train_dataset, eval_dataset, data_collator = build_ranking_data(data_args, training_args, tokenizer)
+    train_dataset, eval_dataset, data_collator = build_embedding_data(data_args, training_args, tokenizer)
 
     trainer = BaselineTrainer(
         model=model,

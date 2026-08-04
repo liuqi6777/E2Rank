@@ -29,7 +29,7 @@ from config import (
 from grpo import GRPOModel
 from grpo_trainer import GRPOTrainer, restore_grpo_state
 from mteb_eval_callback import MTEBEvalCallback
-from ranking_data import RankingDataCollator, RankingDataset
+from embedding_data import EmbeddingDataCollator, EmbeddingDataset
 from utils import (
     BASE_CONFIG_SLOTS,
     parse_config_file,
@@ -201,9 +201,9 @@ def apply_gradient_checkpointing(model, training_args: HFTrainingArguments, lora
     logger.info("Gradient checkpointing kwargs %s", training_args.gradient_checkpointing_kwargs)
 
 
-def build_ranking_data(data_args: DataArguments, training_args: HFTrainingArguments, tokenizer):
+def build_embedding_data(data_args: DataArguments, training_args: HFTrainingArguments, tokenizer):
     """Train dataset, optional held-out dev dataset, and the shared collator."""
-    train_dataset = RankingDataset(
+    train_dataset = EmbeddingDataset(
         data_args=data_args,
         batch_size=training_args.per_device_train_batch_size,
         split="train",
@@ -211,12 +211,12 @@ def build_ranking_data(data_args: DataArguments, training_args: HFTrainingArgume
     # Held-out dev split for model selection, so smoothing/LR are never tuned on MTEB.
     eval_dataset = None
     if data_args.dev_samples_per_source > 0:
-        eval_dataset = RankingDataset(
+        eval_dataset = EmbeddingDataset(
             data_args=data_args,
             batch_size=training_args.per_device_eval_batch_size,
             split="dev",
         )
-    data_collator = RankingDataCollator(
+    data_collator = EmbeddingDataCollator(
         tokenizer=tokenizer,
         query_max_length=data_args.q_max_len,
         doc_max_length=data_args.d_max_len,
@@ -276,7 +276,7 @@ def main() -> None:
 
     apply_gradient_checkpointing(model, training_args, lora_args)
 
-    train_dataset, eval_dataset, data_collator = build_ranking_data(data_args, training_args, tokenizer)
+    train_dataset, eval_dataset, data_collator = build_embedding_data(data_args, training_args, tokenizer)
 
     trainer = GRPOTrainer(
         model=model,

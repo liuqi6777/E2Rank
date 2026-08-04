@@ -1,9 +1,9 @@
 from transformers import Trainer as HFTrainer
 
-from grpo_trainer import RankingTrainerMixin
+from grpo_trainer import EmbeddingTrainerMixin
 
 
-class BaselineTrainer(RankingTrainerMixin, HFTrainer):
+class BaselineTrainer(EmbeddingTrainerMixin, HFTrainer):
     train_metric_names = ("ndcg", "mrr")
 
     def __init__(self, *args, metric_k: int | None = None, **kwargs):

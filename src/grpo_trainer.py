@@ -2,9 +2,9 @@
 
 Both trainers wrap the backbone in a ``nn.Module`` that returns a ``ModelOutput`` with
 extra per-step scalars, need those scalars averaged across micro-batches *and* ranks
-before they reach W&B, need ``RankingDataset``'s per-source batching preserved, and need
+before they reach W&B, need ``EmbeddingDataset``'s per-source batching preserved, and need
 the wrapper's ``"model."`` state-dict prefix stripped on save. That lives in
-``RankingTrainerMixin`` so each trainer only declares what is actually different.
+``EmbeddingTrainerMixin`` so each trainer only declares what is actually different.
 """
 
 import json
@@ -15,7 +15,7 @@ import os
 import torch
 from transformers import Trainer as HFTrainer
 
-from ranking_data import RankingDataset, SingleSourceBatchSampler
+from embedding_data import EmbeddingDataset, SingleSourceBatchSampler
 
 
 logger = logging.getLogger(__name__)
@@ -44,19 +44,19 @@ def restore_grpo_state(model, checkpoint_dir: str | None) -> None:
 
 
 def build_single_source_sampler(trainer: HFTrainer, train_dataset):
-    """Return a block-preserving sampler for ``RankingDataset``, else ``None``.
+    """Return a block-preserving sampler for ``EmbeddingDataset``, else ``None``.
 
     The Trainer's default ``RandomSampler`` shuffles at the sample level, which
-    destroys the per-source pre-batching that ``RankingDataset`` builds (and that
+    destroys the per-source pre-batching that ``EmbeddingDataset`` builds (and that
     in-batch negatives depend on).
     """
-    if not isinstance(train_dataset, RankingDataset):
+    if not isinstance(train_dataset, EmbeddingDataset):
         return None
 
     dataloader_batch_size = getattr(trainer, "_train_batch_size", None) or trainer.args.train_batch_size
     if train_dataset.batch_size != dataloader_batch_size:
         logger.warning(
-            "RankingDataset was pre-batched with batch_size=%s but the dataloader uses %s; "
+            "EmbeddingDataset was pre-batched with batch_size=%s but the dataloader uses %s; "
             "batches will span multiple sources. Rebuild the dataset with the dataloader batch size.",
             train_dataset.batch_size,
             dataloader_batch_size,
@@ -102,7 +102,7 @@ def save_wrapped_backbone(trainer: HFTrainer, output_dir=None, state_dict=None) 
     return output_dir
 
 
-class RankingTrainerMixin:
+class EmbeddingTrainerMixin:
     """Accumulate model-emitted scalars per step, reduce across ranks, rename for W&B.
 
     Subclasses declare ``train_metric_names`` (which fields of the model output to track)
@@ -209,7 +209,7 @@ class RankingTrainerMixin:
         return save_wrapped_backbone(self, output_dir=output_dir, state_dict=state_dict)
 
 
-class GRPOTrainer(RankingTrainerMixin, HFTrainer):
+class GRPOTrainer(EmbeddingTrainerMixin, HFTrainer):
     train_metric_log_names = {
         "reward": "reward",
         "reward_mean": "reward/mean",

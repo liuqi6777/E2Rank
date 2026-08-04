@@ -18,7 +18,7 @@ from config import (
     normalize_action_components,
     normalize_advantage_norm_mode,
 )
-from ranking_data import build_slate_inputs
+from embedding_data import build_slate_inputs
 from rewards import (
     SUPPORTED_REWARD_TYPES,
     compute_reward_terms,

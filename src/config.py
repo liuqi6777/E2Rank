@@ -112,7 +112,7 @@ class ModelArguments:
 @dataclass
 class DataArguments:
     data_path: str = field(
-        metadata={"help": "Path to the Stage II ranking dataset"}
+        metadata={"help": "Path to the Stage II embedding dataset"}
     )
     per_dataset_max_samples: Optional[int] = field(
         default=None,

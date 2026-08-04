@@ -12,7 +12,7 @@ from baselines.losses import SUPPORTED_BASELINE_TYPES, compute_baseline_loss
 from baselines.metrics import compute_mrr_at_k, compute_ndcg_at_k
 from baselines.config import BaselineArguments
 from grpo import pool_last_token_embedding
-from ranking_data import build_slate_inputs
+from embedding_data import build_slate_inputs
 
 
 @dataclass

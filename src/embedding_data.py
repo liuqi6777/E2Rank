@@ -105,7 +105,7 @@ def record_to_slate(
     return {"query": record["query"], "document": documents, "ranking": ranking}
 
 
-class RankingDataset(Dataset):
+class EmbeddingDataset(Dataset):
     query_prompt_template = "Instruct: {task_description}\nQuery:{query}"
 
     def __init__(
@@ -317,9 +317,9 @@ class RankingDataset(Dataset):
 
 
 class SingleSourceBatchSampler(Sampler[int]):
-    """Sample-level sampler that preserves ``RankingDataset``'s per-source batching.
+    """Sample-level sampler that preserves ``EmbeddingDataset``'s per-source batching.
 
-    ``RankingDataset`` lays its samples out as consecutive blocks of ``batch_size``
+    ``EmbeddingDataset`` lays its samples out as consecutive blocks of ``batch_size``
     drawn from a single source, so that every micro-batch shares one task prompt and
     in-batch negatives stay in-domain. The HF Trainer's default ``RandomSampler``
     shuffles at the *sample* level and silently destroys that layout, mixing every
@@ -365,7 +365,7 @@ class SingleSourceBatchSampler(Sampler[int]):
 
         for block in block_order:
             yield from range(block * self.batch_size, (block + 1) * self.batch_size)
-        # RankingDataset drops partial per-source batches, so this is normally empty.
+        # EmbeddingDataset drops partial per-source batches, so this is normally empty.
         yield from range(num_blocks * self.batch_size, num_samples)
 
 
@@ -408,7 +408,7 @@ def build_slate_inputs(
 ) -> Dict[str, torch.Tensor]:
     """Re-interleave the collator's split tensors into one flat ``[batch * slate, ...]`` batch.
 
-    ``RankingDataCollator`` emits every sample's gold positive in ``positive_document``
+    ``EmbeddingDataCollator`` emits every sample's gold positive in ``positive_document``
     (``[batch, ...]``) and all negatives in ``negative_document``, ordered sample-major
     (``[batch * (slate - 1), ...]``). Encoding them needs a single flat batch whose rows read
     ``(sample 0 positive, sample 0 negatives..., sample 1 positive, ...)`` so that the
@@ -427,7 +427,7 @@ def build_slate_inputs(
     return slate_inputs
 
 
-class RankingDataCollator:
+class EmbeddingDataCollator:
     def __init__(
         self,
         tokenizer: transformers.PreTrainedTokenizer,
