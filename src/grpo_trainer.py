@@ -152,8 +152,18 @@ class GRPOTrainer(RankingEvalMixin, HFTrainer):
         if sigma is not None:
             self._last_sigma = float(sigma)
 
-        for metric_name in self.train_metric_names:
-            if isinstance(outputs, dict):
+        # Per-reward-term scalars are config-driven, so the static whitelist below cannot cover
+        # them. They arrive pre-namespaced and in a rank-invariant order, which _consume_train_
+        # metrics needs because it reduces the accumulator dict entry by entry across ranks.
+        term_metrics = (
+            outputs.get("reward_terms")
+            if isinstance(outputs, dict)
+            else getattr(outputs, "reward_terms", None)
+        ) or {}
+        for metric_name in (*self.train_metric_names, *term_metrics):
+            if metric_name in term_metrics:
+                metric_value = term_metrics[metric_name]
+            elif isinstance(outputs, dict):
                 metric_value = outputs.get(metric_name)
             else:
                 metric_value = getattr(outputs, metric_name, None)

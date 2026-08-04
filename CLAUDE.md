@@ -68,9 +68,17 @@ Configs compose via a `_base_` list at the YAML top level. Inheritance is resolv
 - `mrr` (binary uses `>0`; graded uses `≥2`).
 The `in_batch_positive_scores` / `in_batch_candidate_scores` inputs are pre-expanded by `GRPO._compute_score_table` with the `cross=True` einsum path; `_mask_cross_batch_diagonal` drops the same-sample diagonal *before* expansion, so the reward never sees it and the mask never materializes at the expanded size.
 
+**Additive combination.** `reward_terms` (a list of `RewardTerm`s, normalized by `normalize_reward_terms`) replaces the single `reward_type` when set; each term carries its own `weight`, `k`, `temperature` and in-batch flags, and unset per-term fields inherit the run-level defaults so a one-term spec is byte-identical to the legacy path. YAML uses a list of mappings, CLI uses `"ndcg:1.0,k=16;contrastive:0.5,in_batch_negatives=true"`. `_compute_component_loss` builds the cross-batch score tables **once** from the union of what the terms request (`reward_terms_need_in_batch_positives` / `..._candidates`) and hands the same tables to every term.
+
+`reward_combine` decides where the addition happens, and the two are *not* equivalent because advantages are divided by a group std:
+- `sum` — `R = Σ wᵢRᵢ`, one advantage over the combined reward. Each term reaches the gradient in proportion to `wᵢ × its own within-group std`, so with a bounded nDCG (std ~1e-1) against a temperature-scaled contrastive margin the weights do **not** describe the mixing ratio. Log `reward/<term>/group_std` to see the ratio actually obtained.
+- `normalized_sum` — each term is group-standardized into its own advantage, then `A = Σ wᵢAᵢ`. The surrogate is linear in `A`, so this is still a reward combination, just a scale-free one where `wᵢ` is the mixing ratio. Required in practice whenever `BOUNDED_REWARD_TYPES` meets `UNBOUNDED_REWARD_TYPES`; `RLArguments.__post_init__` warns when that mix runs under `sum`. Incompatible with `advantage_baseline='ema'` for >1 term (one global scalar cannot baseline several reward scales).
+
+With more than one term, per-term stats are emitted as `reward/<term>/{mean,std,min,max,group_std}` and flow to W&B through `GRPOModelOutput.reward_terms`.
+
 ### Trainer wrapper (`src/grpo_trainer.py`)
 `GRPOTrainer` is an HF `Trainer` subclass that:
-1. accumulates per-step reward/advantage/sigma/KL metrics across micro-batches, reduces across ranks on `log()`, and renames keys to a `train/…`, `reward/…`, `advantages/…` schema for W&B;
+1. accumulates per-step reward/advantage/sigma/KL metrics across micro-batches, reduces across ranks on `log()`, and renames keys to a `train/…`, `reward/…`, `advantages/…` schema for W&B. `train_metric_names` is a static whitelist; the config-driven per-term reward metrics bypass it via the `reward_terms` dict on the model output, which is why they arrive pre-namespaced and in a rank-invariant order (the cross-rank reduce walks the accumulator dict entry by entry);
 2. overrides `_get_train_sampler` with `SingleSourceBatchSampler`, without which the stock `RandomSampler` silently destroys `RankingDataset`'s per-source batching (see Data below); and
 3. overrides `_save` (via `save_wrapped_backbone`, shared with `BaselineTrainer`) to strip the `"model."` prefix introduced by the `GRPOModel` wrapper. Note this writes a **PEFT adapter** whenever `lora_enabled` — the default — not a full model; only non-LoRA runs reload with plain `AutoModel.from_pretrained`.
 
@@ -96,5 +104,5 @@ Standalone MTEB runner consumed both by `eval_mteb/scripts/run_mteb.sh` (post-ho
 
 - The repo is launched almost exclusively through `bash scripts/run.sh ...`; calling `python src/train.py` directly bypasses `torchrun` and the env vars (`FORCE_TORCHRUN`, `NPROC_PER_NODE`, `WANDB_PROJECT`).
 - `GRPOModel.forward` re-encodes documents with `torch.no_grad()` when **no** document role is sampled; if you add a new sampled role, mirror the existing `sample_positive`/`sample_negative` branches in both the encode block and the reference-policy KL block.
-- New reward types must be registered in `SUPPORTED_REWARD_TYPES` and handled in both `compute_reward_from_scores` and `GRPO._compute_component_loss` (in-batch score table construction).
+- New reward types must be registered in `SUPPORTED_REWARD_TYPES` (and in `BOUNDED_REWARD_TYPES` / `UNBOUNDED_REWARD_TYPES` so the scale-mixing warning stays accurate) and handled in both `compute_reward_from_scores` and the `reward_terms_need_in_batch_*` predicates that drive in-batch score-table construction.
 - The dataset assumes `len(documents) == max(ranking)`; downstream tensor shapes will silently mismatch if that invariant is broken.

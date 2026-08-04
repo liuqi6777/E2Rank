@@ -1,0 +1,17 @@
+# Additive combination of a bounded ranking reward and an unbounded contrastive margin.
+#
+# reward_combine=normalized_sum standardizes each term's advantage before the weighted sum.
+# With the raw 'sum' the mixing ratio would be weight x within-group std, and the contrastive
+# term's spread is roughly an order of magnitude above nDCG's, so nDCG would contribute almost
+# nothing. Under normalized_sum the weights below really are a 1 : 0.5 mix.
+reward_ndcg_k: 16
+reward_terms:
+  - type: ndcg_in_batch
+    weight: 1.0
+    k: 16
+    include_negatives: false
+  - type: contrastive
+    weight: 0.5
+    temperature: 0.03
+    in_batch_negatives: true
+reward_combine: normalized_sum

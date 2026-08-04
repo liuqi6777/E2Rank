@@ -1,10 +1,300 @@
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, replace
+
 import torch
 import torch.nn.functional as F
 
 
 SUPPORTED_REWARD_TYPES = {"ndcg", "ndcg_in_batch", "contrastive", "infonce", "mrr"}
+
+# Rewards split into two families with incomparable scales: ranking metrics are bounded in
+# [0, 1] while the contrastive margins live on a temperature-scaled log-score axis whose
+# within-group spread is typically an order of magnitude larger. Mixing families under a raw
+# weighted sum therefore does NOT mix them in the ratio of their weights (see
+# SUPPORTED_REWARD_COMBINE_MODES), which is what these sets are used to warn about.
+BOUNDED_REWARD_TYPES = frozenset({"ndcg", "ndcg_in_batch", "mrr"})
+UNBOUNDED_REWARD_TYPES = frozenset({"contrastive", "infonce"})
+
+# 'sum'            -- R = sum_i w_i R_i, then one advantage over the combined reward. Keeps the
+#                     terms' relative effect sizes, so w_i is a weight on the *raw* reward.
+# 'normalized_sum' -- A = sum_i w_i A_i with each A_i group-standardized on its own. The loss is
+#                     linear in the advantage, so this is a scale-free combination in which w_i
+#                     really is the mixing ratio. Preferred whenever families are mixed.
+SUPPORTED_REWARD_COMBINE_MODES = ("sum", "normalized_sum")
+
+_TERM_FIELD_ALIASES = {
+    "k": "k",
+    "ndcg_k": "k",
+    "reward_ndcg_k": "k",
+    "cutoff": "k",
+    "temperature": "temperature",
+    "contrastive_temperature": "temperature",
+    "tau": "temperature",
+    "weight": "weight",
+    "w": "weight",
+    "name": "name",
+    "type": "type",
+    "reward_type": "type",
+    "include_negatives": "ndcg_in_batch_include_negatives",
+    "ndcg_in_batch_include_negatives": "ndcg_in_batch_include_negatives",
+    "in_batch_negatives": "contrastive_use_in_batch_negatives",
+    "contrastive_use_in_batch_negatives": "contrastive_use_in_batch_negatives",
+}
+
+_TRUE_STRINGS = {"true", "1", "yes", "y", "on"}
+_FALSE_STRINGS = {"false", "0", "no", "n", "off"}
+
+
+@dataclass(frozen=True)
+class RewardTerm:
+    """One additive term of the reward.
+
+    ``k``/``temperature``/the two in-batch flags may be left unset (``None``), in which case
+    :func:`normalize_reward_terms` fills them from the run-level defaults. That keeps a
+    single-term config byte-identical to the pre-combination behaviour.
+    """
+
+    type: str
+    weight: float = 1.0
+    k: int | None = None
+    temperature: float | None = None
+    ndcg_in_batch_include_negatives: bool | None = None
+    contrastive_use_in_batch_negatives: bool | None = None
+    name: str = ""
+
+
+def _coerce_bool(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in _TRUE_STRINGS:
+            return True
+        if lowered in _FALSE_STRINGS:
+            return False
+    raise ValueError(f"Expected a boolean-like value, got {value!r}")
+
+
+def _parse_term_string(spec: str) -> dict:
+    """Parse the compact CLI form ``type[:weight][,key=value]*``."""
+    head, _, tail = spec.partition(",")
+    reward_type, _, weight = head.partition(":")
+    fields: dict = {"type": reward_type.strip()}
+    if weight.strip():
+        fields["weight"] = weight.strip()
+
+    for raw_field in tail.split(","):
+        raw_field = raw_field.strip()
+        if not raw_field:
+            continue
+        key, separator, value = raw_field.partition("=")
+        if not separator:
+            raise ValueError(
+                f"Malformed reward term field {raw_field!r} in {spec!r}; expected 'key=value'"
+            )
+        fields[key.strip()] = value.strip()
+    return fields
+
+
+def _build_term(fields: Mapping) -> RewardTerm:
+    normalized_fields: dict = {}
+    for raw_key, value in fields.items():
+        key = _TERM_FIELD_ALIASES.get(str(raw_key).strip().lower())
+        if key is None:
+            raise ValueError(
+                f"Unsupported reward term field: {raw_key!r}. "
+                f"Supported fields: {sorted(set(_TERM_FIELD_ALIASES))}"
+            )
+        if value is None:
+            continue
+        normalized_fields[key] = value
+
+    if "type" not in normalized_fields:
+        raise ValueError(f"Reward term is missing the required 'type' field: {dict(fields)!r}")
+
+    reward_type = str(normalized_fields["type"]).strip().lower()
+    if reward_type not in SUPPORTED_REWARD_TYPES:
+        raise ValueError(
+            f"Unsupported reward type: {reward_type}. Supported types: {sorted(SUPPORTED_REWARD_TYPES)}"
+        )
+
+    weight = float(normalized_fields.get("weight", 1.0))
+    if not (weight == weight) or weight in {float("inf"), float("-inf")}:
+        raise ValueError(f"Reward term weight must be finite, got {weight}")
+
+    k = normalized_fields.get("k")
+    if k is not None:
+        k = None if str(k).strip().lower() in {"none", "null", ""} else int(k)
+
+    temperature = normalized_fields.get("temperature")
+    if temperature is not None:
+        temperature = float(temperature)
+        if temperature <= 0:
+            raise ValueError(f"Reward term temperature must be positive, got {temperature}")
+
+    include_negatives = normalized_fields.get("ndcg_in_batch_include_negatives")
+    use_in_batch_negatives = normalized_fields.get("contrastive_use_in_batch_negatives")
+
+    return RewardTerm(
+        type=reward_type,
+        weight=weight,
+        k=k,
+        temperature=temperature,
+        ndcg_in_batch_include_negatives=(
+            None if include_negatives is None else _coerce_bool(include_negatives)
+        ),
+        contrastive_use_in_batch_negatives=(
+            None if use_in_batch_negatives is None else _coerce_bool(use_in_batch_negatives)
+        ),
+        name=str(normalized_fields.get("name", "")).strip(),
+    )
+
+
+def normalize_reward_terms(
+    reward_terms,
+    default_k: int | None = 10,
+    default_temperature: float = 0.03,
+    default_ndcg_in_batch_include_negatives: bool = False,
+    default_contrastive_use_in_batch_negatives: bool = False,
+) -> tuple[RewardTerm, ...]:
+    """Normalize a reward-term spec into fully resolved :class:`RewardTerm` objects.
+
+    Accepts, in order of increasing verbosity:
+
+    * a single type string -- ``"ndcg"``
+    * the compact CLI form -- ``"ndcg:1.0,k=16;contrastive:0.5,in_batch_negatives=true"``
+    * a YAML list of mappings -- ``[{type: ndcg, weight: 1.0, k: 16}, ...]``
+
+    Unset per-term fields inherit the run-level defaults, so the single-term spec reproduces
+    the legacy ``reward_type`` behaviour exactly.
+    """
+    if reward_terms is None:
+        raise ValueError("reward_terms must not be None")
+
+    if isinstance(reward_terms, RewardTerm):
+        raw_terms: list = [reward_terms]
+    elif isinstance(reward_terms, Mapping):
+        raw_terms = [reward_terms]
+    elif isinstance(reward_terms, str):
+        raw_terms = [chunk.strip() for chunk in reward_terms.split(";") if chunk.strip()]
+    elif isinstance(reward_terms, Sequence):
+        raw_terms = list(reward_terms)
+    else:
+        raise ValueError(
+            "reward_terms must be a type string, a 'type:weight,key=value;...' string, "
+            "or a list of mappings"
+        )
+
+    if not raw_terms:
+        raise ValueError("reward_terms must contain at least one term")
+
+    terms: list[RewardTerm] = []
+    for raw_term in raw_terms:
+        if isinstance(raw_term, RewardTerm):
+            term = raw_term
+        elif isinstance(raw_term, Mapping):
+            term = _build_term(raw_term)
+        elif isinstance(raw_term, str):
+            term = _build_term(_parse_term_string(raw_term))
+        else:
+            raise ValueError(f"Unsupported reward term entry: {raw_term!r}")
+
+        term = replace(
+            term,
+            k=default_k if term.k is None else term.k,
+            temperature=default_temperature if term.temperature is None else term.temperature,
+            ndcg_in_batch_include_negatives=(
+                default_ndcg_in_batch_include_negatives
+                if term.ndcg_in_batch_include_negatives is None
+                else term.ndcg_in_batch_include_negatives
+            ),
+            contrastive_use_in_batch_negatives=(
+                default_contrastive_use_in_batch_negatives
+                if term.contrastive_use_in_batch_negatives is None
+                else term.contrastive_use_in_batch_negatives
+            ),
+        )
+        terms.append(term)
+
+    if all(term.weight == 0.0 for term in terms):
+        raise ValueError("At least one reward term must carry a non-zero weight")
+
+    # Names index the per-term metrics, so they have to be unique and stable across ranks.
+    named_terms: list[RewardTerm] = []
+    used_names: dict[str, int] = {}
+    for term in terms:
+        base_name = term.name or term.type
+        occurrence = used_names.get(base_name, 0)
+        used_names[base_name] = occurrence + 1
+        if occurrence and term.name:
+            raise ValueError(f"Duplicate reward term name: {term.name!r}")
+        name = base_name if not occurrence else f"{base_name}_{occurrence + 1}"
+        named_terms.append(replace(term, name=name))
+    return tuple(named_terms)
+
+
+def normalize_reward_combine_mode(mode) -> str:
+    if not isinstance(mode, str) or mode.strip().lower() not in SUPPORTED_REWARD_COMBINE_MODES:
+        raise ValueError(
+            f"Unsupported reward_combine mode: {mode!r}. "
+            f"Expected one of {SUPPORTED_REWARD_COMBINE_MODES}."
+        )
+    return mode.strip().lower()
+
+
+def reward_terms_mix_scales(reward_terms: Sequence[RewardTerm]) -> bool:
+    """True when bounded ranking rewards are mixed with unbounded contrastive margins."""
+    types = {term.type for term in reward_terms if term.weight != 0.0}
+    return bool(types & BOUNDED_REWARD_TYPES) and bool(types & UNBOUNDED_REWARD_TYPES)
+
+
+def reward_terms_need_in_batch_positives(reward_terms: Sequence[RewardTerm]) -> bool:
+    return any(
+        (term.type == "ndcg_in_batch" and not term.ndcg_in_batch_include_negatives)
+        or (term.type in {"contrastive", "infonce"} and term.contrastive_use_in_batch_negatives)
+        for term in reward_terms
+    )
+
+
+def reward_terms_need_in_batch_candidates(reward_terms: Sequence[RewardTerm]) -> bool:
+    return any(
+        term.type == "ndcg_in_batch" and term.ndcg_in_batch_include_negatives
+        for term in reward_terms
+    )
+
+
+def compute_reward_terms(
+    reward_terms: Sequence[RewardTerm],
+    scores: torch.Tensor,
+    relevance_labels: torch.Tensor,
+    relevance_scheme: str | None = None,
+    in_batch_positive_scores: torch.Tensor | None = None,
+    in_batch_candidate_scores: torch.Tensor | None = None,
+) -> dict[str, torch.Tensor]:
+    """Evaluate every reward term against one shared score table.
+
+    The caller builds the (expensive) in-batch score tables once; each term picks the ones it
+    needs via its own flags, so terms never pay for tables they ignore.
+    """
+    return {
+        term.name: compute_reward_from_scores(
+            scores=scores,
+            relevance_labels=relevance_labels,
+            reward_type=term.type,
+            k=term.k,
+            ndcg_in_batch_include_negatives=bool(term.ndcg_in_batch_include_negatives),
+            contrastive_use_in_batch_negatives=bool(term.contrastive_use_in_batch_negatives),
+            contrastive_temperature=float(term.temperature),
+            relevance_scheme=relevance_scheme,
+            in_batch_positive_scores=in_batch_positive_scores,
+            in_batch_candidate_scores=in_batch_candidate_scores,
+        )
+        for term in reward_terms
+    }
 
 
 def _resolve_relevant_mask(

@@ -1,8 +1,19 @@
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Optional
 
 from transformers import TrainingArguments as HFTrainingArguments
+
+from rewards import (
+    SUPPORTED_REWARD_TYPES,
+    normalize_reward_combine_mode,
+    normalize_reward_terms,
+    reward_terms_mix_scales,
+)
+
+
+logger = logging.getLogger(__name__)
 
 
 SUPPORTED_ACTION_COMPONENTS = {"query", "positive", "negative"}
@@ -284,11 +295,42 @@ class RLArguments:
     )
     reward_type: str = field(
         default="ndcg",
-        metadata={"help": "Reward type: ndcg, ndcg_in_batch, contrastive, infonce, or mrr"},
+        metadata={
+            "help": (
+                "Reward type: ndcg, ndcg_in_batch, contrastive, infonce, or mrr. Used when "
+                "reward_terms is empty, and as the per-term default elsewhere."
+            )
+        },
+    )
+    reward_terms: str = field(
+        default="",
+        metadata={
+            "help": (
+                "Additive reward terms. Empty falls back to the single reward_type. YAML may "
+                "use a list of mappings, e.g. [{type: ndcg_in_batch, weight: 1.0, k: 16}, "
+                "{type: contrastive, weight: 0.5, in_batch_negatives: true}]. CLI may use "
+                "'ndcg_in_batch:1.0,k=16;contrastive:0.5,in_batch_negatives=true'. Unset "
+                "per-term fields inherit reward_ndcg_k / contrastive_temperature / the "
+                "in-batch flags below."
+            )
+        },
+    )
+    reward_combine: str = field(
+        default="sum",
+        metadata={
+            "help": (
+                "How multiple reward terms are combined. 'sum' adds the raw rewards and takes "
+                "one advantage, preserving each term's true effect size (so the effective "
+                "mixing ratio is weight x within-group std, not the weight alone). "
+                "'normalized_sum' standardizes each term's advantage separately before the "
+                "weighted sum, making the weights scale-free -- use it whenever bounded "
+                "ranking rewards are mixed with contrastive margins."
+            )
+        },
     )
     reward_ndcg_k: int = field(
         default=10,
-        metadata={"help": "Ranking cutoff used by the nDCG/MRR reward component"},
+        metadata={"help": "Default ranking cutoff for the nDCG/MRR reward terms"},
     )
     ndcg_in_batch_include_negatives: bool = field(
         default=False,
@@ -407,3 +449,48 @@ class RLArguments:
             self.sigma = self.kappa ** -0.5
         if self.kl_coef < 0:
             raise ValueError(f"kl_coef must be non-negative, got {self.kl_coef}")
+
+        self.reward_type = str(self.reward_type).strip().lower()
+        if self.reward_type not in SUPPORTED_REWARD_TYPES:
+            raise ValueError(
+                f"Unsupported reward type: {self.reward_type}. "
+                f"Supported types: {sorted(SUPPORTED_REWARD_TYPES)}"
+            )
+        if self.contrastive_temperature <= 0:
+            raise ValueError(
+                f"contrastive_temperature must be positive, got {self.contrastive_temperature}"
+            )
+        self.reward_combine = normalize_reward_combine_mode(self.reward_combine)
+        # An empty spec means "single term from reward_type", which resolves to exactly the
+        # arguments the pre-combination code passed, so legacy configs are untouched.
+        self.reward_terms = normalize_reward_terms(
+            self.reward_terms if self.reward_terms else self.reward_type,
+            default_k=self.reward_ndcg_k,
+            default_temperature=self.contrastive_temperature,
+            default_ndcg_in_batch_include_negatives=self.ndcg_in_batch_include_negatives,
+            default_contrastive_use_in_batch_negatives=self.contrastive_use_in_batch_negatives,
+        )
+        if (
+            len(self.reward_terms) > 1
+            and self.reward_combine == "sum"
+            and reward_terms_mix_scales(self.reward_terms)
+        ):
+            logger.warning(
+                "reward_combine='sum' mixes bounded ranking rewards with unbounded contrastive "
+                "margins (%s). Advantages are divided by the group std of the COMBINED reward, "
+                "so each term contributes in proportion to weight x its own within-group std, "
+                "not to its weight alone -- watch reward/<term>/group_std to see the ratio you "
+                "actually got. Use reward_combine='normalized_sum' for weights that mean what "
+                "they say.",
+                ", ".join(f"{term.name}(w={term.weight})" for term in self.reward_terms),
+            )
+        if (
+            self.advantage_baseline == "ema"
+            and self.reward_combine == "normalized_sum"
+            and len(self.reward_terms) > 1
+        ):
+            raise ValueError(
+                "advantage_baseline='ema' is incompatible with reward_combine='normalized_sum' "
+                "for multiple terms: the running baseline is a single global scalar and cannot "
+                "track per-term reward scales. Use reward_combine='sum' or the group baseline."
+            )

@@ -18,7 +18,14 @@ from config import (
     normalize_action_components,
     normalize_advantage_norm_mode,
 )
-from rewards import SUPPORTED_REWARD_TYPES, compute_reward_from_scores
+from rewards import (
+    SUPPORTED_REWARD_TYPES,
+    compute_reward_terms,
+    normalize_reward_combine_mode,
+    normalize_reward_terms,
+    reward_terms_need_in_batch_candidates,
+    reward_terms_need_in_batch_positives,
+)
 
 
 def bessel_ratio(nu: float, kappa: torch.Tensor, num_iters: int | None = None) -> torch.Tensor:
@@ -177,6 +184,9 @@ class GRPOModelOutput(ModelOutput):
     advantages_degenerate_frac: Optional[Tensor] = None
     sigma: Optional[Tensor] = None
     kl: Optional[Tensor] = None
+    # Per-reward-term scalars, already namespaced ("reward/<term>/mean"). Config-driven, so the
+    # key set is identical on every rank -- which the trainer's cross-rank reduce relies on.
+    reward_terms: Optional[Dict[str, Tensor]] = None
 
 
 class GRPO(nn.Module):
@@ -190,6 +200,8 @@ class GRPO(nn.Module):
         sigma_min: float = 1e-3,
         sigma_max: float = 0.5,
         reward_type: str = "ndcg",
+        reward_terms=None,
+        reward_combine: str = "sum",
         reward_ndcg_k: int = 10,
         ndcg_in_batch_include_negatives: bool = False,
         contrastive_use_in_batch_negatives: bool = False,
@@ -231,6 +243,22 @@ class GRPO(nn.Module):
             )
         if contrastive_temperature <= 0:
             raise ValueError(f"contrastive_temperature must be positive, got {contrastive_temperature}")
+        reward_combine = normalize_reward_combine_mode(reward_combine)
+        reward_terms = normalize_reward_terms(
+            reward_terms if reward_terms else reward_type,
+            default_k=reward_ndcg_k,
+            default_temperature=contrastive_temperature,
+            default_ndcg_in_batch_include_negatives=ndcg_in_batch_include_negatives,
+            default_contrastive_use_in_batch_negatives=contrastive_use_in_batch_negatives,
+        )
+        if advantage_baseline == "ema" and reward_combine == "normalized_sum" and len(reward_terms) > 1:
+            # The EMA baseline is one global scalar; it cannot track several reward scales at
+            # once, so per-term standardization would baseline every term against the same
+            # running mean of a different quantity.
+            raise ValueError(
+                "advantage_baseline='ema' is incompatible with reward_combine='normalized_sum' "
+                "for multiple reward terms."
+            )
         if kl_coef < 0:
             raise ValueError(f"kl_coef must be non-negative, got {kl_coef}")
         if sigma_learnable:
@@ -247,6 +275,8 @@ class GRPO(nn.Module):
         self.sample_negative = any("negative" in group for group in action_components)
         self.group_size = group_size
         self.reward_type = reward_type
+        self.reward_terms = reward_terms
+        self.reward_combine = reward_combine
         self.reward_ndcg_k = reward_ndcg_k
         self.ndcg_in_batch_include_negatives = ndcg_in_batch_include_negatives
         self.contrastive_use_in_batch_negatives = contrastive_use_in_batch_negatives
@@ -293,13 +323,17 @@ class GRPO(nn.Module):
         return sigma.to(device=device, dtype=dtype)
 
     @staticmethod
-    def summarize_tensor(values: torch.Tensor, prefix: str) -> dict[str, torch.Tensor]:
+    def summarize_tensor(
+        values: torch.Tensor,
+        prefix: str,
+        separator: str = "_",
+    ) -> dict[str, torch.Tensor]:
         flattened_values = values.detach().reshape(-1).to(dtype=torch.float32)
         return {
-            f"{prefix}_mean": flattened_values.mean(),
-            f"{prefix}_std": flattened_values.std(unbiased=False),
-            f"{prefix}_min": flattened_values.min(),
-            f"{prefix}_max": flattened_values.max(),
+            f"{prefix}{separator}mean": flattened_values.mean(),
+            f"{prefix}{separator}std": flattened_values.std(unbiased=False),
+            f"{prefix}{separator}min": flattened_values.min(),
+            f"{prefix}{separator}max": flattened_values.max(),
         }
 
     def _current_reward_baseline(self, component_rewards: torch.Tensor) -> torch.Tensor:
@@ -655,11 +689,9 @@ class GRPO(nn.Module):
 
         in_batch_positive_scores = None
         in_batch_candidate_scores = None
-        uses_positive_in_batch = self.reward_type == "ndcg_in_batch" and not self.ndcg_in_batch_include_negatives
-        uses_positive_in_batch = uses_positive_in_batch or (
-            self.reward_type in {"contrastive", "infonce"} and self.contrastive_use_in_batch_negatives
-        )
-        if batch_size > 1 and uses_positive_in_batch:
+        # The cross-batch tables do not depend on the reward term, so they are built once from
+        # the UNION of what the terms ask for and shared by all of them.
+        if batch_size > 1 and reward_terms_need_in_batch_positives(self.reward_terms):
             positive_component = self._cross_batch_component(document_components[0])
             positive_cross_table = self._compute_score_table(
                 query_component=query_component,
@@ -680,7 +712,7 @@ class GRPO(nn.Module):
                 cross=True,
             )[..., 0]
 
-        if batch_size > 1 and self.reward_type == "ndcg_in_batch" and self.ndcg_in_batch_include_negatives:
+        if batch_size > 1 and reward_terms_need_in_batch_candidates(self.reward_terms):
             cross_candidate_scores = []
             for document_component in document_components:
                 cross_document_component = self._cross_batch_component(document_component)
@@ -707,23 +739,44 @@ class GRPO(nn.Module):
                 )
             in_batch_candidate_scores = torch.cat(cross_candidate_scores, dim=-1)
 
-        rewards = compute_reward_from_scores(
-            scores=scores,
-            relevance_labels=relevance_labels,
-            reward_type=self.reward_type,
-            k=self.reward_ndcg_k,
-            ndcg_in_batch_include_negatives=self.ndcg_in_batch_include_negatives,
-            contrastive_use_in_batch_negatives=self.contrastive_use_in_batch_negatives,
-            contrastive_temperature=self.contrastive_temperature,
-            in_batch_positive_scores=in_batch_positive_scores,
-            in_batch_candidate_scores=in_batch_candidate_scores,
-        ).float()
+        term_rewards = {
+            name: reward.float()
+            for name, reward in compute_reward_terms(
+                self.reward_terms,
+                scores=scores,
+                relevance_labels=relevance_labels,
+                in_batch_positive_scores=in_batch_positive_scores,
+                in_batch_candidate_scores=in_batch_candidate_scores,
+            ).items()
+        }
 
-        shared_std = None
-        if self.advantage_norm == "shared":
-            shared_std = (
-                rewards.float().reshape(batch_size, -1).std(dim=-1, unbiased=False, keepdim=True)
+        rewards = None
+        for term in self.reward_terms:
+            contribution = term_rewards[term.name] * term.weight
+            rewards = contribution if rewards is None else rewards + contribution
+
+        # 'sum' takes one advantage over the combined reward, so each term enters the gradient
+        # in proportion to weight x its own within-group spread. 'normalized_sum' standardizes
+        # every term's advantage on its own first; because the surrogate is linear in the
+        # advantage, the weighted sum of advantages IS a reward combination -- just one whose
+        # weights are scale-free, which is what mixing bounded and unbounded rewards needs.
+        if self.reward_combine == "sum" or len(self.reward_terms) == 1:
+            advantage_inputs: tuple[tuple[float, torch.Tensor], ...] = ((1.0, rewards),)
+        else:
+            advantage_inputs = tuple(
+                (term.weight, term_rewards[term.name])
+                for term in self.reward_terms
+                if term.weight != 0.0
             )
+
+        shared_stds: list[torch.Tensor | None] = []
+        for _, reward_tensor in advantage_inputs:
+            if self.advantage_norm == "shared":
+                shared_stds.append(
+                    reward_tensor.reshape(batch_size, -1).std(dim=-1, unbiased=False, keepdim=True)
+                )
+            else:
+                shared_stds.append(None)
 
         losses = []
         advantages = []
@@ -735,18 +788,39 @@ class GRPO(nn.Module):
             # attributed to both sides at once, which is exactly the trade-off it makes.
             axis = 0 if diagonal else component_index
             other_dims = tuple(dim for dim in sample_dims if dim != axis + 1)
-            component_rewards = rewards.mean(dim=other_dims) if other_dims else rewards
-            component_advantages, component_degenerate = self._compute_advantages(
-                component_rewards, shared_std=shared_std
-            )
+            component_advantages = None
+            for (weight, reward_tensor), shared_std in zip(advantage_inputs, shared_stds):
+                component_rewards = reward_tensor.mean(dim=other_dims) if other_dims else reward_tensor
+                term_advantages, term_degenerate = self._compute_advantages(
+                    component_rewards, shared_std=shared_std
+                )
+                if weight != 1.0:
+                    term_advantages = term_advantages * weight
+                component_advantages = (
+                    term_advantages
+                    if component_advantages is None
+                    else component_advantages + term_advantages
+                )
+                degenerate_masks.append(term_degenerate)
             losses.append(-(component_advantages.detach() * log_prob).mean())
             advantages.append(component_advantages)
-            degenerate_masks.append(component_degenerate)
 
-        # Fraction of (batch-element, component) rows whose reward variance collapsed.
-        # These rows received zero advantage and contributed no learning signal.
+        # Fraction of (batch-element, component, reward-term) rows whose reward variance
+        # collapsed. These rows received zero advantage and contributed no learning signal.
         degenerate_frac = torch.cat(degenerate_masks).float().mean()
         reward_stats = self.summarize_tensor(rewards, prefix="reward")
+        if len(self.reward_terms) > 1:
+            # Per-term diagnostics. 'group_std' is the mean within-sample spread and is the
+            # number that actually decides how much a term contributes under reward_combine=
+            # 'sum'; the plain 'std' below is the spread across the whole batch.
+            for term in self.reward_terms:
+                term_reward = term_rewards[term.name].detach()
+                reward_stats.update(
+                    self.summarize_tensor(term_reward, prefix=f"reward/{term.name}", separator="/")
+                )
+                reward_stats[f"reward/{term.name}/group_std"] = (
+                    term_reward.reshape(batch_size, -1).std(dim=-1, unbiased=False).mean()
+                )
         return sum(losses), reward_stats, torch.cat(advantages, dim=1), degenerate_frac
 
     @staticmethod
@@ -979,6 +1053,8 @@ class GRPOModel(nn.Module):
             sigma_min=rl_args.sigma_min,
             sigma_max=rl_args.sigma_max,
             reward_type=rl_args.reward_type,
+            reward_terms=rl_args.reward_terms,
+            reward_combine=rl_args.reward_combine,
             reward_ndcg_k=rl_args.reward_ndcg_k,
             ndcg_in_batch_include_negatives=rl_args.ndcg_in_batch_include_negatives,
             contrastive_use_in_batch_negatives=rl_args.contrastive_use_in_batch_negatives,
@@ -1117,6 +1193,8 @@ class GRPOModel(nn.Module):
             reference_negative_document_embeddings=reference_negative_document_embeddings,
         )
         reward = reward_stats["reward_mean"]
+        # Namespaced keys are the per-term diagnostics; the flat ones are the aggregate.
+        term_metrics = {key: value for key, value in reward_stats.items() if "/" in key}
 
         return GRPOModelOutput(
             loss=loss,
@@ -1132,6 +1210,7 @@ class GRPOModel(nn.Module):
             advantages_degenerate_frac=advantage_stats["advantages_degenerate_frac"],
             sigma=sigma,
             kl=kl,
+            reward_terms=term_metrics or None,
         )
 
     def gradient_checkpointing_enable(self, *args, **kwargs):
