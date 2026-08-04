@@ -93,6 +93,8 @@ That layout survives to the GPU only because both trainers install `SingleSource
 
 `RankingDataCollator` left-pads with `tokenizer.pad_token` *appended to the text* (Qwen-style EOS-as-pad), reorders documents to put the gold positive first, and builds graded/binary relevance labels via `build_relevance_labels` (graded: 3 for rank 1, 2 for ranks 2–5, 1 for ranks 6–10, 0 elsewhere).
 
+It emits the slate **split** into `positive_document` (`[batch, ...]`) and `negative_document` (`[batch * (slate-1), ...]`, sample-major). Anything that encodes a slate must put it back together with `build_slate_inputs`, which interleaves them into `(sample 0 positive, sample 0 negatives, sample 1 positive, ...)` so the downstream `reshape(batch, slate, -1)` lines each sample's own candidates up with its own `relevance_labels`. A plain `cat((positive, negative), dim=0)` looks equivalent and is not — it lays out all positives first, so `reshape` deals other samples' positives into sample 0's slate. That was a live bug in `BaselineModel.forward` and `score_slate_deterministically`.
+
 ### MTEB-during-training (`src/mteb_eval_callback.py`)
 Runs on every `on_save`. In distributed mode every rank loads its own eval-model copy onto `cuda:<local_rank>`, then encode calls are sharded across ranks via a dedicated **gloo** sub-group. Loading happens inside `_disable_deepspeed_zero3`, which detaches the global `HfDeepSpeedConfig` so `from_pretrained` does not partition the eval model with `zero.Init` — without it the weights come back as rank-local shards and encoding breaks. Metrics are logged through the trainer under `eval_mteb/<task>/main_score`.
 

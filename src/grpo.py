@@ -18,6 +18,7 @@ from config import (
     normalize_action_components,
     normalize_advantage_norm_mode,
 )
+from ranking_data import build_slate_inputs
 from rewards import (
     SUPPORTED_REWARD_TYPES,
     compute_reward_terms,
@@ -1106,13 +1107,12 @@ class GRPOModel(nn.Module):
             rollout_query_embeddings = rollout_query_embeddings.detach()
             policy_query_embeddings = None
 
-        num_negatives = slate_length - 1
-        document_inputs = {}
-        for key in positive_document:
-            positive_value = positive_document[key]
-            negative_value = negative_document[key].reshape(batch_size, num_negatives, -1)
-            slate_value = torch.cat((positive_value.unsqueeze(1), negative_value), dim=1)
-            document_inputs[key] = slate_value.reshape(batch_size * slate_length, -1)
+        document_inputs = build_slate_inputs(
+            positive_document=positive_document,
+            negative_document=negative_document,
+            batch_size=batch_size,
+            slate_length=slate_length,
+        )
 
         sample_document = self.grpo.sample_positive or self.grpo.sample_negative
         if sample_document:

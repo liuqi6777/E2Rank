@@ -13,6 +13,8 @@ from typing import Any
 
 import torch
 
+from ranking_data import build_slate_inputs
+
 
 EVAL_METRIC_NAMES = ("ndcg", "mrr")
 
@@ -25,12 +27,14 @@ def score_slate_deterministically(
     slate_length: int,
 ) -> torch.Tensor:
     """Cosine scores of a query against its slate, from mean embeddings only."""
-    batch_size = slate_length and positive_document["input_ids"].size(0)
+    batch_size = positive_document["input_ids"].size(0)
     query_embeddings = encode(query)
-    document_inputs = {
-        key: torch.cat((positive_document[key], negative_document[key]), dim=0)
-        for key in positive_document
-    }
+    document_inputs = build_slate_inputs(
+        positive_document=positive_document,
+        negative_document=negative_document,
+        batch_size=batch_size,
+        slate_length=slate_length,
+    )
     document_embeddings = encode(document_inputs).reshape(batch_size, slate_length, -1)
     return torch.matmul(document_embeddings, query_embeddings.unsqueeze(-1)).squeeze(-1)
 

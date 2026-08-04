@@ -12,6 +12,7 @@ from baselines.losses import SUPPORTED_BASELINE_TYPES, compute_baseline_loss
 from baselines.metrics import compute_mrr_at_k, compute_ndcg_at_k
 from baselines.config import BaselineArguments
 from grpo import pool_last_token_embedding
+from ranking_data import build_slate_inputs
 
 
 @dataclass
@@ -81,11 +82,13 @@ class BaselineModel(nn.Module):
 
         batch_size, slate_length = relevance_labels.shape
         query_embeddings = self.encode(query)
-        document = {
-            key: torch.cat((positive_document[key], negative_document[key]), dim=0)
-            for key in positive_document
-        }
-        document_embeddings = self.encode(document).reshape(batch_size, slate_length, -1)
+        document_inputs = build_slate_inputs(
+            positive_document=positive_document,
+            negative_document=negative_document,
+            batch_size=batch_size,
+            slate_length=slate_length,
+        )
+        document_embeddings = self.encode(document_inputs).reshape(batch_size, slate_length, -1)
         scores = torch.matmul(document_embeddings, query_embeddings.unsqueeze(-1)).squeeze(-1)
 
         per_sample_loss = compute_baseline_loss(

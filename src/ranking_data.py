@@ -400,6 +400,33 @@ def build_relevance_labels(
     return relevance
 
 
+def build_slate_inputs(
+    positive_document: Dict[str, torch.Tensor],
+    negative_document: Dict[str, torch.Tensor],
+    batch_size: int,
+    slate_length: int,
+) -> Dict[str, torch.Tensor]:
+    """Re-interleave the collator's split tensors into one flat ``[batch * slate, ...]`` batch.
+
+    ``RankingDataCollator`` emits every sample's gold positive in ``positive_document``
+    (``[batch, ...]``) and all negatives in ``negative_document``, ordered sample-major
+    (``[batch * (slate - 1), ...]``). Encoding them needs a single flat batch whose rows read
+    ``(sample 0 positive, sample 0 negatives..., sample 1 positive, ...)`` so that the
+    ``reshape(batch, slate, -1)`` on the far side puts each sample's own candidates into its
+    own slate -- lining up with the ``relevance_labels`` the collator built in that same order.
+
+    A plain ``cat((positive, negative), dim=0)`` does *not* satisfy this: it lays out all
+    positives first, so ``reshape`` would deal other samples' positives into sample 0's slate.
+    """
+    num_negatives = slate_length - 1
+    slate_inputs: Dict[str, torch.Tensor] = {}
+    for key, positive_value in positive_document.items():
+        negative_value = negative_document[key].reshape(batch_size, num_negatives, -1)
+        slate_value = torch.cat((positive_value.unsqueeze(1), negative_value), dim=1)
+        slate_inputs[key] = slate_value.reshape(batch_size * slate_length, -1)
+    return slate_inputs
+
+
 class RankingDataCollator:
     def __init__(
         self,
