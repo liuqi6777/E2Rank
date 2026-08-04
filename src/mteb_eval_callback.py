@@ -67,6 +67,51 @@ def _result_task_name(result: Any) -> str:
     return str(name or "unknown")
 
 
+def _result_task_type(result: Any) -> str:
+    task = getattr(result, "task", None)
+    metadata = getattr(task, "metadata", None)
+    task_type = getattr(metadata, "type", None)
+    return str(task_type or "unknown")
+
+
+def _build_metrics(results: Any) -> dict[str, float]:
+    """Per-task scores plus per-type macro means and two overall means.
+
+    Mirrors ``eval_mteb/summary.py``:
+      * ``eval_mteb/<task>/main_score``        per-task score
+      * ``eval_mteb/type/<Type>/main_score``   mean over tasks within a type
+      * ``eval_mteb/avg/task_mean``            micro mean over all tasks
+      * ``eval_mteb/avg/type_mean``            macro mean over per-type means
+    """
+    task_scores: dict[str, float] = {}
+    type_to_scores: dict[str, list[float]] = {}
+    for result in results or []:
+        score = _result_main_score(result)
+        if score is None:
+            continue
+        task_name = _result_task_name(result)
+        task_scores[task_name] = score
+        type_to_scores.setdefault(_result_task_type(result), []).append(score)
+
+    if not task_scores:
+        return {}
+
+    metrics = {
+        f"eval_mteb/{task_name}/main_score": score
+        for task_name, score in task_scores.items()
+    }
+
+    type_means: dict[str, float] = {}
+    for task_type, scores in type_to_scores.items():
+        type_mean = sum(scores) / len(scores)
+        type_means[task_type] = type_mean
+        metrics[f"eval_mteb/type/{task_type}/main_score"] = type_mean
+
+    metrics["eval_mteb/avg/task_mean"] = sum(task_scores.values()) / len(task_scores)
+    metrics["eval_mteb/avg/type_mean"] = sum(type_means.values()) / len(type_means)
+    return metrics
+
+
 @contextmanager
 def _disable_deepspeed_zero3():
     """Temporarily detach the global HfDeepSpeedConfig so that nested
@@ -365,12 +410,7 @@ class MTEBEvalCallback(TrainerCallback):
                 training_model.train()
 
         if is_rank0 and results:
-            metrics = {}
-            for result in results:
-                score = _result_main_score(result)
-                if score is not None:
-                    metrics[f"eval_mteb/{_result_task_name(result)}/main_score"] = score
-            self._log_metrics(metrics)
+            self._log_metrics(_build_metrics(results))
 
     def _run_eval_single(self, args, state, tag=None, **kwargs):
         checkpoint_dir, output_dir = self._prepare_paths(args, state, tag=tag)
@@ -407,9 +447,4 @@ class MTEBEvalCallback(TrainerCallback):
             if was_training and training_model is not None:
                 training_model.train()
 
-        metrics = {}
-        for result in results or []:
-            score = _result_main_score(result)
-            if score is not None:
-                metrics[f"eval_mteb/{_result_task_name(result)}/main_score"] = score
-        self._log_metrics(metrics)
+        self._log_metrics(_build_metrics(results))
