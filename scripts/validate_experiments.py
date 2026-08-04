@@ -14,7 +14,6 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 from transformers import HfArgumentParser
 from config import (DataArguments, LoraArguments, ModelArguments, MTEBEvalArguments,
                     RLArguments, TrainingArguments)
-from baselines.config import BaselineArguments
 import train as train_mod
 import train_baseline as tb_mod
 from utils import parse_config_from_base_overrides, BASE_CONFIG_SLOTS, BASELINE_CONFIG_SLOTS
@@ -38,7 +37,7 @@ def collect():
 grpo_parser = HfArgumentParser((ModelArguments, DataArguments, TrainingArguments,
                                 LoraArguments, RLArguments, MTEBEvalArguments))
 base_parser = HfArgumentParser((ModelArguments, DataArguments, TrainingArguments,
-                                LoraArguments, BaselineArguments))
+                                LoraArguments))
 
 ok = bad = 0
 seen = set()

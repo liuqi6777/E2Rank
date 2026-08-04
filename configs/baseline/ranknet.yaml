@@ -1,3 +1,0 @@
-baseline_type: ranknet
-baseline_ndcg_k: 16
-ranknet_sigma: 1.0

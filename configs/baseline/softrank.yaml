@@ -1,3 +1,0 @@
-baseline_type: softrank
-baseline_ndcg_k: 16
-softrank_sigma: 1.0

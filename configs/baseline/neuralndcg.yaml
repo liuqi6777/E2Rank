@@ -1,3 +1,0 @@
-baseline_type: neuralndcg
-baseline_ndcg_k: 16
-neuralndcg_temperature: 1.0

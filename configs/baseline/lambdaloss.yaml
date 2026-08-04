@@ -1,3 +1,0 @@
-baseline_type: lambdaloss
-baseline_ndcg_k: 16
-lambdaloss_sigma: 1.0
