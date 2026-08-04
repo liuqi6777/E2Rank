@@ -1,5 +1,29 @@
-data_path: data/train.jsonl
-per_dataset_max_samples: 10000
+# BGE-M3 mining data ({query, pos, neg, [pos_scores], [neg_scores]}) loaded lazily and
+# converted on the fly into project slates. Point data_path at the directory that holds
+# one subdirectory per source (MSMARCO, NQ, HotpotQA, ...); each subdirectory's files
+# matching file_glob are read, one source per batch.
+data_path: /mnt/tidal-alsh-share2/dataset/liuqi18/datasets/bge-m3-data
+
+# Cap each source independently. Strongly recommended: MSMARCO (37GB) / NQ (3.7GB) would
+# otherwise dominate the multi-task mixture. null keeps every sample.
+per_dataset_max_samples: 50000
+
 q_max_len: 512
 d_max_len: 1024
+
+# Random mined negatives carry no graded relevance, so binary (rank-1 positive vs. the
+# rest) is the right label scheme; it also matches slate_size = 1 positive + N negatives.
 relevance_scheme: binary
+
+# Slate construction: 1 positive + (slate_size - 1) negatives per sample.
+slate_size: 8
+# Filename glob selecting which length bucket(s) to read per source. "*.jsonl" reads all.
+file_glob: "*_len-0-500.jsonl"
+# Comma-separated source subdirs to include, e.g. "MSMARCO,NQ,HotpotQA". null = all.
+include_sources: null
+# Byte-offset index cache for lazy loading; first run scans each file once, later reuse.
+index_cache_dir: .cache/dataset_index
+
+# Held-out dev split for model selection. Taken per source before the training cap, so it
+# is disjoint from training data and stable for a given --seed. Set to 0 to disable.
+dev_samples_per_source: 0

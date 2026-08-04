@@ -1,9 +1,10 @@
-# Stage 2 (ranking RL). Listwise corpus with supervision permutations.
-data_path: data/train.jsonl
+# Stage 2 (ranking RL) with a graded label scheme. Note: BGE-M3 mined negatives have no
+# true multi-level relevance, so "graded" here assigns positional grades to the sorted
+# negatives (higher neg_scores -> higher positional grade). Prefer stage2_binary.yaml
+# unless you specifically want the graded ablation.
+_base_:
+  - ./default.yaml
 per_dataset_max_samples: 10000
-q_max_len: 512
-d_max_len: 1024
 relevance_scheme: graded
-# Held-out dev split for model selection. Taken per source before the training cap, so it
-# is disjoint from training data and stable for a given --seed. Set to 0 to disable.
+# Held-out dev split for model selection, disjoint from training and stable per --seed.
 dev_samples_per_source: 200
