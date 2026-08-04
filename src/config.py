@@ -130,6 +130,42 @@ class DataArguments:
             )
         },
     )
+    slate_size: int = field(
+        default=8,
+        metadata={
+            "help": (
+                "Number of candidate documents per sample (1 positive + slate_size-1 "
+                "negatives). Samples with fewer than slate_size-1 negatives are dropped."
+            )
+        },
+    )
+    file_glob: str = field(
+        default="*_len-0-500.jsonl",
+        metadata={
+            "help": (
+                "Filename glob used to pick which length bucket(s) to read from each "
+                "source subdirectory when data_path is a directory."
+            )
+        },
+    )
+    include_sources: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": (
+                "Comma-separated source subdirectory names to include (e.g. "
+                "'MSMARCO,NQ,HotpotQA'). None includes every subdirectory under data_path."
+            )
+        },
+    )
+    index_cache_dir: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": (
+                "Directory to cache the per-file byte-offset index used for lazy loading. "
+                "None writes a sidecar '<file>.e2rank_idx.json' next to each data file."
+            )
+        },
+    )
 
     def __post_init__(self) -> None:
         if self.relevance_scheme not in {"binary", "graded"}:
@@ -138,6 +174,8 @@ class DataArguments:
             raise ValueError(
                 f"dev_samples_per_source must be non-negative, got {self.dev_samples_per_source}"
             )
+        if self.slate_size < 2:
+            raise ValueError(f"slate_size must be >= 2, got {self.slate_size}")
 
 
 @dataclass
