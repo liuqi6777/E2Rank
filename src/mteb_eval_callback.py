@@ -180,6 +180,8 @@ def _result_main_score(result: Any) -> float | None:
 
 
 class MTEBEvalCallback(TrainerCallback):
+    PRETRAIN_TAG = "checkpoint-0"
+
     def __init__(self, eval_args: MTEBEvalArguments):
         self.eval_args = eval_args
         self.tasks = _parse_tasks(eval_args.mteb_eval_tasks)
@@ -229,6 +231,32 @@ class MTEBEvalCallback(TrainerCallback):
             run_kwargs=_parse_json_object(self.eval_args.mteb_eval_run_kwargs, "mteb_eval_run_kwargs"),
         )
 
+    def on_train_begin(self, args, state, control, **kwargs):
+        """Run one MTEB eval on the initial (pre-training) weights.
+
+        The in-training eval loads the model from disk, so we first persist the
+        untouched weights to ``checkpoint-0`` (mirrors on_save; includes the LoRA
+        adapter and grpo_state) and then reuse the exact same eval path.
+        """
+        if not self.enabled:
+            return control
+
+        checkpoint_dir = os.path.join(args.output_dir, self.PRETRAIN_TAG)
+        if self.trainer is not None:
+            self.trainer.save_model(checkpoint_dir)
+        if self._gloo_group is not None:
+            dist.barrier(group=self._gloo_group)
+
+        if self._gloo_group is None:
+            self._run_eval_single(args, state, tag=self.PRETRAIN_TAG, **kwargs)
+            return control
+
+        try:
+            self._run_eval_distributed(args, state, tag=self.PRETRAIN_TAG, **kwargs)
+        finally:
+            dist.barrier(group=self._gloo_group)
+        return control
+
     def on_save(self, args, state, control, **kwargs):
         if not self.enabled:
             return control
@@ -244,10 +272,11 @@ class MTEBEvalCallback(TrainerCallback):
             dist.barrier(group=self._gloo_group)
         return control
 
-    def _prepare_paths(self, args, state):
-        checkpoint_dir = os.path.join(args.output_dir, f"checkpoint-{state.global_step}")
+    def _prepare_paths(self, args, state, tag: str | None = None):
+        label = tag if tag is not None else f"checkpoint-{state.global_step}"
+        checkpoint_dir = os.path.join(args.output_dir, label)
         output_root = self.eval_args.mteb_eval_output_dir or os.path.join(args.output_dir, "mteb_eval")
-        output_dir = os.path.join(output_root, f"checkpoint-{state.global_step}")
+        output_dir = os.path.join(output_root, label)
         return checkpoint_dir, output_dir
 
     def _load_eval_model(self, eval_arguments, local_rank):
@@ -266,10 +295,10 @@ class MTEBEvalCallback(TrainerCallback):
         eval_model.world_size = 1
         return eval_model
 
-    def _run_eval_distributed(self, args, state, **kwargs):
+    def _run_eval_distributed(self, args, state, tag=None, **kwargs):
         is_rank0 = self._is_world_process_zero(args)
         local_rank = int(getattr(args, "local_rank", 0) or 0)
-        checkpoint_dir, output_dir = self._prepare_paths(args, state)
+        checkpoint_dir, output_dir = self._prepare_paths(args, state, tag=tag)
 
         if not os.path.isdir(checkpoint_dir):
             if is_rank0:
@@ -343,8 +372,8 @@ class MTEBEvalCallback(TrainerCallback):
                     metrics[f"eval_mteb/{_result_task_name(result)}/main_score"] = score
             self._log_metrics(metrics)
 
-    def _run_eval_single(self, args, state, **kwargs):
-        checkpoint_dir, output_dir = self._prepare_paths(args, state)
+    def _run_eval_single(self, args, state, tag=None, **kwargs):
+        checkpoint_dir, output_dir = self._prepare_paths(args, state, tag=tag)
         if not os.path.isdir(checkpoint_dir):
             logger.warning("Skipping MTEB eval because checkpoint does not exist: %s", checkpoint_dir)
             return
