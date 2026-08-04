@@ -1,0 +1,26 @@
+# Reward-cutoff ablation: NO cutoff on the ranking term (default is @16).
+#
+# This is the direction the rest of the k sweep does not cover, and the one the resolution
+# argument actually points at. With a single positive, nDCG@k takes the values
+# {1/log2(1+r) : r <= k} plus 0 for everything below the cutoff -- so k+1 levels. Over the
+# 39-candidate in-batch pool that is 17 levels at k=16 against 39 uncapped: *the cutoff itself
+# manufactures ties*, by collapsing every rollout that drops the gold below rank k onto the
+# same zero reward, which is precisely the degeneracy the reward design is trying to avoid.
+#
+# It is a real trade-off rather than an oversight. A cutoff keeps the reward identical to the
+# metric the model is evaluated on; dropping it buys resolution at the cost of optimizing
+# something the benchmark does not report. Which side wins is measurable -- compare
+# reward/<term>/n_distinct against the @16 row, and check whether the gain is real or is eaten
+# by the gold rarely falling past rank 16 in the first place.
+#
+# 1000 is not magic: compute_reward_from_scores clamps with min(k, pool), so any k above the
+# pool size means "no cutoff" and stays correct if the batch or slate changes.
+reward_terms:
+  - type: ndcg_in_batch
+    weight: 1.0
+    k: 1000
+  - type: infonce
+    weight: 0.5
+    temperature: 0.03
+    in_batch_negatives: true
+reward_combine: normalized_sum

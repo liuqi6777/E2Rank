@@ -1,0 +1,11 @@
+# Reward-cutoff ablation: nDCG@4 on the ranking term (default is @16). See mixture_k2.yaml
+# for why the cutoff is set in the config rather than on the command line.
+reward_terms:
+  - type: ndcg_in_batch
+    weight: 1.0
+    k: 4
+  - type: infonce
+    weight: 0.5
+    temperature: 0.03
+    in_batch_negatives: true
+reward_combine: normalized_sum

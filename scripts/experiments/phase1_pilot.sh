@@ -17,6 +17,16 @@ source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
 require_stage1
 
+# Before either pilot: can the policy reorder these slates at all? A rank-based reward only
+# varies when a perturbation flips two candidates, so if the checkpoint's adjacent-rank score
+# gaps sit far above g*(kappa), degenerate_frac will be ~1 for reasons no amount of G or kappa
+# tuning can fix -- and the two pilots below would then be measuring the same nothing twice.
+# Minutes on one GPU, and it also tells you which end of the kappa sweep is worth running.
+launch uv run python scripts/measure_score_gaps.py \
+  --model "$(stage1_merged_dir)" \
+  --data_path "$(uv run python -c "import sys;sys.path.insert(0,'src');from utils import load_raw_config_file;print(load_raw_config_file('configs/dataset/default.yaml')['data_path'])")" \
+  --slate_size 8 --num_batches 32
+
 train_rl "pilot-ndcg-ib"     - configs/reward/ndcg_in_batch.yaml     stage1
 train_rl "pilot-ndcg-ib-all" - configs/reward/ndcg_in_batch_all.yaml stage1
 

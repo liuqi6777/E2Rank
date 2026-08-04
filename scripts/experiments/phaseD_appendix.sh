@@ -49,10 +49,15 @@ if want secondary; then
   #     Cut this first if compute is tight.
   train_rl "x1-mrr"       - configs/reward/mrr.yaml  stage1
 
-  # X2-X3  reward cutoff. Meaningful only now that k <= pool: with the in-batch ranking term
-  #        the pool is 39, so k=2 and k=4 genuinely bind.
-  for k in 2 4; do
-    train_rl "x-ndcgk-${k}" - - stage1 --reward_ndcg_k "$k"
+  # X2-X4  reward cutoff on the ranking term. Swept through configs, NOT --reward_ndcg_k: a
+  #        term that names its own k ignores the run-level default, so the CLI override this
+  #        used to pass was silently a no-op.
+  #        The uncapped row is the direction that matters. A cutoff manufactures ties -- every
+  #        rollout that drops the gold below rank k collapses onto reward 0 -- so k+1 bounds the
+  #        levels (17 at @16 over the 39-pool, versus 39 uncapped). Read it against
+  #        reward/<term>/n_distinct, not just the metric.
+  for k in 2 4 _uncapped; do
+    train_rl "x-ndcgk${k}" - "configs/reward/mixture_k${k}.yaml" stage1
   done
 
   # X4  teacher-score grades on the mined negatives -- a different supervision claim, not a

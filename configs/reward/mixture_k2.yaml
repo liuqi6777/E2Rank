@@ -1,0 +1,12 @@
+# Reward-cutoff ablation: nDCG@2 on the ranking term (default is @16). Everything else is
+# default_mixture.yaml. Note the cutoff must be set HERE, not via --reward_ndcg_k: a term that
+# names its own k ignores the run-level default, so a CLI override would silently do nothing.
+reward_terms:
+  - type: ndcg_in_batch
+    weight: 1.0
+    k: 2
+  - type: infonce
+    weight: 0.5
+    temperature: 0.03
+    in_batch_negatives: true
+reward_combine: normalized_sum
