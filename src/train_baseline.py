@@ -11,10 +11,11 @@ from torch import Tensor
 from transformers import HfArgumentParser, PreTrainedModel, Trainer as HFTrainer, set_seed
 from transformers.file_utils import ModelOutput
 
-from config import DataArguments, LoraArguments, ModelArguments, TrainingArguments
+from config import DataArguments, LoraArguments, ModelArguments, MTEBEvalArguments, TrainingArguments
 from embedding_data import build_slate_inputs
 from grpo import pool_last_token_embedding
 from grpo_trainer import EmbeddingTrainerMixin
+from mteb_eval_callback import MTEBEvalCallback
 from train import (
     apply_gradient_checkpointing,
     build_embedding_data,
@@ -107,15 +108,15 @@ class BaselineModel(nn.Module):
 
 def main() -> None:
     parser = HfArgumentParser(
-        (ModelArguments, DataArguments, TrainingArguments, LoraArguments)
+        (ModelArguments, DataArguments, TrainingArguments, LoraArguments, MTEBEvalArguments)
     )
-    model_args, data_args, training_args, lora_args = parse_arguments(
+    model_args, data_args, training_args, lora_args, mteb_eval_args = parse_arguments(
         parser=parser,
         base_slots=BASELINE_CONFIG_SLOTS,
     )
 
     guard_output_dir(training_args)
-    setup_logging(training_args, {"Model": model_args})
+    setup_logging(training_args, {"Model": model_args, "MTEB eval": mteb_eval_args})
 
     set_seed(training_args.seed)
 
@@ -136,6 +137,9 @@ def main() -> None:
         compute_metrics=None,
         data_collator=data_collator,
     )
+    mteb_callback = MTEBEvalCallback(mteb_eval_args)
+    if mteb_callback.enabled:
+        trainer.add_callback(mteb_callback.bind_trainer(trainer))
 
     resume = bool(
         list(pathlib.Path(training_args.output_dir).glob("checkpoint-*"))

@@ -37,7 +37,7 @@ def collect():
 grpo_parser = HfArgumentParser((ModelArguments, DataArguments, TrainingArguments,
                                 LoraArguments, RLArguments, MTEBEvalArguments))
 base_parser = HfArgumentParser((ModelArguments, DataArguments, TrainingArguments,
-                                LoraArguments))
+                                LoraArguments, MTEBEvalArguments))
 
 ok = bad = 0
 seen = set()
