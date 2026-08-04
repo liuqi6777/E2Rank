@@ -1059,28 +1059,6 @@ class GRPOModel(nn.Module):
             normalize=True,
         )
 
-    @torch.no_grad()
-    def eval_ranking_metrics(
-        self,
-        query: Dict[str, torch.Tensor] = None,
-        positive_document: Dict[str, torch.Tensor] = None,
-        negative_document: Dict[str, torch.Tensor] = None,
-        relevance_labels: torch.Tensor = None,
-        **_: object,
-    ) -> Dict[str, torch.Tensor]:
-        """Deterministic dev metrics: the policy MEAN, no sampling.
-
-        This is what deployment computes, and unlike the policy-gradient surrogate its
-        value is comparable across configurations -- which is what model selection needs.
-        """
-        from ranking_eval import ranking_eval_metrics, score_slate_deterministically
-
-        slate_length = relevance_labels.size(1)
-        scores = score_slate_deterministically(
-            self.encode, query, positive_document, negative_document, slate_length
-        )
-        return ranking_eval_metrics(scores.float(), relevance_labels, k=self.grpo.reward_ndcg_k)
-
     def forward(
         self,
         query: Dict[str, torch.Tensor] = None,

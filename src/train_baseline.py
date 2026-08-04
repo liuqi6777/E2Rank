@@ -7,7 +7,6 @@ from baselines.config import BaselineArguments
 from baselines.model import BaselineModel
 from baselines.trainer import BaselineTrainer
 from config import DataArguments, LoraArguments, ModelArguments, TrainingArguments
-from ranking_eval import ranking_compute_metrics
 from train import (
     apply_gradient_checkpointing,
     build_ranking_data,
@@ -55,7 +54,7 @@ def main() -> None:
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
-        compute_metrics=ranking_compute_metrics if eval_dataset is not None else None,
+        compute_metrics=None,
         data_collator=data_collator,
         metric_k=baseline_args.baseline_ndcg_k,
     )

@@ -16,7 +16,6 @@ import torch
 from transformers import Trainer as HFTrainer
 
 from ranking_data import RankingDataset, SingleSourceBatchSampler
-from ranking_eval import RankingEvalMixin
 
 
 logger = logging.getLogger(__name__)
@@ -103,7 +102,7 @@ def save_wrapped_backbone(trainer: HFTrainer, output_dir=None, state_dict=None) 
     return output_dir
 
 
-class RankingTrainerMixin(RankingEvalMixin):
+class RankingTrainerMixin:
     """Accumulate model-emitted scalars per step, reduce across ranks, rename for W&B.
 
     Subclasses declare ``train_metric_names`` (which fields of the model output to track)

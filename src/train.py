@@ -30,7 +30,6 @@ from grpo import GRPOModel
 from grpo_trainer import GRPOTrainer, restore_grpo_state
 from mteb_eval_callback import MTEBEvalCallback
 from ranking_data import RankingDataCollator, RankingDataset
-from ranking_eval import ranking_compute_metrics
 from utils import (
     BASE_CONFIG_SLOTS,
     parse_config_file,
@@ -285,7 +284,7 @@ def main() -> None:
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
-        compute_metrics=ranking_compute_metrics if eval_dataset is not None else None,
+        compute_metrics=None,
         data_collator=data_collator,
     )
     mteb_callback = MTEBEvalCallback(mteb_eval_args)
