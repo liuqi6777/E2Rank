@@ -1,3 +1,3 @@
 _base_:
-  - ./grid.yaml
+  - ./default.yaml
 advantage_norm: shared

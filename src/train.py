@@ -29,6 +29,7 @@ from config import (
 from grpo import GRPOModel
 from grpo_trainer import GRPOTrainer, restore_grpo_state
 from mteb_eval_callback import MTEBEvalCallback
+from rewards import warn_on_inert_cutoffs
 from embedding_data import EmbeddingDataCollator, EmbeddingDataset
 from utils import (
     BASE_CONFIG_SLOTS,
@@ -277,6 +278,15 @@ def main() -> None:
     apply_gradient_checkpointing(model, training_args, lora_args)
 
     train_dataset, eval_dataset, data_collator = build_embedding_data(data_args, training_args, tokenizer)
+
+    # Both halves of this check live in different config slots -- the cutoff in reward/, the
+    # slate in dataset/ -- so nothing else notices when a change to one invalidates the other.
+    for warning in warn_on_inert_cutoffs(
+        model.grpo.reward_terms,
+        slate_size=data_args.slate_size,
+        batch_size=training_args.per_device_train_batch_size,
+    ):
+        logger.warning(warning)
 
     trainer = GRPOTrainer(
         model=model,

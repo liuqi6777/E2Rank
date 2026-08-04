@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-GRPO-based reinforcement-learning training for embedding models. Treats an embedding as a stochastic action on the unit hypersphere (von Mises–Fisher policy, sampled exactly with Wood's algorithm) and reuses an HF Trainer for the optimization loop. Ships with several reward presets (nDCG / contrastive / InfoNCE / MRR), a layered YAML config system, and an in-training MTEB/BEIR eval callback. Also includes listwise/pairwise supervised baselines (`src/baselines/`, `src/train_baseline.py`) sharing the same data and trainer plumbing.
+GRPO-based reinforcement-learning training for embedding models. Treats an embedding as a stochastic action on the unit hypersphere (von Mises–Fisher policy, sampled exactly with Wood's algorithm) and reuses an HF Trainer for the optimization loop. Ships with several reward presets (nDCG / contrastive / InfoNCE / MRR, singly or additively combined), a layered YAML config system, and an in-training MTEB/BEIR eval callback. The one supervised counterpart is InfoNCE (`src/train_baseline.py`), sharing the same data and trainer plumbing; it serves as Stage 1, as the compute-matched CL→CL control, and as the backpropagated twin of the InfoNCE-as-reward row.
 
 Python 3.10, managed with `uv` (`.python-version` pinned). Single-source-of-truth deps in `pyproject.toml`; `uv sync` installs them.
 
@@ -19,19 +19,23 @@ bash ./scripts/run.sh configs/exp/template.yaml
 
 # Or compose configs slot-by-slot without a top-level YAML
 bash ./scripts/run.sh \
-  --base-train  configs/train/default.yaml \
-  --base-dataset configs/dataset/default.yaml \
-  --base-model  configs/model/e2rank_0.6b_embedding_only.yaml \
+  --base-train  configs/train/stage2.yaml \
+  --base-dataset configs/dataset/stage2.yaml \
+  --base-model  configs/model/qwen3_0.6b.yaml \
   --base-grpo   configs/grpo/default.yaml \
-  --base-reward configs/reward/contrastive_in_batch.yaml \
+  --base-reward configs/reward/default_mixture.yaml \
   --base-eval   configs/eval/default.yaml \
   --learning_rate 5e-5            # any HfTrainingArguments / dataclass field can be appended
 
-# Supervised baseline training (same data path, listwise/pairwise losses)
-bash ./scripts/run_baseline.sh --base-baseline configs/baseline/lambdaloss.yaml ...
+# Supervised (InfoNCE) training — Stage 1 and the CL->CL control. Same slots minus grpo/reward.
+bash ./scripts/run_baseline.sh --base-train configs/train/stage1.yaml ...
 
-# Parameter sweeps
-uv run python scripts/run_grid.py --set-base model=...,... --set learning_rate=1e-4,5e-5 --dry-run
+# The paper's runs: one script per phase, driven by scripts/experiments/_common.sh.
+# Stage 1 lives in its own script and the phase scripts REQUIRE it rather than training it.
+bash scripts/experiments/stage1.sh              # once per scale; everything branches from it
+bash scripts/experiments/phase1_pilot.sh        # gates the rest on training diagnostics
+DRY_RUN=1 bash scripts/experiments/phaseB_recipe.sh    # inspect before committing GPUs
+uv run python scripts/validate_experiments.py   # parse every command in every script
 
 # Post-hoc MTEB evaluation
 bash eval_mteb/scripts/run_mteb.sh checkpoints/<run_name> <exp_label>

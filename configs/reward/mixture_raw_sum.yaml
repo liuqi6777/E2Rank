@@ -1,0 +1,15 @@
+# M5 -- the SAME terms and weight as the default, combined with a raw sum instead.
+# Predicted to collapse to the InfoNCE term: under 'sum' the mixing ratio is weight x
+# within-group std, and the two families' spreads differ by ~an order of magnitude. Read
+# reward/<term>/group_std to see the ratio actually obtained. Rerun with the weight the
+# M-sweep selects if that is not 0.5.
+reward_terms:
+  - type: ndcg_in_batch
+    weight: 1.0
+    k: 16
+    include_negatives: false
+  - type: infonce
+    weight: 0.5
+    temperature: 0.03
+    in_batch_negatives: true
+reward_combine: sum

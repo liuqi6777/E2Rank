@@ -1,5 +1,5 @@
 _base_:
-  - ./grid.yaml
+  - ./default.yaml
 # REINFORCE with a global running baseline instead of the per-input group baseline.
 advantage_baseline: ema
 advantage_baseline_momentum: 0.99

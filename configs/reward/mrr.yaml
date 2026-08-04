@@ -1,2 +1,6 @@
+# MRR over the sample's own slate. NOT part of the reward sweep: under binary single-positive
+# labels MRR and nDCG are both functions of the gold's rank alone, and their group-standardized
+# advantage vectors have cosine 0.9992 at slate_size=8, so an MRR run duplicates the nDCG run.
+# Kept as one appendix row (X1) that checks that algebra empirically; the first thing to cut.
 reward_type: mrr
-reward_ndcg_k: 16
+reward_ndcg_k: 8

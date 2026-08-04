@@ -1,9 +1,11 @@
+# One-file entrypoint, equivalent to composing the slots on the command line. The _base_ list
+# names the DEFAULT of every slot, so this file is what a run looks like with nothing changed.
 _base_:
-  - ../train/default.yaml
-  - ../dataset/default.yaml
+  - ../train/stage2.yaml
+  - ../dataset/stage2.yaml
   - ../model/qwen3_0.6b.yaml
   - ../grpo/default.yaml
-  - ../reward/ndcg.yaml
+  - ../reward/default_mixture.yaml
   - ../eval/default.yaml
 
 output_dir: checkpoints/example-run

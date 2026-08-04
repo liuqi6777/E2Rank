@@ -1,5 +1,5 @@
 _base_:
-  - ./grid.yaml
+  - ./default.yaml
 sigma_learnable: true
 sigma_min: 0.001
 sigma_max: 0.5

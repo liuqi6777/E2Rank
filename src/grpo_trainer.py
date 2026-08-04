@@ -193,9 +193,33 @@ class EmbeddingTrainerMixin:
             self._accumulate_train_metrics(outputs)
         return (loss, outputs) if return_outputs else loss
 
+    def _peak_memory_gib(self) -> float | None:
+        """Largest allocation high-water mark across ranks, in GiB.
+
+        Deliberately never reset: the reported number is the peak over the whole run, which is
+        what decides whether a configuration fits, and it is the axis the rollout ablations
+        trade against (the reward tensor grows as G^C, and with in-batch candidates its last
+        dimension grows as batch x slate). Max-reduced rather than averaged because one rank
+        OOMing is what OOM means. Allocated, not reserved, so it does not move with the caching
+        allocator's fragmentation.
+        """
+        if not torch.cuda.is_available():
+            return None
+        peak = torch.tensor(
+            float(torch.cuda.max_memory_allocated()),
+            device=self.args.device,
+            dtype=torch.float64,
+        )
+        if torch.distributed.is_available() and torch.distributed.is_initialized():
+            torch.distributed.all_reduce(peak, op=torch.distributed.ReduceOp.MAX)
+        return peak.item() / 1024**3
+
     def log(self, logs, start_time=None):
         if "loss" in logs:
             logs = {**logs, **self._consume_train_metrics()}
+            peak_memory = self._peak_memory_gib()
+            if peak_memory is not None:
+                logs["train/peak_mem_gib"] = round(peak_memory, 3)
         super().log(self._rename_log_keys(logs), start_time=start_time)
 
     def _get_train_sampler(self, train_dataset=None):

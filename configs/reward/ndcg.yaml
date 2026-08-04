@@ -1,2 +1,6 @@
+# nDCG over the sample's OWN slate: pool = slate_size, so k must be <= slate_size or the
+# cutoff never binds. With slate_size=8 this reward takes at most 8 distinct values, which is
+# the coarsest setting in the plan and the one degenerate-group fraction is expected to be
+# worst at (EXPERIMENT_PLAN.md SS0.2). R1 in tab:ablation-reward.
 reward_type: ndcg
-reward_ndcg_k: 16
+reward_ndcg_k: 8

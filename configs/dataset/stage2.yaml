@@ -1,10 +1,7 @@
-# Stage 2 (ranking RL) with a graded label scheme. Note: BGE-M3 mined negatives have no
-# true multi-level relevance, so "graded" here assigns positional grades to the sorted
-# negatives (higher neg_scores -> higher positional grade). Prefer stage2_binary.yaml
-# unless you specifically want the graded ablation.
+# Stage 2 (ranking RL) -- THE DEFAULT. Binary labels, because BGE-M3 mining data gives one
+# positive and a pool of mined negatives with no multi-level relevance judgement.
+# stage2_graded.yaml is the ablation that questions this; it is not the default.
 _base_:
   - ./default.yaml
 per_dataset_max_samples: 10000
-relevance_scheme: graded
-# Held-out dev split for model selection, disjoint from training and stable per --seed.
-dev_samples_per_source: 200
+relevance_scheme: binary

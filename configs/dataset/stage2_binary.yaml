@@ -1,8 +1,0 @@
-# Stage 2 (ranking RL) with a binary label scheme (rank-1 positive vs. the rest). This is
-# the recommended setting for BGE-M3 mined data, whose negatives have no graded relevance.
-_base_:
-  - ./default.yaml
-per_dataset_max_samples: 10000
-relevance_scheme: binary
-# Held-out dev split for model selection, disjoint from training and stable per --seed.
-dev_samples_per_source: 200

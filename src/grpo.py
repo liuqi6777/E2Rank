@@ -337,6 +337,31 @@ class GRPO(nn.Module):
             f"{prefix}{separator}max": flattened_values.max(),
         }
 
+    @staticmethod
+    def realized_reward_levels(rewards: torch.Tensor) -> torch.Tensor:
+        """Mean number of *distinct* reward values a sample's rollout group actually produces.
+
+        A rank-based reward can take at most as many values as its candidate pool has entries,
+        but that is an upper bound and not an equality: only candidates that actually compete
+        for the top ranks move the gold's rank, so a pool padded with documents that never
+        outrank the positive enlarges the pool while realizing no additional levels. This
+        statistic is the measured side of that distinction, and it is what decides whether a
+        larger in-batch pool is buying resolution or only candidates.
+
+        Read it against the group size, not against the pool: a group of G rollouts cannot
+        resolve more than G levels, and a value near 1 means the group is tying out and
+        contributing (almost) no gradient -- the same failure `degenerate_frac` reports, but
+        graded rather than thresholded. Continuous rewards saturate at G by construction.
+        """
+        flattened = rewards.detach().float().reshape(rewards.size(0), -1)
+        if flattened.size(-1) < 2:
+            return torch.ones((), device=rewards.device, dtype=torch.float32)
+        ordered = flattened.sort(dim=-1).values
+        # Same scale-aware tolerance as the degenerate test, so "distinct" means the same thing
+        # for a bounded metric in [0, 1] and for a contrastive margin an order of magnitude wider.
+        tolerance = 1e-4 * flattened.abs().mean(dim=-1, keepdim=True).clamp_min(1.0)
+        return ((ordered.diff(dim=-1).abs() > tolerance).sum(dim=-1) + 1).float().mean()
+
     def _current_reward_baseline(self, component_rewards: torch.Tensor) -> torch.Tensor:
         """Global running baseline for the REINFORCE ablation (advantage_baseline='ema').
 
@@ -788,6 +813,13 @@ class GRPO(nn.Module):
         # collapsed. These rows received zero advantage and contributed no learning signal.
         degenerate_frac = torch.cat(degenerate_masks).float().mean()
         reward_stats = self.summarize_tensor(rewards, prefix="reward")
+        # How many distinct values the reward resolves per group. Emitted for every term,
+        # including single-term runs, because comparing this between two candidate pools is how
+        # the pool for the ranking term is chosen -- see realized_reward_levels.
+        for term in self.reward_terms:
+            reward_stats[f"reward/{term.name}/n_distinct"] = self.realized_reward_levels(
+                term_rewards[term.name]
+            )
         if len(self.reward_terms) > 1:
             # Per-term diagnostics. 'group_std' is the mean within-sample spread and is the
             # number that actually decides how much a term contributes under reward_combine=

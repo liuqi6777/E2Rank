@@ -252,6 +252,58 @@ def reward_terms_mix_scales(reward_terms: Sequence[RewardTerm]) -> bool:
     return bool(types & BOUNDED_REWARD_TYPES) and bool(types & UNBOUNDED_REWARD_TYPES)
 
 
+def ranking_reward_pool_size(term: RewardTerm, slate_size: int, batch_size: int) -> int | None:
+    """How many candidates a rank-based term ranks over. None for the score-based families."""
+    if term.type == "mrr" or term.type == "ndcg":
+        return slate_size
+    if term.type == "ndcg_in_batch":
+        if term.ndcg_in_batch_include_negatives:
+            return batch_size * slate_size
+        return slate_size + max(batch_size - 1, 0)
+    return None
+
+
+def warn_on_inert_cutoffs(
+    reward_terms: Sequence[RewardTerm],
+    slate_size: int,
+    batch_size: int,
+) -> list[str]:
+    """Report rank-based terms whose cutoff can never bind, and how coarse each one is.
+
+    Three cases, distinguished because only one of them is a mistake:
+
+    * ``k > pool`` is a config error. The cutoff can never apply, so ``@k`` names a truncation
+      that does not exist, and every caption quoting it is wrong. Easy to reintroduce by
+      editing ``slate_size`` alone, since the cutoff lives in a different config slot.
+    * ``k == pool`` is the full metric by construction. That is the intended setting for the
+      own-slate rows, so it is stated rather than flagged.
+    * whatever ``k`` is, a small pool caps the reward's *resolution*: a rank-based reward takes
+      at most one value per candidate, so a group of G rollouts over an n-candidate pool cannot
+      resolve more than min(G, n) levels. The rest tie, and tied groups contribute no gradient.
+
+    Returns the lines rather than logging them, so callers decide where they go and tests can
+    assert on them.
+    """
+    warnings: list[str] = []
+    for term in reward_terms:
+        pool = ranking_reward_pool_size(term, slate_size, batch_size)
+        if pool is None:
+            continue
+        if term.k is not None and term.k > pool:
+            warnings.append(
+                f"reward term '{term.name}': cutoff k={term.k} EXCEEDS its {pool}-candidate "
+                f"pool, so no truncation ever happens and '@{term.k}' is a mislabel. Set "
+                f"k <= {pool}."
+            )
+        cutoff = "no cutoff, i.e. the full metric" if term.k is None or term.k == pool \
+            else f"cutoff @{min(term.k, pool)}"
+        warnings.append(
+            f"reward term '{term.name}': pool={pool} ({cutoff}), so the reward has at most "
+            f"{pool} distinct values; watch reward/{term.name}/n_distinct against the group size."
+        )
+    return warnings
+
+
 def reward_terms_need_in_batch_positives(reward_terms: Sequence[RewardTerm]) -> bool:
     return any(
         (term.type == "ndcg_in_batch" and not term.ndcg_in_batch_include_negatives)

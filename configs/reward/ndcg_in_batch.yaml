@@ -1,3 +1,8 @@
+# nDCG over the slate PLUS the other samples' gold positives (pool = slate_size + B - 1 = 39
+# at slate_size=8, per-device batch 32). Those extra candidates are coherent documents from
+# the same source -- classic in-batch negatives -- so they are expected to compete for the top
+# ranks and therefore to raise the number of REALIZED reward levels, not just the pool.
+# k=16 genuinely binds here. R2 in tab:ablation-reward, and the ranking half of the default.
 reward_type: ndcg_in_batch
 reward_ndcg_k: 16
 ndcg_in_batch_include_negatives: false

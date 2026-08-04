@@ -1,6 +1,11 @@
-# Query-only policy (the reduced rollout).
+# THE DEFAULT policy: query + bundled document slate -> G x G reward tensor.
+# Every abl_*.yaml in this directory inherits from here and changes exactly one field, so a
+# row of tab:ablation-estimator is a single-flag diff against this file.
+# (This file used to be called grid.yaml while default.yaml held the query-only policy --
+# i.e. 'default' was not the default. Renamed; query-only is now query_only.yaml.)
 action_components:
   - [query]
+  - [positive, negative]
 group_size: 32
 kappa: 755
 sigma_learnable: false

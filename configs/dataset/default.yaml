@@ -24,6 +24,7 @@ include_sources: null
 # Byte-offset index cache for lazy loading; first run scans each file once, later reuse.
 index_cache_dir: .cache/dataset_index
 
-# Held-out dev split for model selection. Taken per source before the training cap, so it
-# is disjoint from training data and stable for a given --seed. Set to 0 to disable.
+# Held-out dev split. Left at 0: the deterministic dev-nDCG eval path was removed, and the
+# reward/component choices are tested on MTEB-16 instead, so a held-out slice would have no
+# consumer and would only shrink the training set. The dataset-side plumbing stays in place.
 dev_samples_per_source: 0

@@ -1,3 +1,9 @@
+# nDCG over the slate plus EVERY in-batch candidate: the other samples' mined negatives as
+# well as their positives (pool = B * slate_size = 256). The nominal pool is 6.5x larger than
+# ndcg_in_batch.yaml, but those 217 extra documents are negatives for *other* queries and are
+# mostly unrelated to this one, so they may never outrank the gold and may add no realized
+# reward levels at all. That is the question phase1_pilot.sh answers on reward/<term>/n_distinct
+# before this or ndcg_in_batch.yaml is fixed as the ranking half of the default (SS0.2).
 reward_type: ndcg_in_batch
 reward_ndcg_k: 16
 ndcg_in_batch_include_negatives: true

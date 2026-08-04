@@ -1,4 +1,4 @@
 _base_:
-  - ./grid.yaml
+  - ./default.yaml
 # Projected-Gaussian shortcut at MATCHED mean alignment (A_d(755) = 0.530 = 1/sqrt(1+0.05^2*1024)).
 sampling_law: gaussian

@@ -1,36 +1,48 @@
 #!/bin/bash
 # Shared helpers for the experiment scripts. Source this; do not run it.
 #
-#   SEEDS             Stage-2 seeds for ordinary rows (default: 42)
-#   PIVOT_SEEDS       Stage-2 seeds for the pivotal CL->CL vs CL->RL rows (default: 42 43 44)
-#   STAGE1_SEED       the single Stage-1 seed everything branches from (default: 42)
-#   DRY_RUN=1         print commands without launching
-#   SCALE=0.6b|4b|8b  which base LLM (default 0.6b)
-#   CKPT_ROOT=...     where checkpoints land (default ./checkpoints)
+#   SEED=42            the single seed everything runs at
+#   DRY_RUN=1          print commands without launching
+#   SCALE=0.6b|4b|8b   which base LLM (default 0.6b)
+#   CKPT_ROOT=...      where checkpoints land (default ./checkpoints)
+#   DEFAULT_REWARD=... override the default reward config (see below)
+#
+# Run order (EXPERIMENT_PLAN.md SS3):
+#   stage1.sh             the shared contrastive checkpoint. Run once, first, per scale.
+#   phase1_pilot.sh       the two pilots that fix the nDCG pool. GATES EVERYTHING.
+#   reward_probe.sh       free: reward signal vs. Stage-1 progress. Trains nothing.
+#   phaseA_mixture.sh     the mixture weight sweep; fixes w. Short serial dependency.
+#   phaseB_recipe.sh      the controlled comparison -- the rows that decide the paper.
+#   phaseA_reward.sh      \
+#   phaseA_components.sh   > verification + ablations; all run at the declared default, in
+#   phaseC_estimator.sh    > parallel with each other and with Phase B.
+#   phaseD_appendix.sh    /
+#   phaseE_scale.sh       4B / 8B. First to cut.
+#   eval_all.sh           post-hoc MTEB.
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
-# Seed policy.
-#
-# ONE Stage-1 checkpoint, and every downstream row branches from it. Seeds vary only in
-# Stage 2. This makes the pivotal comparison a *paired* design: C3 and C7 differ solely in
-# the Stage-2 objective, with Stage-1 variance held fixed rather than added as noise, which
-# is exactly the contrast the paper claims. What it does NOT measure is how much the result
-# would move if Stage 1 were retrained -- so the sd is reported as "conditional on the
-# Stage-1 checkpoint", never as full-pipeline variance.
-#
-# Everything outside the pivotal rows runs at a single seed and is read against the sd
-# measured there; the noise floor is a property of the setup, not of each ablation.
-SEEDS="${SEEDS:-42}"
-PIVOT_SEEDS="${PIVOT_SEEDS:-42 43 44}"
-STAGE1_SEED="${STAGE1_SEED:-42}"
+# Seed policy: ONE seed, ONE Stage-1 checkpoint that every CL->* row branches from. Differences
+# between rows are therefore attributable to the changed setting, but no dispersion is measured
+# and none is claimed -- see the single-seed limitation in the appendix.
+SEED="${SEED:-42}"
 DRY_RUN="${DRY_RUN:-0}"
 SCALE="${SCALE:-0.6b}"
 CKPT_ROOT="${CKPT_ROOT:-checkpoints}"
 export WANDB_PROJECT="${WANDB_PROJECT:-E2Rank-RL}"
+
+# The default reward is DECLARED, not selected (EXPERIMENT_PLAN.md SS2.1): the in-batch-extended
+# ranking term plus a continuous InfoNCE companion. Two knobs are settled by experiment, and
+# both are one line here rather than an edit inside a config:
+#   - the pilot decides the ranking term's pool -> flip to default_mixture_all.yaml if the
+#     256-candidate pool realizes materially more reward levels;
+#   - phaseA_mixture.sh decides w               -> everything runs at w=0.5 until it lands.
+DEFAULT_REWARD="${DEFAULT_REWARD:-configs/reward/default_mixture.yaml}"
+DEFAULT_GRPO="${DEFAULT_GRPO:-configs/grpo/default.yaml}"
+DEFAULT_DATASET="${DEFAULT_DATASET:-configs/dataset/stage2.yaml}"
 
 case "$SCALE" in
   0.6b) BASE_MODEL_CONFIG=configs/model/qwen3_0.6b.yaml; BASE_MODEL_ID=Qwen/Qwen3-0.6B ;;
@@ -39,10 +51,9 @@ case "$SCALE" in
   *)    echo "Unknown SCALE=$SCALE (expected 0.6b, 4b, or 8b)" >&2; exit 1 ;;
 esac
 
-# Every ablation shares one Stage-1 checkpoint per (scale, seed). Train it once; branch after.
-stage1_dir()        { echo "${CKPT_ROOT}/stage1-${SCALE}-s${STAGE1_SEED}"; }
-stage1_merged_dir() { echo "${CKPT_ROOT}/stage1-${SCALE}-s${STAGE1_SEED}-merged"; }
-run_dir()           { echo "${CKPT_ROOT}/${1}-${SCALE}-s${2}"; }
+stage1_dir()              { echo "${CKPT_ROOT}/stage1-${SCALE}-s${SEED}"; }
+stage1_merged_dir()       { echo "${CKPT_ROOT}/stage1-${SCALE}-s${SEED}-merged"; }
+run_dir()                 { echo "${CKPT_ROOT}/${1}-${SCALE}-s${SEED}"; }
 
 log() { printf '\n\033[1m>>> %s\033[0m\n' "$*"; }
 
@@ -62,7 +73,8 @@ already_done() {
 }
 
 # --- Stage 1: contrastive (InfoNCE) from the base LLM -------------------------------
-# Trained once at STAGE1_SEED; every CL->* row branches from it.
+# Trained once; every CL->* row branches from it. Same corpus as Stage 2, so the recipe
+# comparison carries no data confound at all.
 train_stage1() {
   local out; out="$(stage1_dir)"
   already_done "$out" && return 0
@@ -70,11 +82,13 @@ train_stage1() {
     --base-train    configs/train/stage1.yaml \
     --base-dataset  configs/dataset/stage1.yaml \
     --base-model    "$BASE_MODEL_CONFIG" \
-    --base-baseline configs/baseline/infonce.yaml \
-    --seed "$STAGE1_SEED" --run_name "$(basename "$out")" --output_dir "$out" "$@"
+    --base-eval     configs/eval/default.yaml \
+    --seed "$SEED" --run_name "$(basename "$out")" --output_dir "$out" "$@"
 }
 
 # --- Merge Stage 1 so Stage 2 starts from a standalone checkpoint --------------------
+# Merging rather than chaining via lora_path is required for the KL anchor: it is taken by
+# disabling the adapter, so the reference must be the Stage-1 model, not the raw base LLM.
 merge_stage1() {
   local src merged; src="$(stage1_dir)"; merged="$(stage1_merged_dir)"
   already_done "$merged" && return 0
@@ -83,49 +97,60 @@ merge_stage1() {
 }
 
 # --- Stage 2: ranking RL ------------------------------------------------------------
-# $1 run id   $2 seed   $3 grpo config   $4 reward config   $5 init (base|stage1)   $6... overrides
+# $1 run id   $2 grpo config   $3 reward config   $4 init (base|stage1)   $5... overrides
+# Pass "-" in the grpo or reward slot to take the declared default. RL_DATASET / RL_TRAIN
+# swap the dataset / train slot for the rows that need it.
 train_rl() {
-  local id="$1" seed="$2" grpo="$3" reward="$4" init="$5"; shift 5
-  local out; out="$(run_dir "$id" "$seed")"
+  local id="$1" grpo="$2" reward="$3" init="$4"; shift 4
+  [ "$grpo"   = "-" ] && grpo="$DEFAULT_GRPO"
+  [ "$reward" = "-" ] && reward="$DEFAULT_REWARD"
+  local dataset="${RL_DATASET:-$DEFAULT_DATASET}"
+  local train_cfg="${RL_TRAIN:-configs/train/stage2.yaml}"
+  local out; out="$(run_dir "$id")"
   already_done "$out" && return 0
-  local model_flag=()
+  local model_flag=(--base-model "$BASE_MODEL_CONFIG")
   if [ "$init" = "stage1" ]; then
-    model_flag=(--base-model "$BASE_MODEL_CONFIG" --model_name_or_path "$(stage1_merged_dir)")
-  else
-    model_flag=(--base-model "$BASE_MODEL_CONFIG")
+    model_flag+=(--model_name_or_path "$(stage1_merged_dir)")
   fi
   launch bash ./scripts/run.sh \
-    --base-train   configs/train/stage2.yaml \
-    --base-dataset configs/dataset/stage2.yaml \
+    --base-train   "$train_cfg" \
+    --base-dataset "$dataset" \
     "${model_flag[@]}" \
     --base-grpo    "$grpo" \
     --base-reward  "$reward" \
     --base-eval    configs/eval/default.yaml \
-    --seed "$seed" --run_name "$(basename "$out")" --output_dir "$out" "$@"
+    --seed "$SEED" --run_name "$(basename "$out")" --output_dir "$out" "$@"
 }
 
-# Dev-set evaluation flags, used by the smoothing sweep. The split itself is configured in
-# configs/dataset/stage2*.yaml (dev_samples_per_source); these turn evaluation on.
-DEV_EVAL_FLAGS=(--eval_strategy steps --eval_steps 100 --per_device_eval_batch_size 32
-                --save_strategy no --report_to wandb)
-
-# --- Stage 2 with a supervised objective (the CL->CL control and the surrogates) -----
-# $1 run id   $2 seed   $3 baseline config   $4... overrides
+# --- Stage 2 with the supervised objective (the CL->CL control) ----------------------
+# $1 run id   $2... overrides
 train_supervised_stage2() {
-  local id="$1" seed="$2" baseline="$3"; shift 3
-  local out; out="$(run_dir "$id" "$seed")"
+  local id="$1"; shift
+  local out; out="$(run_dir "$id")"
   already_done "$out" && return 0
   launch bash ./scripts/run_baseline.sh \
     --base-train    configs/train/stage2.yaml \
-    --base-dataset  configs/dataset/stage2.yaml \
+    --base-dataset  "$DEFAULT_DATASET" \
     --base-model    "$BASE_MODEL_CONFIG" \
-    --base-baseline "$baseline" \
+    --base-eval     configs/eval/default.yaml \
     --model_name_or_path "$(stage1_merged_dir)" \
-    --seed "$seed" --run_name "$(basename "$out")" --output_dir "$out" "$@"
+    --seed "$SEED" --run_name "$(basename "$out")" --output_dir "$out" "$@"
 }
 
-# Ensure the single shared Stage-1 checkpoint exists. Idempotent across scripts.
-prepare_stage1() {
-  train_stage1
-  merge_stage1
+# --- Stage-1 dependency -------------------------------------------------------------
+# The phase scripts REQUIRE Stage 1; they do not train it. It is the longest job in the plan
+# and shared by everything, so starting it as a side effect of launching a 1.5-hour ablation is
+# exactly the accident worth preventing. stage1.sh is the only place it is trained.
+require_stage1() {
+  local merged; merged="$(stage1_merged_dir)"
+  if [ -f "$merged/config.json" ] || [ "$DRY_RUN" = "1" ]; then return 0; fi
+  cat >&2 <<EOF
+
+Stage-1 checkpoint missing: $merged
+
+Train it once, then re-run this script:
+  SCALE=$SCALE bash scripts/experiments/stage1.sh
+
+EOF
+  exit 1
 }

@@ -1,0 +1,13 @@
+# The default mixture with the 256-candidate pool on the ranking term. Kept alongside
+# default_mixture.yaml so the pilot's outcome is a one-line change in _common.sh
+# (DEFAULT_REWARD) rather than an edit inside a config. See SS0.2.
+reward_terms:
+  - type: ndcg_in_batch
+    weight: 1.0
+    k: 16
+    include_negatives: true
+  - type: infonce
+    weight: 0.5
+    temperature: 0.03
+    in_batch_negatives: true
+reward_combine: normalized_sum
