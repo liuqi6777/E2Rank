@@ -1,3 +1,12 @@
+"""GRPO trainer plus the trainer plumbing shared with ``baselines.trainer.BaselineTrainer``.
+
+Both trainers wrap the backbone in a ``nn.Module`` that returns a ``ModelOutput`` with
+extra per-step scalars, need those scalars averaged across micro-batches *and* ranks
+before they reach W&B, need ``RankingDataset``'s per-source batching preserved, and need
+the wrapper's ``"model."`` state-dict prefix stripped on save. That lives in
+``RankingTrainerMixin`` so each trainer only declares what is actually different.
+"""
+
 import json
 import logging
 import math
@@ -94,79 +103,51 @@ def save_wrapped_backbone(trainer: HFTrainer, output_dir=None, state_dict=None) 
     return output_dir
 
 
-class GRPOTrainer(RankingEvalMixin, HFTrainer):
+class RankingTrainerMixin(RankingEvalMixin):
+    """Accumulate model-emitted scalars per step, reduce across ranks, rename for W&B.
+
+    Subclasses declare ``train_metric_names`` (which fields of the model output to track)
+    and ``train_metric_log_names`` (how each is spelled in the logs; may be a property).
+    Metrics whose key set is config-driven rather than static go through
+    ``_extra_train_metrics``, which must return the same keys in the same order on every
+    rank -- ``_consume_train_metrics`` reduces the accumulator dict entry by entry.
+    """
+
     base_log_name_map = {
         "loss": "train/loss",
         "learning_rate": "train/lr",
         "grad_norm": "train/grad_norm",
         "epoch": "train/epoch",
     }
-    train_metric_names = (
-        "reward",
-        "reward_mean",
-        "reward_std",
-        "reward_min",
-        "reward_max",
-        "advantages_mean",
-        "advantages_std",
-        "advantages_min",
-        "advantages_max",
-        "advantages_degenerate_frac",
-        "sigma",
-        "kl",
-    )
-    train_metric_log_names = {
-        "reward": "reward",
-        "reward_mean": "reward/mean",
-        "reward_std": "reward/std",
-        "reward_min": "reward/min",
-        "reward_max": "reward/max",
-        "advantages_mean": "advantages/mean",
-        "advantages_std": "advantages/std",
-        "advantages_min": "advantages/min",
-        "advantages_max": "advantages/max",
-        "advantages_degenerate_frac": "advantages/degenerate_frac",
-        "sigma": "sigma",
-        "kl": "kl",
-    }
-
-    @classmethod
-    def _rename_log_keys(cls, logs: dict[str, float]) -> dict[str, float]:
-        renamed_logs = {}
-        for key, value in logs.items():
-            renamed_key = cls.base_log_name_map.get(key, key)
-            renamed_logs[renamed_key] = value
-        return renamed_logs
+    train_metric_names: tuple[str, ...] = ()
+    train_metric_log_names: dict[str, str] = {}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._train_metric_sums: dict[str, torch.Tensor] = {}
         self._train_metric_updates = 0
-        # Sigma observed during the forward pass. Reading grpo.log_sigma directly at save
-        # time is unsafe under ZeRO-3 (the parameter is a rank-local shard outside a
-        # gather context, and _save runs on one rank only, so we cannot collect it there).
-        self._last_sigma: float | None = None
+
+    @classmethod
+    def _rename_log_keys(cls, logs: dict[str, float]) -> dict[str, float]:
+        return {cls.base_log_name_map.get(key, key): value for key, value in logs.items()}
+
+    @staticmethod
+    def _output_field(outputs, name):
+        if isinstance(outputs, dict):
+            return outputs.get(name)
+        return getattr(outputs, name, None)
+
+    def _extra_train_metrics(self, outputs) -> dict:
+        """Pre-namespaced, rank-invariant scalars that the static whitelist cannot cover."""
+        return {}
 
     def _accumulate_train_metrics(self, outputs) -> None:
-        sigma = outputs.get("sigma") if isinstance(outputs, dict) else getattr(outputs, "sigma", None)
-        if sigma is not None:
-            self._last_sigma = float(sigma)
-
-        # Per-reward-term scalars are config-driven, so the static whitelist below cannot cover
-        # them. They arrive pre-namespaced and in a rank-invariant order, which _consume_train_
-        # metrics needs because it reduces the accumulator dict entry by entry across ranks.
-        term_metrics = (
-            outputs.get("reward_terms")
-            if isinstance(outputs, dict)
-            else getattr(outputs, "reward_terms", None)
-        ) or {}
-        for metric_name in (*self.train_metric_names, *term_metrics):
-            if metric_name in term_metrics:
-                metric_value = term_metrics[metric_name]
-            elif isinstance(outputs, dict):
-                metric_value = outputs.get(metric_name)
+        extra_metrics = self._extra_train_metrics(outputs)
+        for metric_name in (*self.train_metric_names, *extra_metrics):
+            if metric_name in extra_metrics:
+                metric_value = extra_metrics[metric_name]
             else:
-                metric_value = getattr(outputs, metric_name, None)
+                metric_value = self._output_field(outputs, metric_name)
             if metric_value is None:
                 continue
             if not isinstance(metric_value, torch.Tensor):
@@ -202,13 +183,6 @@ class GRPOTrainer(RankingEvalMixin, HFTrainer):
         self._train_metric_updates = 0
         return logs
 
-    def _get_train_sampler(self, train_dataset=None):
-        dataset = train_dataset if train_dataset is not None else self.train_dataset
-        sampler = build_single_source_sampler(self, dataset)
-        if sampler is not None:
-            return sampler
-        return super()._get_train_sampler(train_dataset)
-
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         loss, outputs = super().compute_loss(
             model,
@@ -225,11 +199,59 @@ class GRPOTrainer(RankingEvalMixin, HFTrainer):
             logs = {**logs, **self._consume_train_metrics()}
         super().log(self._rename_log_keys(logs), start_time=start_time)
 
-    def _save(self, output_dir=None, state_dict=None):
-        output_dir = save_wrapped_backbone(self, output_dir=output_dir, state_dict=state_dict)
+    def _get_train_sampler(self, train_dataset=None):
+        dataset = train_dataset if train_dataset is not None else self.train_dataset
+        sampler = build_single_source_sampler(self, dataset)
+        if sampler is not None:
+            return sampler
+        return super()._get_train_sampler(train_dataset)
+
+    def _save(self, output_dir=None, state_dict=None) -> str:
+        return save_wrapped_backbone(self, output_dir=output_dir, state_dict=state_dict)
+
+
+class GRPOTrainer(RankingTrainerMixin, HFTrainer):
+    train_metric_log_names = {
+        "reward": "reward",
+        "reward_mean": "reward/mean",
+        "reward_std": "reward/std",
+        "reward_min": "reward/min",
+        "reward_max": "reward/max",
+        "advantages_mean": "advantages/mean",
+        "advantages_std": "advantages/std",
+        "advantages_min": "advantages/min",
+        "advantages_max": "advantages/max",
+        "advantages_degenerate_frac": "advantages/degenerate_frac",
+        "sigma": "sigma",
+        "kl": "kl",
+    }
+    train_metric_names = tuple(train_metric_log_names)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Sigma observed during the forward pass. Reading grpo.log_sigma directly at save
+        # time is unsafe under ZeRO-3 (the parameter is a rank-local shard outside a
+        # gather context, and _save runs on one rank only, so we cannot collect it there).
+        self._last_sigma: float | None = None
+
+    def _extra_train_metrics(self, outputs) -> dict:
+        # Per-reward-term scalars are config-driven, so the static whitelist cannot cover
+        # them. They arrive pre-namespaced and in a rank-invariant order, which
+        # _consume_train_metrics needs because it reduces the accumulator entry by entry.
+        return self._output_field(outputs, "reward_terms") or {}
+
+    def _accumulate_train_metrics(self, outputs) -> None:
+        sigma = self._output_field(outputs, "sigma")
+        if sigma is not None:
+            self._last_sigma = float(sigma)
+        super()._accumulate_train_metrics(outputs)
+
+    def _save(self, output_dir=None, state_dict=None) -> str:
+        output_dir = super()._save(output_dir=output_dir, state_dict=state_dict)
 
         # The backbone save above only covers `model.*`; the learnable exploration scale
         # lives on the GRPO head and would otherwise silently reset to its init on resume.
         if self.model.grpo.sigma_learnable and self._last_sigma is not None and self.is_world_process_zero():
             with open(os.path.join(output_dir, GRPO_STATE_FILENAME), "w", encoding="utf-8") as fp:
                 json.dump({"sigma": self._last_sigma}, fp)
+        return output_dir

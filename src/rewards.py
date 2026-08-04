@@ -297,11 +297,16 @@ def compute_reward_terms(
     }
 
 
-def _resolve_relevant_mask(
+def resolve_relevant_mask(
     ranked_relevance: torch.Tensor,
     relevance_labels: torch.Tensor,
     relevance_scheme: str | None = None,
 ) -> torch.Tensor:
+    """Binary "is this row relevant" mask, used by MRR here and in ``baselines.metrics``.
+
+    With no explicit scheme the threshold is inferred from the labels: graded labels
+    (which reach 3) count only grade >= 2 as relevant, binary labels count anything > 0.
+    """
     if relevance_scheme is not None and relevance_scheme not in {"graded", "binary"}:
         raise ValueError(f"Unsupported relevance scheme: {relevance_scheme}")
 
@@ -382,7 +387,9 @@ def compute_reward_from_scores(
     rollout_shape = scores.shape[1:-1]
     slate_length = scores.size(-1)
 
-    def restore_reward_shape(reward: torch.Tensor) -> torch.Tensor:
+    def finish(reward: torch.Tensor) -> torch.Tensor:
+        """Fold the flattened rollout axis back into the caller's rollout shape."""
+        reward = reward.reshape(batch_size, *rollout_shape)
         return reward.squeeze(1) if squeeze_rollout_dim else reward
 
     rollout_count = 1
@@ -394,6 +401,9 @@ def compute_reward_from_scores(
         in_batch_positive_scores = in_batch_positive_scores.reshape(batch_size, rollout_count, -1)
     if in_batch_candidate_scores is not None:
         in_batch_candidate_scores = in_batch_candidate_scores.reshape(batch_size, rollout_count, -1)
+
+    def zero_reward() -> torch.Tensor:
+        return torch.zeros(batch_size, *rollout_shape, device=scores.device, dtype=scores.dtype)
 
     expanded_labels = relevance_labels.unsqueeze(1).expand(batch_size, rollout_count, slate_length)
     if reward_type in {"ndcg", "ndcg_in_batch"}:
@@ -411,8 +421,7 @@ def compute_reward_from_scores(
 
         cutoff = ranking_scores.size(-1) if k is None else min(k, ranking_scores.size(-1))
         if cutoff <= 0:
-            reward = torch.zeros(batch_size, *rollout_shape, device=scores.device, dtype=scores.dtype)
-            return restore_reward_shape(reward)
+            return finish(zero_reward())
 
         topk_indices = ranking_scores.topk(k=cutoff, dim=-1).indices
         topk_relevance = ranking_labels.gather(dim=-1, index=topk_indices)
@@ -421,17 +430,15 @@ def compute_reward_from_scores(
 
         ideal_relevance = ranking_labels.topk(k=cutoff, dim=-1).values
         idcg = (((2.0 ** ideal_relevance) - 1.0) * discounts).sum(dim=-1)
-        reward = torch.where(idcg > 0, dcg / idcg, torch.zeros_like(dcg)).reshape(batch_size, *rollout_shape)
-        return restore_reward_shape(reward)
+        return finish(torch.where(idcg > 0, dcg / idcg, torch.zeros_like(dcg)))
 
     if reward_type == "mrr":
         cutoff = slate_length if k is None else min(k, slate_length)
         if cutoff <= 0:
-            reward = torch.zeros(batch_size, *rollout_shape, device=scores.device, dtype=scores.dtype)
-            return restore_reward_shape(reward)
+            return finish(zero_reward())
         ranked_indices = scores.topk(k=cutoff, dim=-1).indices
         ranked_relevance = expanded_labels.gather(dim=-1, index=ranked_indices)
-        relevant_mask = _resolve_relevant_mask(
+        relevant_mask = resolve_relevant_mask(
             ranked_relevance=ranked_relevance,
             relevance_labels=relevance_labels,
             relevance_scheme=relevance_scheme,
@@ -442,8 +449,7 @@ def compute_reward_from_scores(
             device=scores.device,
             dtype=scores.dtype,
         )
-        reward = reciprocal_ranks.max(dim=-1).values.reshape(batch_size, *rollout_shape)
-        return restore_reward_shape(reward)
+        return finish(reciprocal_ranks.max(dim=-1).values)
 
     positive_indices = relevance_labels.argmax(dim=-1)
     arange_b = torch.arange(batch_size, device=scores.device)
@@ -456,18 +462,15 @@ def compute_reward_from_scores(
         negative_scores = torch.cat((negative_scores, in_batch_positive_scores), dim=-1)
 
     if reward_type == "contrastive":
-        rewards = positive_scores - _temperature_scaled_logsumexp(
-            negative_scores,
-            temperature=contrastive_temperature,
-        )
-        reward = rewards.reshape(batch_size, *rollout_shape)
-        return restore_reward_shape(reward)
-    if reward_type == "infonce":
+        # No positive in the partition: the reward is the margin of the positive over the
+        # soft-max of the negatives alone.
+        partition_scores = negative_scores
+    elif reward_type == "infonce":
         partition_scores = torch.cat((positive_scores.unsqueeze(-1), negative_scores), dim=-1)
-        rewards = positive_scores - _temperature_scaled_logsumexp(
-            partition_scores,
-            temperature=contrastive_temperature,
-        )
-        reward = rewards.reshape(batch_size, *rollout_shape)
-        return restore_reward_shape(reward)
-    raise AssertionError(f"Unhandled reward type: {reward_type}")
+    else:
+        raise AssertionError(f"Unhandled reward type: {reward_type}")
+    return finish(
+        positive_scores
+        - _temperature_scaled_logsumexp(partition_scores, temperature=contrastive_temperature)
+    )
+

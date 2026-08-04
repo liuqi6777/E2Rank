@@ -43,7 +43,7 @@ Distributed defaults: `NNODES=1`, `NPROC_PER_NODE=8` (override via env). `WANDB_
 ## Architecture
 
 ### Training entrypoint (`src/train.py`, `src/train_baseline.py`)
-Both files share the same shape: `HfArgumentParser` over a tuple of dataclasses (`src/config.py`, plus `src/baselines/config.py` for the baseline) → resolve YAML configs → load `AutoModel`+`AutoTokenizer` → optionally wrap with PEFT/LoRA → wrap in `GRPOModel`/`BaselineModel` → hand to a Trainer subclass. Both end with `save_model_for_trainer`, which routes DeepSpeed ZeRO-3 saves through `trainer.save_model` and gathers state on CPU otherwise.
+`train.py` owns the shared setup helpers — `split_launcher_args` / `parse_arguments` (YAML, `--base-<slot>` flags, or plain CLI, then `run_name`/`output_dir` resolution), `guard_output_dir`, `setup_logging`, `load_backbone_and_tokenizer` (AutoConfig + AutoModel + AutoTokenizer + optional PEFT/LoRA), `apply_gradient_checkpointing`, `build_ranking_data`, `save_run_artifacts`, `shutdown_distributed` — and `train_baseline.py` imports them. Each `main()` is then only: parse → load backbone → wrap in `GRPOModel`/`BaselineModel` → build the trainer → `train()` → save. `save_run_artifacts` routes through `save_model_for_trainer`, which sends DeepSpeed ZeRO-3 saves to `trainer.save_model` and gathers state on CPU otherwise.
 
 ### Config system (`src/utils.py`)
 Configs compose via a `_base_` list at the YAML top level. Inheritance is resolved recursively; later entries (and CLI args) win. Slot names in `BASE_CONFIG_SLOTS = ("train", "dataset", "model", "grpo", "reward", "eval")` map to `--base-<slot>` launcher flags — the **parent directory name** of each `_base_` entry decides which slot it occupies (so move a file between slot dirs only with intent). `run_name`/`output_dir` are auto-derived from non-default slot stems when omitted; `checkpoints/<run_name>` is the default output.
@@ -77,12 +77,14 @@ The `in_batch_positive_scores` / `in_batch_candidate_scores` inputs are pre-expa
 With more than one term, per-term stats are emitted as `reward/<term>/{mean,std,min,max,group_std}` and flow to W&B through `GRPOModelOutput.reward_terms`.
 
 ### Trainer wrapper (`src/grpo_trainer.py`)
-`GRPOTrainer` is an HF `Trainer` subclass that:
-1. accumulates per-step reward/advantage/sigma/KL metrics across micro-batches, reduces across ranks on `log()`, and renames keys to a `train/…`, `reward/…`, `advantages/…` schema for W&B. `train_metric_names` is a static whitelist; the config-driven per-term reward metrics bypass it via the `reward_terms` dict on the model output, which is why they arrive pre-namespaced and in a rank-invariant order (the cross-rank reduce walks the accumulator dict entry by entry);
-2. overrides `_get_train_sampler` with `SingleSourceBatchSampler`, without which the stock `RandomSampler` silently destroys `RankingDataset`'s per-source batching (see Data below); and
-3. overrides `_save` (via `save_wrapped_backbone`, shared with `BaselineTrainer`) to strip the `"model."` prefix introduced by the `GRPOModel` wrapper. Note this writes a **PEFT adapter** whenever `lora_enabled` — the default — not a full model; only non-LoRA runs reload with plain `AutoModel.from_pretrained`.
+`RankingTrainerMixin` (also used by `BaselineTrainer`, which imports it from here) carries the plumbing both trainers need:
+1. it accumulates the scalars named in `train_metric_names` across micro-batches, reduces them across ranks on `log()`, and renames keys via `train_metric_log_names` + `base_log_name_map` into a `train/…`, `reward/…`, `advantages/…` schema for W&B. `train_metric_names` is a static whitelist; config-driven metrics bypass it through the `_extra_train_metrics` hook, which `GRPOTrainer` fills from the model output's `reward_terms` dict — those arrive pre-namespaced and in a rank-invariant order because the cross-rank reduce walks the accumulator dict entry by entry;
+2. it overrides `_get_train_sampler` with `SingleSourceBatchSampler`, without which the stock `RandomSampler` silently destroys `RankingDataset`'s per-source batching (see Data below); and
+3. it overrides `_save` (via `save_wrapped_backbone`) to strip the `"model."` prefix introduced by the `GRPOModel`/`BaselineModel` wrapper. Note this writes a **PEFT adapter** whenever `lora_enabled` — the default — not a full model; only non-LoRA runs reload with plain `AutoModel.from_pretrained`.
 
-A learnable `sigma` lives outside those `model.*` keys, so `_save` writes it to `grpo_state.json` and `restore_grpo_state` reloads it in `train.py` before the trainer is built (DeepSpeed partitions the parameter after that point).
+`GRPOTrainer` adds only the reward-term hook and the sigma bookkeeping; `BaselineTrainer` adds only its `@k`-suffixed log names.
+
+A learnable `sigma` lives outside those `model.*` keys, so `GRPOTrainer._save` writes it to `grpo_state.json` and `restore_grpo_state` reloads it in `train.py` before the trainer is built (DeepSpeed partitions the parameter after that point).
 
 ### Data (`src/ranking_data.py`)
 `RankingDataset` reads JSONL with fields `query`, `document` (list of texts), `ranking` (1-indexed permutation), and optional `source`. Source picks a task-specific instruction prompt from `TASK_PROMPTS` and formats `Instruct: <task>\nQuery:<query>`. Samples are pre-batched **per source** so every batch contains samples from a single task (the trailing partial batch per source is dropped); batches are then shuffled. `per_dataset_max_samples` caps each source independently.

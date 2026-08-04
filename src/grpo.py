@@ -409,13 +409,6 @@ class GRPO(nn.Module):
             num_samples=self.group_size,
         )
 
-    def _sample_query_embeddings(
-        self,
-        rollout_embeddings: torch.Tensor,
-        kappa: torch.Tensor,
-    ) -> torch.Tensor:
-        return self._draw(rollout_embeddings.detach(), kappa)
-
     def _sample_document_embeddings(
         self,
         rollout_document_embeddings: torch.Tensor,
@@ -427,6 +420,29 @@ class GRPO(nn.Module):
             kappa,
         )
         return samples.reshape(batch_size, slate_length, self.group_size, dim).permute(0, 2, 1, 3)
+
+    def _document_component(
+        self,
+        rollout_embeddings: torch.Tensor,
+        policy_embeddings: torch.Tensor | None,
+        kappa: torch.Tensor,
+        sample: bool,
+        role_name: str,
+    ) -> _ActionComponent:
+        """One document-side action component, sampled or frozen at its rollout mean."""
+        if not sample:
+            return _ActionComponent(role="document", rollout_embeddings=rollout_embeddings)
+        if policy_embeddings is None:
+            raise ValueError(
+                f"policy_{role_name}_document_embeddings are required when {role_name} is sampled"
+            )
+        return _ActionComponent(
+            role="document",
+            rollout_embeddings=rollout_embeddings,
+            policy_embeddings=policy_embeddings,
+            sampled_embeddings=self._sample_document_embeddings(rollout_embeddings, kappa),
+            kappa=kappa,
+        )
 
     @staticmethod
     def _vmf_log_prob(
@@ -471,21 +487,14 @@ class GRPO(nn.Module):
         return (log_prob * mask).sum(dim=-1) / num_documents
 
     @staticmethod
-    def _get_component_group_size(
-        active_components: Sequence[_ActionComponent],
-    ) -> int:
-        if active_components:
-            return active_components[0].sampled_embeddings.size(1)
-        raise ValueError("At least one action component is required")
-
-    @staticmethod
-    def _validate_component_group_sizes(
-        group_size: int,
-        active_components: Sequence[_ActionComponent],
-    ) -> None:
+    def _resolve_group_size(active_components: Sequence[_ActionComponent]) -> int:
+        if not active_components:
+            raise ValueError("At least one action component is required")
+        group_size = active_components[0].sampled_embeddings.size(1)
         for component in active_components:
             if component.sampled_embeddings.size(1) != group_size:
                 raise ValueError("action component group sizes must match")
+        return group_size
 
     @staticmethod
     def _compute_score_table(
@@ -629,13 +638,7 @@ class GRPO(nn.Module):
 
         diagonal = self.rollout == "diagonal"
         num_components = 1 if diagonal else len(active_components)
-        group_size = self._get_component_group_size(
-            active_components=active_components,
-        )
-        self._validate_component_group_sizes(
-            group_size=group_size,
-            active_components=active_components,
-        )
+        group_size = self._resolve_group_size(active_components)
 
         log_probs = []
         # Diagonal rollout: every component writes into the single shared group axis.
@@ -666,78 +669,53 @@ class GRPO(nn.Module):
         query_component = query_components[0]
         batch_size = relevance_labels.size(0)
         frozen_doc_scale = self._frozen_doc_scale(document_components)
-        score_grids = []
-        for document_component in document_components:
+
+        def score_grid(document_component: _ActionComponent, cross: bool = False) -> torch.Tensor:
+            """Query-vs-document scores, rescaled if frozen, broadcast onto the rollout grid."""
+            if cross:
+                document_component = self._cross_batch_component(document_component)
             score_table = self._compute_score_table(
                 query_component=query_component,
                 document_component=document_component,
+                cross=cross,
                 diagonal=diagonal,
             )
             if frozen_doc_scale is not None and not document_component.is_active:
                 score_table = score_table * frozen_doc_scale.to(score_table.dtype)
-            score_grids.append(
-                self._expand_score_table(
-                    score_table=score_table,
-                    query_component=query_component,
-                    document_component=document_component,
-                    active_index_by_id=active_index_by_id,
-                    num_components=num_components,
-                    group_size=group_size,
-                )
+            if cross:
+                score_table = self._mask_cross_batch_diagonal(score_table, batch_size)
+            return self._expand_score_table(
+                score_table=score_table,
+                query_component=query_component,
+                document_component=document_component,
+                active_index_by_id=active_index_by_id,
+                num_components=num_components,
+                group_size=group_size,
+                cross=cross,
             )
-        scores = torch.cat(score_grids, dim=-1)
+
+        scores = torch.cat(
+            [score_grid(document_component) for document_component in document_components],
+            dim=-1,
+        )
 
         in_batch_positive_scores = None
         in_batch_candidate_scores = None
         # The cross-batch tables do not depend on the reward term, so they are built once from
         # the UNION of what the terms ask for and shared by all of them.
         if batch_size > 1 and reward_terms_need_in_batch_positives(self.reward_terms):
-            positive_component = self._cross_batch_component(document_components[0])
-            positive_cross_table = self._compute_score_table(
-                query_component=query_component,
-                document_component=positive_component,
-                cross=True,
-                diagonal=diagonal,
-            )
-            if frozen_doc_scale is not None and not positive_component.is_active:
-                positive_cross_table = positive_cross_table * frozen_doc_scale.to(positive_cross_table.dtype)
-            positive_cross_table = self._mask_cross_batch_diagonal(positive_cross_table, batch_size)
-            in_batch_positive_scores = self._expand_score_table(
-                score_table=positive_cross_table,
-                query_component=query_component,
-                document_component=positive_component,
-                active_index_by_id=active_index_by_id,
-                num_components=num_components,
-                group_size=group_size,
-                cross=True,
-            )[..., 0]
+            in_batch_positive_scores = score_grid(document_components[0], cross=True)[..., 0]
 
         if batch_size > 1 and reward_terms_need_in_batch_candidates(self.reward_terms):
-            cross_candidate_scores = []
-            for document_component in document_components:
-                cross_document_component = self._cross_batch_component(document_component)
-                cross_table = self._compute_score_table(
-                    query_component=query_component,
-                    document_component=cross_document_component,
-                    cross=True,
-                    diagonal=diagonal,
-                )
-                if frozen_doc_scale is not None and not cross_document_component.is_active:
-                    cross_table = cross_table * frozen_doc_scale.to(cross_table.dtype)
-                cross_table = self._mask_cross_batch_diagonal(cross_table, batch_size)
-                expanded_cross_scores = self._expand_score_table(
-                    score_table=cross_table,
-                    query_component=query_component,
-                    document_component=cross_document_component,
-                    active_index_by_id=active_index_by_id,
-                    num_components=num_components,
-                    group_size=group_size,
-                    cross=True,
-                )
-                cross_candidate_scores.append(
-                    expanded_cross_scores.reshape(batch_size, *([group_size] * num_components), -1)
-                )
-            in_batch_candidate_scores = torch.cat(cross_candidate_scores, dim=-1)
+            in_batch_candidate_scores = torch.cat(
+                [
+                    score_grid(document_component, cross=True).reshape(
+                        batch_size, *([group_size] * num_components), -1
+                    )
+                    for document_component in document_components
+                ],
+                dim=-1,
+            )
 
         term_rewards = {
             name: reward.float()
@@ -839,6 +817,24 @@ class GRPO(nn.Module):
         mean_resultant_length = bessel_ratio(policy_embeddings.size(-1) / 2.0, kappa)
         return kappa * mean_resultant_length * (1.0 - alignment).mean()
 
+    @staticmethod
+    def _normalize_policy(
+        policy_embeddings: torch.Tensor | None,
+        rollout_embeddings: torch.Tensor,
+        policy_name: str,
+        rollout_name: str,
+    ) -> torch.Tensor | None:
+        """Validate a policy tensor against its rollout twin and unit-normalize it."""
+        if policy_embeddings is None:
+            return None
+        if policy_embeddings.shape != rollout_embeddings.shape:
+            raise ValueError(
+                f"{policy_name} shape must match {rollout_name}, "
+                f"got policy={tuple(policy_embeddings.shape)} "
+                f"rollout={tuple(rollout_embeddings.shape)}"
+            )
+        return F.normalize(policy_embeddings, dim=-1)
+
     def forward(
         self,
         rollout_query_embeddings: torch.Tensor,
@@ -879,33 +875,27 @@ class GRPO(nn.Module):
             )
 
         rollout_query_embeddings = F.normalize(rollout_query_embeddings, dim=-1)
-        if policy_query_embeddings is not None:
-            if policy_query_embeddings.shape != rollout_query_embeddings.shape:
-                raise ValueError(
-                    "policy_query_embeddings shape must match rollout_query_embeddings, "
-                    f"got policy={tuple(policy_query_embeddings.shape)} "
-                    f"rollout={tuple(rollout_query_embeddings.shape)}"
-                )
-            policy_query_embeddings = F.normalize(policy_query_embeddings, dim=-1)
+        policy_query_embeddings = self._normalize_policy(
+            policy_query_embeddings,
+            rollout_query_embeddings,
+            "policy_query_embeddings",
+            "rollout_query_embeddings",
+        )
         rollout_positive_document_embeddings = F.normalize(rollout_positive_document_embeddings, dim=-1)
         rollout_negative_document_embeddings = F.normalize(rollout_negative_document_embeddings, dim=-1)
         document_embeddings = F.normalize(document_embeddings, dim=-1)
-        if policy_positive_document_embeddings is not None:
-            if policy_positive_document_embeddings.shape != rollout_positive_document_embeddings.shape:
-                raise ValueError(
-                    "policy_positive_document_embeddings shape must match positive_document_embeddings, "
-                    f"got policy={tuple(policy_positive_document_embeddings.shape)} "
-                    f"rollout={tuple(rollout_positive_document_embeddings.shape)}"
-                )
-            policy_positive_document_embeddings = F.normalize(policy_positive_document_embeddings, dim=-1)
-        if policy_negative_document_embeddings is not None:
-            if policy_negative_document_embeddings.shape != rollout_negative_document_embeddings.shape:
-                raise ValueError(
-                    "policy_negative_document_embeddings shape must match negative_document_embeddings, "
-                    f"got policy={tuple(policy_negative_document_embeddings.shape)} "
-                    f"rollout={tuple(rollout_negative_document_embeddings.shape)}"
-                )
-            policy_negative_document_embeddings = F.normalize(policy_negative_document_embeddings, dim=-1)
+        policy_positive_document_embeddings = self._normalize_policy(
+            policy_positive_document_embeddings,
+            rollout_positive_document_embeddings,
+            "policy_positive_document_embeddings",
+            "positive_document_embeddings",
+        )
+        policy_negative_document_embeddings = self._normalize_policy(
+            policy_negative_document_embeddings,
+            rollout_negative_document_embeddings,
+            "policy_negative_document_embeddings",
+            "negative_document_embeddings",
+        )
 
         # sigma stays in fp32; kappa is a differentiable function of log_sigma when learnable,
         # so the vMF log-prob term kappa * h^T e carries the exploration-scale gradient.
@@ -915,15 +905,11 @@ class GRPO(nn.Module):
         if self.sample_query:
             if policy_query_embeddings is None:
                 raise ValueError("policy_query_embeddings are required when query is sampled")
-            sampled_query_embeddings = self._sample_query_embeddings(
-                rollout_embeddings=rollout_query_embeddings,
-                kappa=kappa,
-            )
             components.append(_ActionComponent(
                 role="query",
                 rollout_embeddings=rollout_query_embeddings,
                 policy_embeddings=policy_query_embeddings,
-                sampled_embeddings=sampled_query_embeddings,
+                sampled_embeddings=self._draw(rollout_query_embeddings.detach(), kappa),
                 kappa=kappa,
             ))
         else:
@@ -935,63 +921,41 @@ class GRPO(nn.Module):
         joint_document_group = ("positive", "negative") in self.action_components or \
           ("negative", "positive") in self.action_components
         if joint_document_group:
-            if policy_positive_document_embeddings is None:
-                raise ValueError("policy_positive_document_embeddings are required when positive is sampled")
-            if policy_negative_document_embeddings is None:
-                raise ValueError("policy_negative_document_embeddings are required when negative is sampled")
+            # One sigma noise term covers the whole slate, so both policy sides must be present
+            # before they are concatenated into a single document component.
+            for role_name, policy_embeddings in (
+                ("positive", policy_positive_document_embeddings),
+                ("negative", policy_negative_document_embeddings),
+            ):
+                if policy_embeddings is None:
+                    raise ValueError(
+                        f"policy_{role_name}_document_embeddings are required when {role_name} is sampled"
+                    )
             policy_document_embeddings = torch.cat(
                 (policy_positive_document_embeddings, policy_negative_document_embeddings),
                 dim=1,
             )
-            sampled_document_embeddings = self._sample_document_embeddings(
-                rollout_document_embeddings=document_embeddings,
-                kappa=kappa,
-            )
-            components.append(_ActionComponent(
-                role="document",
+            components.append(self._document_component(
                 rollout_embeddings=document_embeddings,
                 policy_embeddings=policy_document_embeddings,
-                sampled_embeddings=sampled_document_embeddings,
                 kappa=kappa,
-            ))
-        elif self.sample_positive:
-            if policy_positive_document_embeddings is None:
-                raise ValueError("policy_positive_document_embeddings are required when positive is sampled")
-            sampled_positive_document_embeddings = self._sample_document_embeddings(
-                rollout_document_embeddings=rollout_positive_document_embeddings,
-                kappa=kappa,
-            )
-            components.append(_ActionComponent(
-                role="document",
-                rollout_embeddings=rollout_positive_document_embeddings,
-                policy_embeddings=policy_positive_document_embeddings,
-                sampled_embeddings=sampled_positive_document_embeddings,
-                kappa=kappa,
+                sample=True,
+                role_name="positive",
             ))
         else:
-            components.append(_ActionComponent(
-                role="document",
+            components.append(self._document_component(
                 rollout_embeddings=rollout_positive_document_embeddings,
-            ))
-
-        if not joint_document_group and self.sample_negative:
-            if policy_negative_document_embeddings is None:
-                raise ValueError("policy_negative_document_embeddings are required when negative is sampled")
-            sampled_negative_document_embeddings = self._sample_document_embeddings(
-                rollout_document_embeddings=rollout_negative_document_embeddings,
+                policy_embeddings=policy_positive_document_embeddings,
                 kappa=kappa,
-            )
-            components.append(_ActionComponent(
-                role="document",
+                sample=self.sample_positive,
+                role_name="positive",
+            ))
+            components.append(self._document_component(
                 rollout_embeddings=rollout_negative_document_embeddings,
                 policy_embeddings=policy_negative_document_embeddings,
-                sampled_embeddings=sampled_negative_document_embeddings,
                 kappa=kappa,
-            ))
-        elif not joint_document_group:
-            components.append(_ActionComponent(
-                role="document",
-                rollout_embeddings=rollout_negative_document_embeddings,
+                sample=self.sample_negative,
+                role_name="negative",
             ))
 
         loss, reward_stats, advantages, degenerate_frac = self._compute_component_loss(
@@ -1004,7 +968,9 @@ class GRPO(nn.Module):
             kl_terms = []
             if self.sample_query:
                 if reference_query_embeddings is None:
-                    raise ValueError("reference_query_embeddings are required when kl_coef > 0 and query is sampled")
+                    raise ValueError(
+                        "reference_query_embeddings are required when kl_coef > 0 and query is sampled"
+                    )
                 kl_terms.append(self._kl_term(policy_query_embeddings, reference_query_embeddings, kappa))
             if joint_document_group:
                 if reference_positive_document_embeddings is None or reference_negative_document_embeddings is None:
@@ -1016,16 +982,32 @@ class GRPO(nn.Module):
                     (reference_positive_document_embeddings, reference_negative_document_embeddings),
                     dim=1,
                 )
-                kl_terms.append(self._kl_term(policy_document_embeddings, reference_document_embeddings, kappa))
+                kl_terms.append(
+                    self._kl_term(policy_document_embeddings, reference_document_embeddings, kappa)
+                )
             else:
-                if self.sample_positive:
-                    if reference_positive_document_embeddings is None:
-                        raise ValueError("reference_positive_document_embeddings required when kl_coef > 0 and positive is sampled")
-                    kl_terms.append(self._kl_term(policy_positive_document_embeddings, reference_positive_document_embeddings, kappa))
-                if self.sample_negative:
-                    if reference_negative_document_embeddings is None:
-                        raise ValueError("reference_negative_document_embeddings required when kl_coef > 0 and negative is sampled")
-                    kl_terms.append(self._kl_term(policy_negative_document_embeddings, reference_negative_document_embeddings, kappa))
+                for role_name, sampled, policy_embeddings, reference_embeddings in (
+                    (
+                        "positive",
+                        self.sample_positive,
+                        policy_positive_document_embeddings,
+                        reference_positive_document_embeddings,
+                    ),
+                    (
+                        "negative",
+                        self.sample_negative,
+                        policy_negative_document_embeddings,
+                        reference_negative_document_embeddings,
+                    ),
+                ):
+                    if not sampled:
+                        continue
+                    if reference_embeddings is None:
+                        raise ValueError(
+                            f"reference_{role_name}_document_embeddings required when kl_coef > 0 "
+                            f"and {role_name} is sampled"
+                        )
+                    kl_terms.append(self._kl_term(policy_embeddings, reference_embeddings, kappa))
             if kl_terms:
                 kl = torch.stack(kl_terms).sum()
                 loss = loss + self.kl_coef * kl
@@ -1192,22 +1174,16 @@ class GRPOModel(nn.Module):
             reference_positive_document_embeddings=reference_positive_document_embeddings,
             reference_negative_document_embeddings=reference_negative_document_embeddings,
         )
-        reward = reward_stats["reward_mean"]
-        # Namespaced keys are the per-term diagnostics; the flat ones are the aggregate.
+        # Namespaced keys are the per-term diagnostics; the flat ones (reward_mean/std/min/max
+        # and advantages_*) are named exactly like the GRPOModelOutput fields they fill.
         term_metrics = {key: value for key, value in reward_stats.items() if "/" in key}
+        aggregate_stats = {key: value for key, value in reward_stats.items() if "/" not in key}
 
         return GRPOModelOutput(
             loss=loss,
-            reward=reward,
-            reward_mean=reward_stats["reward_mean"],
-            reward_std=reward_stats["reward_std"],
-            reward_min=reward_stats["reward_min"],
-            reward_max=reward_stats["reward_max"],
-            advantages_mean=advantage_stats["advantages_mean"],
-            advantages_std=advantage_stats["advantages_std"],
-            advantages_min=advantage_stats["advantages_min"],
-            advantages_max=advantage_stats["advantages_max"],
-            advantages_degenerate_frac=advantage_stats["advantages_degenerate_frac"],
+            reward=reward_stats["reward_mean"],
+            **aggregate_stats,
+            **advantage_stats,
             sigma=sigma,
             kl=kl,
             reward_terms=term_metrics or None,

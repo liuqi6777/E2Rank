@@ -276,6 +276,16 @@ class MTEBEvalCallback(TrainerCallback):
             run_kwargs=_parse_json_object(self.eval_args.mteb_eval_run_kwargs, "mteb_eval_run_kwargs"),
         )
 
+    def _dispatch_eval(self, args, state, tag: str | None = None, **kwargs) -> None:
+        if self._gloo_group is None:
+            # Single-process training: just run on this rank.
+            self._run_eval_single(args, state, tag=tag, **kwargs)
+            return
+        try:
+            self._run_eval_distributed(args, state, tag=tag, **kwargs)
+        finally:
+            dist.barrier(group=self._gloo_group)
+
     def on_train_begin(self, args, state, control, **kwargs):
         """Run one MTEB eval on the initial (pre-training) weights.
 
@@ -292,29 +302,14 @@ class MTEBEvalCallback(TrainerCallback):
         if self._gloo_group is not None:
             dist.barrier(group=self._gloo_group)
 
-        if self._gloo_group is None:
-            self._run_eval_single(args, state, tag=self.PRETRAIN_TAG, **kwargs)
-            return control
-
-        try:
-            self._run_eval_distributed(args, state, tag=self.PRETRAIN_TAG, **kwargs)
-        finally:
-            dist.barrier(group=self._gloo_group)
+        self._dispatch_eval(args, state, tag=self.PRETRAIN_TAG, **kwargs)
         return control
 
     def on_save(self, args, state, control, **kwargs):
         if not self.enabled:
             return control
 
-        if self._gloo_group is None:
-            # Single-process training: just run on this rank.
-            self._run_eval_single(args, state, **kwargs)
-            return control
-
-        try:
-            self._run_eval_distributed(args, state, **kwargs)
-        finally:
-            dist.barrier(group=self._gloo_group)
+        self._dispatch_eval(args, state, **kwargs)
         return control
 
     def _prepare_paths(self, args, state, tag: str | None = None):

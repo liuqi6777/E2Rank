@@ -1,3 +1,12 @@
+"""GRPO training entrypoint, plus the setup helpers shared with ``train_baseline.py``.
+
+The two entrypoints differ only in which dataclasses they parse, which wrapper module
+they build, and which trainer they hand it to. Everything around that -- launcher-flag
+splitting, config resolution, output-dir guarding, logging, backbone/LoRA/tokenizer
+loading, dataset+collator construction, gradient checkpointing, and the final save --
+is identical and lives at module level here.
+"""
+
 import logging
 import os
 import pathlib
@@ -5,8 +14,8 @@ import sys
 
 import torch
 from peft import LoraConfig, PeftModel, get_peft_model
-from transformers import AutoConfig, AutoModel, AutoTokenizer
-from transformers import HfArgumentParser, set_seed
+from transformers import AutoConfig, AutoModel, AutoTokenizer, HfArgumentParser, set_seed
+from transformers import TrainingArguments as HFTrainingArguments
 from transformers.trainer_utils import get_last_checkpoint
 
 from config import (
@@ -23,26 +32,26 @@ from mteb_eval_callback import MTEBEvalCallback
 from ranking_data import RankingDataCollator, RankingDataset
 from ranking_eval import ranking_compute_metrics
 from utils import (
+    BASE_CONFIG_SLOTS,
     parse_config_file,
     parse_config_from_base_overrides,
-    resolve_run_name_and_output_dir,
     resolve_gradient_checkpointing_kwargs,
+    resolve_run_name_and_output_dir,
     save_model_for_trainer,
 )
 
 
 logger = logging.getLogger(__name__)
 
+CONFIG_FILE_SUFFIXES = {".json", ".yaml", ".yml"}
 
-def split_launcher_args(cli_args: list[str]) -> tuple[dict[str, str], list[str]]:
-    base_flag_to_slot = {
-        "--base-train": "train",
-        "--base-dataset": "dataset",
-        "--base-model": "model",
-        "--base-grpo": "grpo",
-        "--base-reward": "reward",
-        "--base-eval": "eval",
-    }
+
+def split_launcher_args(
+    cli_args: list[str],
+    base_slots: tuple[str, ...] = BASE_CONFIG_SLOTS,
+) -> tuple[dict[str, str], list[str]]:
+    """Peel the ``--base-<slot> <path>`` launcher flags off the CLI argv."""
+    base_flag_to_slot = {f"--base-{slot}": slot for slot in base_slots}
 
     base_overrides: dict[str, str] = {}
     passthrough_args: list[str] = []
@@ -62,40 +71,50 @@ def split_launcher_args(cli_args: list[str]) -> tuple[dict[str, str], list[str]]
     return base_overrides, passthrough_args
 
 
-def main() -> None:
-    parser = HfArgumentParser(
-        (ModelArguments, DataArguments, TrainingArguments, LoraArguments, RLArguments, MTEBEvalArguments)
+def parse_arguments(
+    parser: HfArgumentParser,
+    base_slots: tuple[str, ...] = BASE_CONFIG_SLOTS,
+    argv: list[str] | None = None,
+) -> tuple:
+    """Resolve dataclasses from a top-level YAML, from ``--base-<slot>`` flags, or from plain CLI.
+
+    Also fills in ``run_name``/``output_dir`` from whichever config source was used.
+    """
+    base_overrides, cli_args = split_launcher_args(
+        sys.argv[1:] if argv is None else argv,
+        base_slots=base_slots,
     )
 
-    base_overrides, cli_args = split_launcher_args(sys.argv[1:])
-
-    if cli_args and pathlib.Path(cli_args[0]).suffix.lower() in {".json", ".yaml", ".yml"}:
+    config_path = None
+    if cli_args and pathlib.Path(cli_args[0]).suffix.lower() in CONFIG_FILE_SUFFIXES:
         config_path = cli_args[0]
-        model_args, data_args, training_args, lora_args, rl_args, mteb_eval_args = parse_config_file(
+        parsed = parse_config_file(
             parser=parser,
             config_path=config_path,
             cli_args=cli_args[1:],
             base_overrides=base_overrides,
         )
     elif base_overrides:
-        config_path = None
-        model_args, data_args, training_args, lora_args, rl_args, mteb_eval_args = parse_config_from_base_overrides(
+        parsed = parse_config_from_base_overrides(
             parser=parser,
             base_overrides=base_overrides,
             cli_args=cli_args,
+            base_slots=base_slots,
         )
     else:
-        config_path = None
-        model_args, data_args, training_args, lora_args, rl_args, mteb_eval_args = (
-            parser.parse_args_into_dataclasses(cli_args)
-        )
+        parsed = parser.parse_args_into_dataclasses(cli_args)
 
+    training_args = next(args for args in parsed if isinstance(args, HFTrainingArguments))
     resolve_run_name_and_output_dir(
         config_path=config_path,
         base_overrides=base_overrides,
         training_args=training_args,
+        base_slots=base_slots,
     )
+    return parsed
 
+
+def guard_output_dir(training_args: HFTrainingArguments) -> None:
     if (
         os.path.exists(training_args.output_dir)
         and os.listdir(training_args.output_dir)
@@ -107,6 +126,8 @@ def main() -> None:
             "Use --overwrite_output_dir to overcome."
         )
 
+
+def setup_logging(training_args: HFTrainingArguments, extra_parameters: dict | None = None) -> None:
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
         datefmt="%m/%d/%Y %H:%M:%S",
@@ -121,12 +142,11 @@ def main() -> None:
         training_args.fp16,
     )
     logger.info("Training/evaluation parameters %s", training_args)
-    logger.info("Model parameters %s", model_args)
-    logger.info("RL parameters %s", rl_args)
-    logger.info("MTEB eval parameters %s", mteb_eval_args)
+    for label, parameters in (extra_parameters or {}).items():
+        logger.info("%s parameters %s", label, parameters)
 
-    set_seed(training_args.seed)
 
+def load_backbone_and_tokenizer(model_args: ModelArguments, lora_args: LoraArguments):
     config = AutoConfig.from_pretrained(
         model_args.config_name if model_args.config_name else model_args.model_name_or_path,
         trust_remote_code=True,
@@ -167,28 +187,23 @@ def main() -> None:
             backbone = get_peft_model(backbone, lora_config)
         backbone.print_trainable_parameters()
 
-    model = GRPOModel(
-        model=backbone,
-        rl_args=rl_args,
+    return backbone, tokenizer
+
+
+def apply_gradient_checkpointing(model, training_args: HFTrainingArguments, lora_args: LoraArguments) -> None:
+    if not training_args.gradient_checkpointing:
+        return
+    training_args.gradient_checkpointing_kwargs = resolve_gradient_checkpointing_kwargs(
+        training_args=training_args,
+        lora_args=lora_args,
     )
-    model.train()
+    if training_args.gradient_checkpointing_kwargs.get("use_reentrant", True):
+        model.enable_input_require_grads()
+    logger.info("Gradient checkpointing kwargs %s", training_args.gradient_checkpointing_kwargs)
 
-    # Resolved before the trainer is built so the exploration scale can be restored while
-    # the parameter is still whole (DeepSpeed partitions it during trainer construction).
-    resume_checkpoint = None
-    if not training_args.overwrite_output_dir and os.path.isdir(training_args.output_dir):
-        resume_checkpoint = get_last_checkpoint(training_args.output_dir)
-    restore_grpo_state(model, resume_checkpoint)
 
-    if training_args.gradient_checkpointing:
-        training_args.gradient_checkpointing_kwargs = resolve_gradient_checkpointing_kwargs(
-            training_args=training_args,
-            lora_args=lora_args,
-        )
-        if training_args.gradient_checkpointing_kwargs.get("use_reentrant", True):
-            model.enable_input_require_grads()
-        logger.info("Gradient checkpointing kwargs %s", training_args.gradient_checkpointing_kwargs)
-
+def build_ranking_data(data_args: DataArguments, training_args: HFTrainingArguments, tokenizer):
+    """Train dataset, optional held-out dev dataset, and the shared collator."""
     train_dataset = RankingDataset(
         data_args=data_args,
         batch_size=training_args.per_device_train_batch_size,
@@ -208,6 +223,61 @@ def main() -> None:
         doc_max_length=data_args.d_max_len,
         relevance_scheme=data_args.relevance_scheme,
     )
+    return train_dataset, eval_dataset, data_collator
+
+
+def save_run_artifacts(trainer, training_args: HFTrainingArguments, tokenizer, **argument_objects) -> None:
+    """Persist the model plus the pickled argument dataclasses under ``output_dir``."""
+    save_model_for_trainer(trainer=trainer, output_dir=training_args.output_dir)
+    if trainer.is_world_process_zero():
+        tokenizer.save_pretrained(training_args.output_dir)
+        torch.save(training_args, os.path.join(training_args.output_dir, "training_args.bin"))
+        for name, argument_object in argument_objects.items():
+            torch.save(argument_object, os.path.join(training_args.output_dir, f"{name}.bin"))
+    print("Training done.")
+
+
+def shutdown_distributed() -> None:
+    if torch.distributed.is_initialized():
+        torch.distributed.barrier()
+        torch.distributed.destroy_process_group()
+    print("Success.")
+
+
+def main() -> None:
+    parser = HfArgumentParser(
+        (ModelArguments, DataArguments, TrainingArguments, LoraArguments, RLArguments, MTEBEvalArguments)
+    )
+    model_args, data_args, training_args, lora_args, rl_args, mteb_eval_args = parse_arguments(
+        parser=parser,
+        base_slots=BASE_CONFIG_SLOTS,
+    )
+
+    guard_output_dir(training_args)
+    setup_logging(
+        training_args,
+        {"Model": model_args, "RL": rl_args, "MTEB eval": mteb_eval_args},
+    )
+
+    set_seed(training_args.seed)
+
+    backbone, tokenizer = load_backbone_and_tokenizer(model_args, lora_args)
+    model = GRPOModel(
+        model=backbone,
+        rl_args=rl_args,
+    )
+    model.train()
+
+    # Resolved before the trainer is built so the exploration scale can be restored while
+    # the parameter is still whole (DeepSpeed partitions it during trainer construction).
+    resume_checkpoint = None
+    if not training_args.overwrite_output_dir and os.path.isdir(training_args.output_dir):
+        resume_checkpoint = get_last_checkpoint(training_args.output_dir)
+    restore_grpo_state(model, resume_checkpoint)
+
+    apply_gradient_checkpointing(model, training_args, lora_args)
+
+    train_dataset, eval_dataset, data_collator = build_ranking_data(data_args, training_args, tokenizer)
 
     trainer = GRPOTrainer(
         model=model,
@@ -224,18 +294,9 @@ def main() -> None:
 
     trainer.train(resume_from_checkpoint=True if resume_checkpoint else None)
 
-    save_model_for_trainer(trainer=trainer, output_dir=training_args.output_dir)
-    if trainer.is_world_process_zero():
-        tokenizer.save_pretrained(training_args.output_dir)
-        torch.save(model_args, os.path.join(training_args.output_dir, "model_args.bin"))
-        torch.save(training_args, os.path.join(training_args.output_dir, "training_args.bin"))
-        torch.save(rl_args, os.path.join(training_args.output_dir, "rl_args.bin"))
-    print("Training done.")
+    save_run_artifacts(trainer, training_args, tokenizer, model_args=model_args, rl_args=rl_args)
 
 
 if __name__ == "__main__":
     main()
-    if torch.distributed.is_initialized():
-        torch.distributed.barrier()
-        torch.distributed.destroy_process_group()
-    print("Success.")
+    shutdown_distributed()
