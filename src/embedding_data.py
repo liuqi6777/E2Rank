@@ -66,6 +66,19 @@ def _source_name_from_dir(dir_name: str) -> str:
     return SOURCE_DIR_TO_TASK.get(key, key)
 
 
+def _length_bucket_from_path(path: str) -> str:
+    """Extract the ``len-<lo>-<hi>`` length-bucket tag from a data filename.
+
+    Files are named like ``dureader_len-0-500.jsonl``; the tag is what distinguishes
+    one length bucket from another within the same source. Returns the substring from
+    ``len-`` to the extension, or an empty string when the filename carries no tag
+    (so untagged files all share one bucket and behave exactly as before).
+    """
+    stem = os.path.splitext(os.path.basename(path))[0]
+    marker = stem.find("len-")
+    return stem[marker:] if marker != -1 else ""
+
+
 def record_to_slate(
     record: dict[str, Any],
     slate_size: int,
@@ -121,7 +134,18 @@ class EmbeddingDataset(Dataset):
         self.per_dataset_max_samples = data_args.per_dataset_max_samples
         self.dev_samples_per_source = getattr(data_args, "dev_samples_per_source", 0)
         self.slate_size = getattr(data_args, "slate_size", 8)
-        self.file_glob = getattr(data_args, "file_glob", "*_len-0-500.jsonl")
+        # ``file_glob`` accepts a comma-separated list of patterns so several length
+        # buckets can be mixed in one run, e.g. "*_len-0-500.jsonl,*_len-500-1000.jsonl".
+        # A single-pattern string stays byte-identical to the legacy behaviour.
+        raw_file_glob = getattr(data_args, "file_glob", "*_len-0-500.jsonl")
+        self.file_glob = raw_file_glob
+        self.file_globs = [g.strip() for g in raw_file_glob.split(",") if g.strip()]
+        if not self.file_globs:
+            raise ValueError(f"file_glob resolved to no patterns: {raw_file_glob!r}")
+        # When multiple length buckets are read, batch each bucket separately so every
+        # micro-batch holds documents of one length range (less padding waste). Off by
+        # default: single-bucket runs are then bit-for-bit unchanged.
+        self.batch_per_length_bucket = getattr(data_args, "batch_per_length_bucket", False)
         include_sources = getattr(data_args, "include_sources", None)
         self.include_sources = (
             {s.strip() for s in include_sources.split(",") if s.strip()}
@@ -147,17 +171,22 @@ class EmbeddingDataset(Dataset):
 
     # ------------------------------------------------------------------ discovery
     def _discover_files(self, data_path: str) -> None:
-        """Populate ``self._files`` with (path, source) for every data file."""
+        """Populate ``self._files`` with (path, source, batch_key) for every data file.
+
+        ``source`` drives the task prompt (length-agnostic); ``batch_key`` drives
+        per-source batching and additionally splits by length bucket so every
+        micro-batch holds documents of one length range, minimising padding waste.
+        """
         if os.path.isfile(data_path):
             source = _source_name_from_dir(os.path.basename(os.path.dirname(data_path)))
-            self._files.append({"path": data_path, "source": source})
+            self._files.append({"path": data_path, "source": source, "batch_key": self._batch_key(source, data_path)})
             return
 
         if not os.path.isdir(data_path):
             raise FileNotFoundError(f"data_path does not exist: {data_path}")
 
         # Directory input: treat each immediate subdirectory as one source, reading the
-        # files that match ``file_glob`` inside it. Files sitting directly under
+        # files that match ``file_globs`` inside it. Files sitting directly under
         # data_path are also picked up (source inferred from the parent directory name).
         for entry in sorted(os.listdir(data_path)):
             full = os.path.join(data_path, entry)
@@ -165,16 +194,32 @@ class EmbeddingDataset(Dataset):
                 if self.include_sources is not None and entry not in self.include_sources:
                     continue
                 source = _source_name_from_dir(entry)
-                for path in sorted(glob.glob(os.path.join(full, self.file_glob))):
-                    self._files.append({"path": path, "source": source})
+                # Union the matches across every glob, de-duplicating so overlapping
+                # patterns never load the same file twice, then sort for stable order.
+                matched: set[str] = set()
+                for pattern in self.file_globs:
+                    matched.update(glob.glob(os.path.join(full, pattern)))
+                for path in sorted(matched):
+                    self._files.append({"path": path, "source": source, "batch_key": self._batch_key(source, path)})
             elif entry.endswith(".jsonl") or entry.endswith(".json"):
                 source = _source_name_from_dir(os.path.basename(data_path))
-                self._files.append({"path": full, "source": source})
+                self._files.append({"path": full, "source": source, "batch_key": self._batch_key(source, full)})
 
         if not self._files:
             raise FileNotFoundError(
                 f"No data files found under {data_path!r} (glob={self.file_glob!r})"
             )
+
+    def _batch_key(self, source: str, path: str) -> str:
+        """Batching key: ``source`` plus its length bucket when batching per length.
+
+        With ``batch_per_length_bucket`` off (or a filename that carries no length tag)
+        this collapses back to ``source``, so single-bucket runs are unchanged.
+        """
+        if not self.batch_per_length_bucket:
+            return source
+        bucket = _length_bucket_from_path(path)
+        return f"{source}::{bucket}" if bucket else source
 
     # ------------------------------------------------------------------ indexing
     def _index_cache_path(self, path: str) -> str:
@@ -220,14 +265,26 @@ class EmbeddingDataset(Dataset):
         return offsets
 
     def _build_index(self) -> None:
-        """Build the per-source batched, shuffled sample order over byte offsets."""
+        """Build the per-source-capped, per-batch-key batched, shuffled sample order.
+
+        Two grouping levels are in play. The training cap and dev split apply per
+        **source** so ``per_dataset_max_samples`` keeps its "total per task" meaning
+        regardless of how many length buckets a source spans. Batching then happens per
+        **batch_key** (source + length bucket when ``batch_per_length_bucket``) so each
+        micro-batch stays single-source *and* single-length. When batching is off, or a
+        source has only one bucket, ``batch_key == source`` and this is identical to the
+        previous behaviour.
+        """
         locations_by_source: dict[str, list[int]] = defaultdict(list)
+        batch_key_by_location: dict[int, str] = {}
         for file_id, meta in enumerate(self._files):
             source = meta["source"]
+            batch_key = meta["batch_key"]
             for offset in self._scan_offsets(meta["path"]):
                 location_id = len(self._locations)
                 self._locations.append((file_id, offset))
                 locations_by_source[source].append(location_id)
+                batch_key_by_location[location_id] = batch_key
 
         ordered_batches: list[list[int]] = []
         for source, location_ids in locations_by_source.items():
@@ -248,12 +305,19 @@ class EmbeddingDataset(Dataset):
                     if self.per_dataset_max_samples is None
                     else train_ids[: self.per_dataset_max_samples]
                 )
-            for start in range(0, len(limited_ids), self.batch_size):
-                batch = limited_ids[start : start + self.batch_size]
-                if len(batch) == self.batch_size:
-                    ordered_batches.append(batch)
-                else:
-                    print(f"Skip 1 {self.split} batch for dataset {source}.")
+            # The per-source cap is applied above; now split the survivors by batch_key
+            # so each length bucket forms its own uniform-length batches. The trailing
+            # partial batch of each bucket is dropped (as before, per group).
+            ids_by_batch_key: dict[str, list[int]] = defaultdict(list)
+            for location_id in limited_ids:
+                ids_by_batch_key[batch_key_by_location[location_id]].append(location_id)
+            for batch_key, bucket_ids in ids_by_batch_key.items():
+                for start in range(0, len(bucket_ids), self.batch_size):
+                    batch = bucket_ids[start : start + self.batch_size]
+                    if len(batch) == self.batch_size:
+                        ordered_batches.append(batch)
+                    else:
+                        print(f"Skip 1 {self.split} batch for dataset {batch_key}.")
 
         random.shuffle(ordered_batches)
         self.entries = [loc_id for batch in ordered_batches for loc_id in batch]

@@ -154,8 +154,23 @@ class DataArguments:
         default="*_len-0-500.jsonl",
         metadata={
             "help": (
-                "Filename glob used to pick which length bucket(s) to read from each "
-                "source subdirectory when data_path is a directory."
+                "Filename glob(s) used to pick which length bucket(s) to read from each "
+                "source subdirectory when data_path is a directory. Accepts a "
+                "comma-separated list to mix buckets, e.g. "
+                "'*_len-0-500.jsonl,*_len-500-1000.jsonl'; matches are unioned and "
+                "de-duplicated."
+            )
+        },
+    )
+    batch_per_length_bucket: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "When file_glob matches several length buckets, batch each bucket "
+                "separately so every micro-batch holds documents of one length range "
+                "(reduces padding waste). The per-source training cap "
+                "(per_dataset_max_samples) still applies per source, not per bucket. "
+                "Off by default, keeping single-bucket runs unchanged."
             )
         },
     )

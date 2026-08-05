@@ -18,7 +18,11 @@ relevance_scheme: binary
 # Slate construction: 1 positive + (slate_size - 1) negatives per sample.
 slate_size: 8
 # Filename glob selecting which length bucket(s) to read per source. "*.jsonl" reads all.
-file_glob: "*_len-0-500.jsonl"
+# Comma-separated to mix buckets, e.g. "*_len-0-500.jsonl,*_len-500-1000.jsonl".
+file_glob: "*_len-0-500.jsonl,*_len-500-1000.jsonl"
+# When mixing buckets, batch each length range separately (less padding waste). The
+# per-source cap above still applies per source, not per bucket. Off = mixed-length batches.
+batch_per_length_bucket: true
 # Comma-separated source subdirs to include, e.g. "MSMARCO,NQ,HotpotQA". null = all.
 include_sources: null
 # Byte-offset index cache for lazy loading; first run scans each file once, later reuse.
