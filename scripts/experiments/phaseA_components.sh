@@ -1,11 +1,20 @@
 #!/bin/bash
-# Phase A-C (tab:ablation-components) -- runs A2/A3/A5, plus the A-X corner check.
+# Phase A-C (tab:ablation-components) -- runs A2/A3/A5/A6, plus the A-X corner check.
 # A1 = C3 (phaseB_recipe.sh), A4 = C7 (the default, phaseA_mixture.sh). Both are reused.
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 require_stage1
 
 train_rl "a2-query-only" configs/grpo/query_only.yaml     - stage1
 train_rl "a3-docs-only"  configs/grpo/documents_only.yaml - stage1
+
+# A6: [q],[d+] -- the binary-label-native design. With one positive, a ranking reward is a
+# function of the gold's rank alone, so sampled negatives only touch it through threshold
+# crossings; the InfoNCE term is dense in every negative's score. Directed interaction
+# hypothesis (EXPERIMENT_PLAN.md SS0.9): A6 matches A4 under the pure ranking reward but
+# loses under the mixture. The other two cells of the 2x2 already exist -- A4 x mixture is
+# the default row, A4 x pure-nDCG is pilot-ndcg-ib in phaseA_reward.sh.
+train_rl "a6-query-positive"      configs/grpo/query_positive.yaml -                                stage1
+train_rl "a6-query-positive-ndcg" configs/grpo/query_positive.yaml configs/reward/ndcg_in_batch.yaml stage1
 
 # A5 carries a G^3 reward tensor, and with an in-batch reward the last axis is B*slate wide,
 # so this is the row that OOMs first. If it does, drop BOTH A5 and A4 to G=16 so the comparison

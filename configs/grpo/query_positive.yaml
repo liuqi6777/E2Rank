@@ -1,3 +1,5 @@
+# A6 -- query + positive only: sample exactly the axes a binary single-positive ranking
+# reward is a function of; negatives stay frozen anchors and receive no direct gradient.
 action_components:
   - [query]
   - [positive]

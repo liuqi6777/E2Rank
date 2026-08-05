@@ -143,6 +143,10 @@ class _ActionComponent:
     policy_embeddings: torch.Tensor | None = None
     sampled_embeddings: torch.Tensor | None = None
     kappa: torch.Tensor | None = None
+    # Metric-key name ("query", "documents", "positive", "negative"). Derived from the
+    # action_components config, so it is identical on every rank -- a requirement of the
+    # cross-rank metric reduce, which walks accumulator keys in insertion order.
+    name: str = ""
 
     @property
     def is_active(self) -> bool:
@@ -454,10 +458,11 @@ class GRPO(nn.Module):
         kappa: torch.Tensor,
         sample: bool,
         role_name: str,
+        name: str,
     ) -> _ActionComponent:
         """One document-side action component, sampled or frozen at its rollout mean."""
         if not sample:
-            return _ActionComponent(role="document", rollout_embeddings=rollout_embeddings)
+            return _ActionComponent(role="document", rollout_embeddings=rollout_embeddings, name=name)
         if policy_embeddings is None:
             raise ValueError(
                 f"policy_{role_name}_document_embeddings are required when {role_name} is sampled"
@@ -468,6 +473,7 @@ class GRPO(nn.Module):
             policy_embeddings=policy_embeddings,
             sampled_embeddings=self._sample_document_embeddings(rollout_embeddings, kappa),
             kappa=kappa,
+            name=name,
         )
 
     @staticmethod
@@ -625,7 +631,9 @@ class GRPO(nn.Module):
         # so by default they are represented by their detached mean embeddings.
         if self.in_batch_use_sampled_documents:
             return component
-        return _ActionComponent(role=component.role, rollout_embeddings=component.rollout_embeddings)
+        return _ActionComponent(
+            role=component.role, rollout_embeddings=component.rollout_embeddings, name=component.name
+        )
 
     def _frozen_doc_scale(self, document_components: Sequence[_ActionComponent]) -> torch.Tensor | None:
         # A sampled vMF embedding is attenuated toward the origin in expectation: E[e] = A_d(kappa) mu.
@@ -764,17 +772,25 @@ class GRPO(nn.Module):
         # every term's advantage on its own first; because the surrogate is linear in the
         # advantage, the weighted sum of advantages IS a reward combination -- just one whose
         # weights are scale-free, which is what mixing bounded and unbounded rewards needs.
-        if self.reward_combine == "sum" or len(self.reward_terms) == 1:
-            advantage_inputs: tuple[tuple[float, torch.Tensor], ...] = ((1.0, rewards),)
+        # Each input is named so the per-axis diagnostics below can attribute it: the term's own
+        # name when its advantage is computed separately (normalized_sum, or a single term), and
+        # "combined" when one advantage covers the weighted sum (raw `sum` with several terms --
+        # there is no per-term advantage in that computation to report on).
+        if len(self.reward_terms) == 1:
+            advantage_inputs: tuple[tuple[str, float, torch.Tensor], ...] = (
+                (self.reward_terms[0].name, 1.0, rewards),
+            )
+        elif self.reward_combine == "sum":
+            advantage_inputs = (("combined", 1.0, rewards),)
         else:
             advantage_inputs = tuple(
-                (term.weight, term_rewards[term.name])
+                (term.name, term.weight, term_rewards[term.name])
                 for term in self.reward_terms
                 if term.weight != 0.0
             )
 
         shared_stds: list[torch.Tensor | None] = []
-        for _, reward_tensor in advantage_inputs:
+        for _, _, reward_tensor in advantage_inputs:
             if self.advantage_norm == "shared":
                 shared_stds.append(
                     reward_tensor.reshape(batch_size, -1).std(dim=-1, unbiased=False, keepdim=True)
@@ -785,6 +801,7 @@ class GRPO(nn.Module):
         losses = []
         advantages = []
         degenerate_masks = []
+        axis_stats: dict[str, torch.Tensor] = {}
         for component_index, log_prob in enumerate(log_probs):
             sample_dims = tuple(range(1, 1 + num_components))
             # Diagonal rollout has a single shared axis, so no axis is "the other side" and
@@ -792,8 +809,9 @@ class GRPO(nn.Module):
             # attributed to both sides at once, which is exactly the trade-off it makes.
             axis = 0 if diagonal else component_index
             other_dims = tuple(dim for dim in sample_dims if dim != axis + 1)
+            component_name = active_components[component_index].name
             component_advantages = None
-            for (weight, reward_tensor), shared_std in zip(advantage_inputs, shared_stds):
+            for (input_name, weight, reward_tensor), shared_std in zip(advantage_inputs, shared_stds):
                 component_rewards = reward_tensor.mean(dim=other_dims) if other_dims else reward_tensor
                 term_advantages, term_degenerate = self._compute_advantages(
                     component_rewards, shared_std=shared_std
@@ -806,6 +824,18 @@ class GRPO(nn.Module):
                     else component_advantages + term_advantages
                 )
                 degenerate_masks.append(term_degenerate)
+                # Per (term, component-axis) decomposition of the marginalized signal that the
+                # advantage above was actually computed from. This is the observable behind the
+                # component-x-reward interaction hypothesis (EXPERIMENT_PLAN.md SS0.9): under
+                # binary labels a ranking term's document-axis group_std should sit near zero
+                # (negatives only matter through threshold crossings) while a contrastive term's
+                # stays dense -- the aggregate stats cannot show this, they concatenate axes.
+                axis_prefix = f"reward/{input_name}/{component_name}"
+                axis_stats[f"{axis_prefix}/group_std"] = (
+                    component_rewards.detach().reshape(batch_size, -1)
+                    .std(dim=-1, unbiased=False).mean()
+                )
+                axis_stats[f"{axis_prefix}/degenerate_frac"] = term_degenerate.detach().float().mean()
             losses.append(-(component_advantages.detach() * log_prob).mean())
             advantages.append(component_advantages)
 
@@ -813,6 +843,7 @@ class GRPO(nn.Module):
         # collapsed. These rows received zero advantage and contributed no learning signal.
         degenerate_frac = torch.cat(degenerate_masks).float().mean()
         reward_stats = self.summarize_tensor(rewards, prefix="reward")
+        reward_stats.update(axis_stats)
         # How many distinct values the reward resolves per group. Emitted for every term,
         # including single-term runs, because comparing this between two candidate pools is how
         # the pool for the ranking term is chosen -- see realized_reward_levels.
@@ -944,11 +975,13 @@ class GRPO(nn.Module):
                 policy_embeddings=policy_query_embeddings,
                 sampled_embeddings=self._draw(rollout_query_embeddings.detach(), kappa),
                 kappa=kappa,
+                name="query",
             ))
         else:
             components.append(_ActionComponent(
                 role="query",
                 rollout_embeddings=rollout_query_embeddings,
+                name="query",
             ))
 
         joint_document_group = ("positive", "negative") in self.action_components or \
@@ -974,6 +1007,7 @@ class GRPO(nn.Module):
                 kappa=kappa,
                 sample=True,
                 role_name="positive",
+                name="documents",
             ))
         else:
             components.append(self._document_component(
@@ -982,6 +1016,7 @@ class GRPO(nn.Module):
                 kappa=kappa,
                 sample=self.sample_positive,
                 role_name="positive",
+                name="positive",
             ))
             components.append(self._document_component(
                 rollout_embeddings=rollout_negative_document_embeddings,
@@ -989,6 +1024,7 @@ class GRPO(nn.Module):
                 kappa=kappa,
                 sample=self.sample_negative,
                 role_name="negative",
+                name="negative",
             ))
 
         loss, reward_stats, advantages, degenerate_frac = self._compute_component_loss(
