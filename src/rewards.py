@@ -10,6 +10,8 @@ import torch.nn.functional as F
 SUPPORTED_REWARD_TYPES = {
     "ndcg",
     "ndcg_in_batch",
+    "rbo",
+    "top_weighted_pairwise",
     "contrastive",
     "infonce",
     "mrr",
@@ -21,7 +23,9 @@ SUPPORTED_REWARD_TYPES = {
 # within-group spread is typically an order of magnitude larger. Mixing families under a raw
 # weighted sum therefore does NOT mix them in the ratio of their weights (see
 # SUPPORTED_REWARD_COMBINE_MODES), which is what these sets are used to warn about.
-BOUNDED_REWARD_TYPES = frozenset({"ndcg", "ndcg_in_batch", "mrr", "mrr_in_batch"})
+BOUNDED_REWARD_TYPES = frozenset(
+    {"ndcg", "ndcg_in_batch", "mrr", "mrr_in_batch", "rbo", "top_weighted_pairwise"}
+)
 UNBOUNDED_REWARD_TYPES = frozenset({"contrastive", "infonce"})
 
 # 'sum'            -- R = sum_i w_i R_i, then one advantage over the combined reward. Keeps the
@@ -39,6 +43,9 @@ _TERM_FIELD_ALIASES = {
     "temperature": "temperature",
     "contrastive_temperature": "temperature",
     "tau": "temperature",
+    "p": "rbo_p",
+    "rbo_p": "rbo_p",
+    "reward_rbo_p": "rbo_p",
     "weight": "weight",
     "w": "weight",
     "name": "name",
@@ -58,9 +65,9 @@ _FALSE_STRINGS = {"false", "0", "no", "n", "off"}
 class RewardTerm:
     """One additive term of the reward.
 
-    ``k``/``temperature``/the two in-batch flags may be left unset (``None``), in which case
-    :func:`normalize_reward_terms` fills them from the run-level defaults. That keeps a
-    single-term config byte-identical to the pre-combination behaviour.
+    ``k``/``temperature``/``rbo_p``/the two in-batch flags may be left unset (``None``), in
+    which case :func:`normalize_reward_terms` fills them from the run-level defaults. That
+    keeps a single-term config byte-identical to the pre-combination behaviour.
     """
 
     type: str
@@ -70,6 +77,7 @@ class RewardTerm:
     ndcg_in_batch_include_negatives: bool | None = None
     contrastive_use_in_batch_negatives: bool | None = None
     name: str = ""
+    rbo_p: float | None = None
 
 
 def _coerce_bool(value) -> bool:
@@ -143,6 +151,12 @@ def _build_term(fields: Mapping) -> RewardTerm:
         if temperature <= 0:
             raise ValueError(f"Reward term temperature must be positive, got {temperature}")
 
+    rbo_p = normalized_fields.get("rbo_p")
+    if rbo_p is not None:
+        rbo_p = float(rbo_p)
+        if not 0.0 <= rbo_p < 1.0:
+            raise ValueError(f"RBO persistence p must lie in [0, 1), got {rbo_p}")
+
     include_negatives = normalized_fields.get("ndcg_in_batch_include_negatives")
     use_in_batch_negatives = normalized_fields.get("contrastive_use_in_batch_negatives")
 
@@ -151,6 +165,7 @@ def _build_term(fields: Mapping) -> RewardTerm:
         weight=weight,
         k=k,
         temperature=temperature,
+        rbo_p=rbo_p,
         ndcg_in_batch_include_negatives=(
             None if include_negatives is None else _coerce_bool(include_negatives)
         ),
@@ -167,6 +182,7 @@ def normalize_reward_terms(
     default_temperature: float = 0.03,
     default_ndcg_in_batch_include_negatives: bool = False,
     default_contrastive_use_in_batch_negatives: bool = False,
+    default_rbo_p: float = 0.9,
 ) -> tuple[RewardTerm, ...]:
     """Normalize a reward-term spec into fully resolved :class:`RewardTerm` objects.
 
@@ -181,6 +197,8 @@ def normalize_reward_terms(
     """
     if reward_terms is None:
         raise ValueError("reward_terms must not be None")
+    if not 0.0 <= default_rbo_p < 1.0:
+        raise ValueError(f"Default RBO persistence p must lie in [0, 1), got {default_rbo_p}")
 
     if isinstance(reward_terms, RewardTerm):
         raw_terms: list = [reward_terms]
@@ -214,6 +232,7 @@ def normalize_reward_terms(
             term,
             k=default_k if term.k is None else term.k,
             temperature=default_temperature if term.temperature is None else term.temperature,
+            rbo_p=default_rbo_p if term.rbo_p is None else term.rbo_p,
             ndcg_in_batch_include_negatives=(
                 default_ndcg_in_batch_include_negatives
                 if term.ndcg_in_batch_include_negatives is None
@@ -261,7 +280,7 @@ def reward_terms_mix_scales(reward_terms: Sequence[RewardTerm]) -> bool:
 
 def ranking_reward_pool_size(term: RewardTerm, slate_size: int, batch_size: int) -> int | None:
     """How many candidates a rank-based term ranks over. None for the score-based families."""
-    if term.type == "mrr" or term.type == "ndcg":
+    if term.type in {"mrr", "ndcg", "rbo", "top_weighted_pairwise"}:
         return slate_size
     if term.type in {"ndcg_in_batch", "mrr_in_batch"}:
         if term.ndcg_in_batch_include_negatives:
@@ -304,10 +323,16 @@ def warn_on_inert_cutoffs(
             )
         cutoff = "no cutoff, i.e. the full metric" if term.k is None or term.k == pool \
             else f"cutoff @{min(term.k, pool)}"
-        warnings.append(
-            f"reward term '{term.name}': pool={pool} ({cutoff}), so the reward has at most "
-            f"{pool} distinct values; watch reward/{term.name}/n_distinct against the group size."
-        )
+        if term.type in {"rbo", "top_weighted_pairwise"}:
+            warnings.append(
+                f"reward term '{term.name}': pool={pool} ({cutoff}); this permutation-native "
+                "reward can realize more distinct values than the candidate count."
+            )
+        else:
+            warnings.append(
+                f"reward term '{term.name}': pool={pool} ({cutoff}), so the reward has at most "
+                f"{pool} distinct values; watch reward/{term.name}/n_distinct against the group size."
+            )
     return warnings
 
 
@@ -336,6 +361,7 @@ def compute_reward_terms(
     relevance_scheme: str | None = None,
     in_batch_positive_scores: torch.Tensor | None = None,
     in_batch_candidate_scores: torch.Tensor | None = None,
+    rank_labels: torch.Tensor | None = None,
 ) -> dict[str, torch.Tensor]:
     """Evaluate every reward term against one shared score table.
 
@@ -346,11 +372,13 @@ def compute_reward_terms(
         term.name: compute_reward_from_scores(
             scores=scores,
             relevance_labels=relevance_labels,
+            rank_labels=rank_labels,
             reward_type=term.type,
             k=term.k,
             ndcg_in_batch_include_negatives=bool(term.ndcg_in_batch_include_negatives),
             contrastive_use_in_batch_negatives=bool(term.contrastive_use_in_batch_negatives),
             contrastive_temperature=float(term.temperature),
+            rbo_p=float(term.rbo_p),
             relevance_scheme=relevance_scheme,
             in_batch_positive_scores=in_batch_positive_scores,
             in_batch_candidate_scores=in_batch_candidate_scores,
@@ -415,6 +443,8 @@ def compute_reward_from_scores(
     relevance_scheme: str | None = None,
     in_batch_positive_scores: torch.Tensor | None = None,
     in_batch_candidate_scores: torch.Tensor | None = None,
+    rank_labels: torch.Tensor | None = None,
+    rbo_p: float = 0.9,
 ) -> torch.Tensor:
     squeeze_rollout_dim = False
     if scores.dim() == 2:
@@ -444,6 +474,13 @@ def compute_reward_from_scores(
             "relevance_labels shape must match scores [batch, slate], "
             f"got scores={tuple(scores.shape)} labels={tuple(relevance_labels.shape)}"
         )
+    if rank_labels is not None and rank_labels.shape != relevance_labels.shape:
+        raise ValueError(
+            "rank_labels shape must match relevance_labels [batch, slate], "
+            f"got ranks={tuple(rank_labels.shape)} labels={tuple(relevance_labels.shape)}"
+        )
+    if not 0.0 <= rbo_p < 1.0:
+        raise ValueError(f"RBO persistence p must lie in [0, 1), got {rbo_p}")
 
     batch_size = scores.size(0)
     rollout_shape = scores.shape[1:-1]
@@ -468,6 +505,102 @@ def compute_reward_from_scores(
         return torch.zeros(batch_size, *rollout_shape, device=scores.device, dtype=scores.dtype)
 
     expanded_labels = relevance_labels.unsqueeze(1).expand(batch_size, rollout_count, slate_length)
+    if reward_type in {"top_weighted_pairwise", "rbo"}:
+        if rank_labels is None:
+            raise ValueError(f"rank_labels are required for the {reward_type} reward")
+        if not torch.isfinite(rank_labels).all():
+            raise ValueError("rank_labels must be finite")
+
+        cutoff = slate_length if k is None else min(k, slate_length)
+        if cutoff <= 0:
+            return finish(zero_reward())
+
+        teacher_order = rank_labels.argsort(dim=-1, descending=True, stable=True)
+        positions = torch.arange(1, slate_length + 1, device=scores.device, dtype=torch.long)
+        metric_dtype = torch.float64 if scores.dtype == torch.float64 else torch.float32
+        if reward_type == "rbo":
+            predicted_order = scores.argsort(dim=-1, descending=True, stable=True)
+            teacher_positions = torch.empty_like(teacher_order)
+            teacher_positions.scatter_(
+                dim=-1,
+                index=teacher_order,
+                src=positions.view(1, -1).expand_as(teacher_order),
+            )
+            predicted_positions = torch.empty_like(predicted_order)
+            predicted_positions.scatter_(
+                dim=-1,
+                index=predicted_order,
+                src=positions.view(1, 1, -1).expand_as(predicted_order),
+            )
+
+            # A document first enters the prefix intersection at the deeper of its teacher and
+            # predicted positions. Histogram those entry depths and cumulatively sum them instead
+            # of materializing two [batch, rollout, slate, slate] prefix-membership tensors.
+            entry_depths = torch.maximum(predicted_positions, teacher_positions.unsqueeze(1))
+            enters_by_cutoff = entry_depths <= cutoff
+            overlap_histogram = torch.zeros(
+                batch_size,
+                rollout_count,
+                cutoff,
+                device=scores.device,
+                dtype=metric_dtype,
+            )
+            overlap_histogram.scatter_add_(
+                dim=-1,
+                index=entry_depths.clamp_max(cutoff) - 1,
+                src=enters_by_cutoff.to(metric_dtype),
+            )
+            prefix_overlap = overlap_histogram.cumsum(dim=-1)
+            depths = torch.arange(1, cutoff + 1, device=scores.device, dtype=metric_dtype)
+            agreement = prefix_overlap / depths
+            depth_weights = torch.as_tensor(rbo_p, device=scores.device, dtype=metric_dtype).pow(
+                torch.arange(cutoff, device=scores.device, dtype=metric_dtype)
+            )
+            return finish((agreement * depth_weights).sum(dim=-1) / depth_weights.sum())
+
+        # Compare every teacher-preferred pair whose better item lies inside the teacher's
+        # top-k. A pair receives the logarithmic discount of that better item's teacher rank.
+        # This uses only ordinal supervision: unlike pseudo-gain nDCG, it invents no relevance
+        # grades or gaps between adjacent teacher positions.
+        better_positions, worse_positions = torch.triu_indices(
+            slate_length,
+            slate_length,
+            offset=1,
+            device=scores.device,
+        )
+        inside_cutoff = better_positions < cutoff
+        better_positions = better_positions[inside_cutoff]
+        worse_positions = worse_positions[inside_cutoff]
+        better_indices = teacher_order[:, better_positions]
+        worse_indices = teacher_order[:, worse_positions]
+        pair_count = better_indices.size(-1)
+        better_scores = scores.gather(
+            dim=-1,
+            index=better_indices.unsqueeze(1).expand(batch_size, rollout_count, pair_count),
+        )
+        worse_scores = scores.gather(
+            dim=-1,
+            index=worse_indices.unsqueeze(1).expand(batch_size, rollout_count, pair_count),
+        )
+        better_ranks = rank_labels.gather(dim=-1, index=better_indices)
+        worse_ranks = rank_labels.gather(dim=-1, index=worse_indices)
+        strict_preference = better_ranks > worse_ranks
+        pair_weights = 1.0 / torch.log2(better_positions.to(metric_dtype) + 2.0)
+        pair_weights = pair_weights.unsqueeze(0) * strict_preference
+
+        score_differences = better_scores - worse_scores
+        concordance = (score_differences > 0).to(metric_dtype)
+        concordance = concordance + 0.5 * (score_differences == 0).to(metric_dtype)
+        normalizer = pair_weights.sum(dim=-1, keepdim=True)
+        weighted_concordance = (pair_weights.unsqueeze(1) * concordance).sum(dim=-1)
+        return finish(
+            torch.where(
+                normalizer > 0,
+                weighted_concordance / normalizer,
+                torch.zeros_like(weighted_concordance),
+            )
+        )
+
     if reward_type in {"ndcg", "ndcg_in_batch"}:
         ranking_scores = scores
         ranking_labels = expanded_labels

@@ -213,6 +213,7 @@ class GRPO(nn.Module):
         advantage_baseline_momentum: float = 0.99,
         in_batch_use_sampled_documents: bool = False,
         kl_coef: float = 0.0,
+        reward_rbo_p: float = 0.9,
     ):
         super().__init__()
         reward_type = reward_type.lower()
@@ -242,11 +243,14 @@ class GRPO(nn.Module):
             )
         if contrastive_temperature <= 0:
             raise ValueError(f"contrastive_temperature must be positive, got {contrastive_temperature}")
+        if not 0.0 <= reward_rbo_p < 1.0:
+            raise ValueError(f"reward_rbo_p must lie in [0, 1), got {reward_rbo_p}")
         reward_combine = normalize_reward_combine_mode(reward_combine)
         reward_terms = normalize_reward_terms(
             reward_terms if reward_terms else reward_type,
             default_k=reward_ndcg_k,
             default_temperature=contrastive_temperature,
+            default_rbo_p=reward_rbo_p,
             default_ndcg_in_batch_include_negatives=ndcg_in_batch_include_negatives,
             default_contrastive_use_in_batch_negatives=contrastive_use_in_batch_negatives,
         )
@@ -277,6 +281,7 @@ class GRPO(nn.Module):
         self.reward_terms = reward_terms
         self.reward_combine = reward_combine
         self.reward_ndcg_k = reward_ndcg_k
+        self.reward_rbo_p = reward_rbo_p
         self.ndcg_in_batch_include_negatives = ndcg_in_batch_include_negatives
         self.contrastive_use_in_batch_negatives = contrastive_use_in_batch_negatives
         self.contrastive_temperature = contrastive_temperature
@@ -654,6 +659,7 @@ class GRPO(nn.Module):
     def _compute_component_loss(
         self,
         relevance_labels: torch.Tensor,
+        rank_labels: torch.Tensor | None,
         components: Sequence[_ActionComponent],
     ) -> tuple[torch.Tensor, dict[str, torch.Tensor], torch.Tensor, torch.Tensor]:
         active_components = tuple(component for component in components if component.is_active)
@@ -751,6 +757,7 @@ class GRPO(nn.Module):
                 self.reward_terms,
                 scores=scores,
                 relevance_labels=relevance_labels,
+                rank_labels=rank_labels,
                 in_batch_positive_scores=in_batch_positive_scores,
                 in_batch_candidate_scores=in_batch_candidate_scores,
             ).items()
@@ -905,6 +912,7 @@ class GRPO(nn.Module):
         reference_query_embeddings: torch.Tensor | None = None,
         reference_positive_document_embeddings: torch.Tensor | None = None,
         reference_negative_document_embeddings: torch.Tensor | None = None,
+        rank_labels: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, dict[str, torch.Tensor], dict[str, torch.Tensor], torch.Tensor, torch.Tensor]:
         if relevance_labels is None:
             raise ValueError("relevance_labels are required for GRPO training")
@@ -930,6 +938,11 @@ class GRPO(nn.Module):
             raise ValueError(
                 "relevance_labels shape must match [batch, slate], "
                 f"got labels={tuple(relevance_labels.shape)} documents={tuple(document_embeddings.shape)}"
+            )
+        if rank_labels is not None and rank_labels.shape != relevance_labels.shape:
+            raise ValueError(
+                "rank_labels shape must match relevance_labels [batch, slate], "
+                f"got ranks={tuple(rank_labels.shape)} labels={tuple(relevance_labels.shape)}"
             )
 
         rollout_query_embeddings = F.normalize(rollout_query_embeddings, dim=-1)
@@ -1023,6 +1036,7 @@ class GRPO(nn.Module):
 
         loss, reward_stats, advantages, degenerate_frac = self._compute_component_loss(
             relevance_labels=relevance_labels,
+            rank_labels=rank_labels,
             components=tuple(components),
         )
 
@@ -1103,6 +1117,7 @@ class GRPOModel(nn.Module):
             reward_terms=rl_args.reward_terms,
             reward_combine=rl_args.reward_combine,
             reward_ndcg_k=rl_args.reward_ndcg_k,
+            reward_rbo_p=rl_args.reward_rbo_p,
             ndcg_in_batch_include_negatives=rl_args.ndcg_in_batch_include_negatives,
             contrastive_use_in_batch_negatives=rl_args.contrastive_use_in_batch_negatives,
             contrastive_temperature=rl_args.contrastive_temperature,
@@ -1211,6 +1226,7 @@ class GRPOModel(nn.Module):
             rollout_positive_document_embeddings=rollout_positive_document_embeddings,
             rollout_negative_document_embeddings=rollout_negative_document_embeddings,
             relevance_labels=relevance_labels,
+            rank_labels=rank_labels,
             policy_query_embeddings=policy_query_embeddings,
             policy_positive_document_embeddings=policy_positive_document_embeddings,
             policy_negative_document_embeddings=policy_negative_document_embeddings,

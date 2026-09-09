@@ -411,8 +411,8 @@ class RLArguments:
         default="ndcg",
         metadata={
             "help": (
-                "Reward type: ndcg, ndcg_in_batch, contrastive, infonce, mrr, or "
-                "mrr_in_batch. Used when "
+                "Reward type: ndcg, ndcg_in_batch, top_weighted_pairwise, rbo, "
+                "contrastive, infonce, mrr, or mrr_in_batch. Used when "
                 "reward_terms is empty, and as the per-term default elsewhere."
             )
         },
@@ -425,7 +425,8 @@ class RLArguments:
                 "use a list of mappings, e.g. [{type: ndcg_in_batch, weight: 1.0, k: 16}, "
                 "{type: contrastive, weight: 0.5, in_batch_negatives: true}]. CLI may use "
                 "'ndcg_in_batch:1.0,k=16;contrastive:0.5,in_batch_negatives=true'. Unset "
-                "per-term fields inherit reward_ndcg_k / contrastive_temperature / the "
+                "per-term fields inherit reward_ndcg_k / reward_rbo_p / "
+                "contrastive_temperature / the "
                 "in-batch flags below."
             )
         },
@@ -445,7 +446,16 @@ class RLArguments:
     )
     reward_ndcg_k: int = field(
         default=10,
-        metadata={"help": "Default ranking cutoff for the nDCG/MRR reward terms"},
+        metadata={"help": "Default cutoff for ranking reward terms"},
+    )
+    reward_rbo_p: float = field(
+        default=0.9,
+        metadata={
+            "help": (
+                "Default RBO persistence in [0, 1); larger values spread more reward "
+                "weight across deeper prefixes"
+            )
+        },
     )
     ndcg_in_batch_include_negatives: bool = field(
         default=False,
@@ -575,6 +585,10 @@ class RLArguments:
             raise ValueError(
                 f"contrastive_temperature must be positive, got {self.contrastive_temperature}"
             )
+        if not 0.0 <= self.reward_rbo_p < 1.0:
+            raise ValueError(
+                f"reward_rbo_p must lie in [0, 1), got {self.reward_rbo_p}"
+            )
         self.reward_combine = normalize_reward_combine_mode(self.reward_combine)
         # An empty spec means "single term from reward_type", which resolves to exactly the
         # arguments the pre-combination code passed, so legacy configs are untouched.
@@ -582,6 +596,7 @@ class RLArguments:
             self.reward_terms if self.reward_terms else self.reward_type,
             default_k=self.reward_ndcg_k,
             default_temperature=self.contrastive_temperature,
+            default_rbo_p=self.reward_rbo_p,
             default_ndcg_in_batch_include_negatives=self.ndcg_in_batch_include_negatives,
             default_contrastive_use_in_batch_negatives=self.contrastive_use_in_batch_negatives,
         )

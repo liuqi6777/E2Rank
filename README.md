@@ -269,6 +269,7 @@ Important RL-related fields exposed by [`src/config.py`](src/config.py):
 - `sigma_learnable`
 - `reward_type`
 - `reward_ndcg_k`
+- `reward_rbo_p`
 - `ndcg_in_batch_include_negatives`
 - `contrastive_use_in_batch_negatives`
 - `contrastive_temperature`
@@ -292,8 +293,10 @@ Supported reward presets in [`configs/reward/`](configs/reward):
 - `infonce_in_batch.yaml`
 - `infonce_no_in_batch.yaml`
 - `mrr.yaml`
+- `top_weighted_pairwise_listwise.yaml`
+- `rbo_listwise.yaml`
 
-Contrastive-style rewards now follow the paper appendix:
+Reward semantics:
 
 - `ndcg`: per-query slate nDCG only, kept as the backward-compatible no-in-batch option
 - `ndcg_in_batch`: append positives from other samples in the batch as extra zero-relevance candidates; set `ndcg_in_batch_include_negatives: true` to append all candidates from other samples
@@ -301,6 +304,12 @@ Contrastive-style rewards now follow the paper appendix:
 - `infonce`: `s+ - tau * logsumexp([s+, s-] / tau)` over the full partition
 - `mrr`: under `graded` relevance, only labels with `relevance >= 2` count as relevant; under `binary`, the threshold remains `relevance > 0`
 - `mrr_in_batch`: the same MRR definition after appending in-batch candidates, parallel to `ndcg_in_batch`
+- `top_weighted_pairwise`: own-slate agreement on every teacher-preferred pair whose better document lies in the teacher top-k; each pair is weighted by that better rank's logarithmic discount
+- `rbo`: normalized truncated rank-biased overlap between the model and teacher permutations; `reward_rbo_p` controls how quickly prefix weights decay
+
+The two permutation-native rewards consume `rank_labels` and intentionally operate on the
+record's own slate. Cross-query documents are not included because the data provides no teacher
+order for them.
 
 Example:
 
