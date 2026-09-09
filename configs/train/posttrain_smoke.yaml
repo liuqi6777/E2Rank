@@ -1,0 +1,6 @@
+_base_:
+  - ./posttrain.yaml
+
+# Interface/diagnostic check only; never report these checkpoints as results.
+max_steps: 200
+save_strategy: "no"

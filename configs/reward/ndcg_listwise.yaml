@@ -1,0 +1,3 @@
+# Primary exact reward for the restored teacher-ranked slates.
+reward_type: ndcg
+reward_ndcg_k: 10

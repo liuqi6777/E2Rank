@@ -6,9 +6,10 @@ q_max_len: 512
 d_max_len: 1024
 relevance_scheme: graded
 
-# These loader options also apply to listwise files. ``slate_size`` is used only
-# when a BGE-M3 {pos, neg} record is converted, and does not truncate this data.
-slate_size: 8
+# Public E2Rank records contain exactly 16 documents. For listwise records this
+# value is validation metadata (the full list is still preserved); for BGE-M3
+# records it remains the requested conversion size.
+slate_size: 16
 file_glob: "*.jsonl"
 batch_per_length_bucket: false
 include_sources: null

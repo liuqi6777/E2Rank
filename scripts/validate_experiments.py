@@ -18,14 +18,34 @@ import train as train_mod
 import train_baseline as tb_mod
 from utils import parse_config_from_base_overrides, BASE_CONFIG_SLOTS, BASELINE_CONFIG_SLOTS
 
-SCRIPTS = ["stage1", "phase1_pilot", "reward_probe", "phaseA_mixture", "phaseA_reward", "phaseA_components",
-           "phaseB_recipe", "phaseC_estimator", "phaseD_appendix", "phaseE_scale"]
+SCRIPTS = [
+    "posttrain_smoke",
+    "posttrain_core",
+    "posttrain_rewards",
+    "posttrain_ablations",
+    "posttrain_transfer",
+    "posttrain_eval",
+    # Legacy/from-scratch experiment scripts remain parse-checked until retired.
+    "stage1",
+    "phase1_pilot",
+    "reward_probe",
+    "phaseA_mixture",
+    "phaseA_reward",
+    "phaseA_components",
+    "phaseB_recipe",
+    "phaseC_estimator",
+    "phaseD_appendix",
+    "phaseE_scale",
+]
 
 # Values that make the optional blocks emit their commands instead of skipping. They are only
 # here so the parse covers every row; none of them changes what a real run does.
 SCRIPT_ENV = dict(
     DRY_RUN="1", SEED="42", A5_GROUP_SIZE="16", PROBE_STEPS="50",
     STAGE1_MODE="all", AX_REWARD="configs/reward/ndcg_in_batch_all.yaml", AX_GRPO="configs/grpo/factorized.yaml",
+    RUN_OPTIONAL_MIXTURE="1",
+    TRANSFER_MODEL_CONFIG="configs/model/e2rank_0.6b_embedding_only.yaml",
+    TRANSFER_MODEL_ID="Alibaba-NLP/E2Rank-0.6B-Embedding-Only",
 )
 
 failures: list[str] = []

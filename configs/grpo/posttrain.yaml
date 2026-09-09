@@ -1,0 +1,15 @@
+# Main post-training policy: independently sample the query and the bundled
+# document slate, then evaluate their G x G cross product.
+action_components:
+  - [query]
+  - [positive, negative]
+group_size: 32
+kappa: 755
+sigma_learnable: false
+advantage_norm: per_component
+sampling_law: vmf
+rollout: product
+frozen_doc_rescale: true
+advantage_baseline: group
+in_batch_use_sampled_documents: false
+kl_coef: 0

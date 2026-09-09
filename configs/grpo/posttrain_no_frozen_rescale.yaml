@@ -1,0 +1,3 @@
+_base_:
+  - ./posttrain.yaml
+frozen_doc_rescale: false

@@ -1,0 +1,3 @@
+_base_:
+  - ./posttrain.yaml
+sampling_law: gaussian

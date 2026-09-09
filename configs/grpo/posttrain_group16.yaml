@@ -1,0 +1,3 @@
+_base_:
+  - ./posttrain.yaml
+group_size: 16

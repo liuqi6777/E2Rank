@@ -1,0 +1,3 @@
+# Top-heavy alternative reward over the same graded listwise supervision.
+reward_type: mrr
+reward_ndcg_k: 10
