@@ -15,7 +15,7 @@ from config import LoraArguments, TrainingArguments
 logger = logging.getLogger(__name__)
 
 BASE_CONFIG_SLOTS = ("train", "dataset", "model", "grpo", "reward", "eval")
-BASELINE_CONFIG_SLOTS = ("train", "dataset", "model", "eval")
+BASELINE_CONFIG_SLOTS = ("train", "dataset", "model", "baseline", "eval")
 
 
 def load_raw_config_file(config_path: str) -> dict:

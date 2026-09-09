@@ -26,9 +26,10 @@ source .venv/bin/activate
 
 ## Data and Model Preparation
 
-Training expects a JSONL file at `data/train.jsonl`.
+Training accepts both the original E2Rank listwise JSONL format and BGE-M3 mining
+records. The formats can coexist; the loader detects each record schema.
 
-You can download the prepared dataset with:
+For the listwise post-training data, download `data/train.jsonl` with:
 
 ```bash
 mkdir -p data
@@ -39,12 +40,18 @@ hf download \
   --repo-type dataset
 ```
 
-Each sample should contain the fields used by [`src/ranking_data.py`](src/ranking_data.py):
+Each listwise sample contains the fields used by
+[`src/embedding_data.py`](src/embedding_data.py):
 
 - `query`
 - `document`
 - `ranking`
 - `source` (optional, used to choose task prompts)
+
+BGE-M3 records use `query`, `pos`, `neg`, and optional `pos_scores` /
+`neg_scores`; they are converted to fixed-size slates according to the dataset
+config. Use `configs/dataset/e2rank_listwise.yaml` for the original listwise
+data and `configs/dataset/default.yaml` for BGE-M3.
 
 ## Training
 
@@ -76,9 +83,22 @@ Supported base config flags:
 - `--base-train`
 - `--base-dataset`
 - `--base-model`
+- `--base-baseline` (supervised launcher only)
 - `--base-grpo`
 - `--base-reward`
 - `--base-eval`
+
+Supervised post-training supports InfoNCE and RankNet. For example, RankNet on
+the original teacher ranking is launched with:
+
+```bash
+bash ./scripts/run_baseline.sh \
+  --base-train configs/train/stage2.yaml \
+  --base-dataset configs/dataset/e2rank_listwise.yaml \
+  --base-model configs/model/qwen3_embedding_0.6b.yaml \
+  --base-baseline configs/baseline/ranknet.yaml \
+  --base-eval configs/eval/default.yaml
+```
 
 Regular training arguments can still be appended after that:
 

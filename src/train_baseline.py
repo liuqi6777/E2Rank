@@ -7,11 +7,19 @@ from typing import Dict, Optional
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch import Tensor
 from transformers import HfArgumentParser, PreTrainedModel, Trainer as HFTrainer, set_seed
 from transformers.file_utils import ModelOutput
 
-from config import DataArguments, LoraArguments, ModelArguments, MTEBEvalArguments, TrainingArguments
+from config import (
+    BaselineArguments,
+    DataArguments,
+    LoraArguments,
+    ModelArguments,
+    MTEBEvalArguments,
+    TrainingArguments,
+)
 from embedding_data import build_slate_inputs
 from grpo import pool_last_token_embedding
 from grpo_trainer import EmbeddingTrainerMixin
@@ -30,9 +38,6 @@ from utils import BASELINE_CONFIG_SLOTS
 
 
 logger = logging.getLogger(__name__)
-
-INFONCE_TEMPERATURE = 0.03
-
 
 @dataclass
 class BaselineModelOutput(ModelOutput):
@@ -60,11 +65,44 @@ def compute_infonce_loss(
     return torch.where(positive_exists, loss, torch.zeros_like(loss))
 
 
+def compute_ranknet_loss(
+    scores: Tensor,
+    rank_labels: Tensor,
+    temperature: float = 0.03,
+) -> Tensor:
+    """Return the mean RankNet loss over all strictly ordered pairs per sample.
+
+    ``rank_labels`` normally preserve the record's full teacher permutation. Ties
+    are excluded as a general fallback when graded relevance labels are supplied.
+    """
+    if temperature <= 0:
+        raise ValueError(f"ranknet temperature must be positive, got {temperature}")
+    if scores.shape != rank_labels.shape:
+        raise ValueError(
+            "scores and rank_labels must have the same shape, "
+            f"got {tuple(scores.shape)} and {tuple(rank_labels.shape)}"
+        )
+
+    scaled_scores = scores / float(temperature)
+    score_differences = scaled_scores.unsqueeze(2) - scaled_scores.unsqueeze(1)
+    label_differences = rank_labels.unsqueeze(2) - rank_labels.unsqueeze(1)
+    ordered_pairs = label_differences > 0
+    pair_losses = F.softplus(-score_differences)
+    pair_counts = ordered_pairs.sum(dim=(1, 2))
+    loss_sums = (pair_losses * ordered_pairs.to(pair_losses.dtype)).sum(dim=(1, 2))
+    return torch.where(
+        pair_counts > 0,
+        loss_sums / pair_counts.clamp_min(1).to(loss_sums.dtype),
+        torch.zeros_like(loss_sums),
+    )
+
+
 class BaselineModel(nn.Module):
-    def __init__(self, model: PreTrainedModel):
+    def __init__(self, model: PreTrainedModel, baseline_args: BaselineArguments):
         super().__init__()
         self.model = model
         self.config = self.model.config
+        self.baseline_args = baseline_args
 
     def encode(self, model_inputs: Dict[str, Tensor]) -> Tensor:
         return pool_last_token_embedding(
@@ -79,6 +117,7 @@ class BaselineModel(nn.Module):
         positive_document: Dict[str, Tensor] = None,
         negative_document: Dict[str, Tensor] = None,
         relevance_labels: Tensor = None,
+        rank_labels: Tensor = None,
     ) -> BaselineModelOutput:
         batch_size, slate_length = relevance_labels.shape
         query_embeddings = self.encode(query)
@@ -91,11 +130,22 @@ class BaselineModel(nn.Module):
         document_embeddings = self.encode(document_inputs).reshape(batch_size, slate_length, -1)
         scores = torch.matmul(document_embeddings, query_embeddings.unsqueeze(-1)).squeeze(-1)
 
-        per_sample_loss = compute_infonce_loss(
-            scores=scores,
-            relevance_labels=relevance_labels,
-            temperature=INFONCE_TEMPERATURE,
-        )
+        if self.baseline_args.baseline_loss == "infonce":
+            per_sample_loss = compute_infonce_loss(
+                scores=scores,
+                relevance_labels=relevance_labels,
+                temperature=self.baseline_args.baseline_temperature,
+            )
+        elif self.baseline_args.baseline_loss == "ranknet":
+            per_sample_loss = compute_ranknet_loss(
+                scores=scores,
+                rank_labels=rank_labels if rank_labels is not None else relevance_labels,
+                temperature=self.baseline_args.baseline_temperature,
+            )
+        else:  # BaselineArguments validates this; keep the model failure explicit.
+            raise ValueError(
+                f"Unsupported baseline loss: {self.baseline_args.baseline_loss}"
+            )
         return BaselineModelOutput(loss=per_sample_loss.mean())
 
     def gradient_checkpointing_enable(self, *args, **kwargs):
@@ -108,20 +158,41 @@ class BaselineModel(nn.Module):
 
 def main() -> None:
     parser = HfArgumentParser(
-        (ModelArguments, DataArguments, TrainingArguments, LoraArguments, MTEBEvalArguments)
+        (
+            ModelArguments,
+            DataArguments,
+            TrainingArguments,
+            LoraArguments,
+            BaselineArguments,
+            MTEBEvalArguments,
+        )
     )
-    model_args, data_args, training_args, lora_args, mteb_eval_args = parse_arguments(
+    (
+        model_args,
+        data_args,
+        training_args,
+        lora_args,
+        baseline_args,
+        mteb_eval_args,
+    ) = parse_arguments(
         parser=parser,
         base_slots=BASELINE_CONFIG_SLOTS,
     )
 
     guard_output_dir(training_args)
-    setup_logging(training_args, {"Model": model_args, "MTEB eval": mteb_eval_args})
+    setup_logging(
+        training_args,
+        {
+            "Model": model_args,
+            "Baseline": baseline_args,
+            "MTEB eval": mteb_eval_args,
+        },
+    )
 
     set_seed(training_args.seed)
 
     backbone, tokenizer = load_backbone_and_tokenizer(model_args, lora_args)
-    model = BaselineModel(model=backbone)
+    model = BaselineModel(model=backbone, baseline_args=baseline_args)
     model.train()
 
     apply_gradient_checkpointing(model, training_args, lora_args)
@@ -147,7 +218,13 @@ def main() -> None:
     )
     trainer.train(resume_from_checkpoint=True if resume else None)
 
-    save_run_artifacts(trainer, training_args, tokenizer, model_args=model_args)
+    save_run_artifacts(
+        trainer,
+        training_args,
+        tokenizer,
+        model_args=model_args,
+        baseline_args=baseline_args,
+    )
 
 
 if __name__ == "__main__":

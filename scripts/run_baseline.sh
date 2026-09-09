@@ -2,7 +2,8 @@
 # Supervised (InfoNCE) launcher -- the mirror of run.sh for src/train_baseline.py.
 # Drives Stage 1, the CL->CL control, and the backpropagated counterpart of the
 # InfoNCE-as-reward row. Same env contract as run.sh; the only difference is the entrypoint
-# and that it takes no --base-grpo / --base-reward: InfoNCE is the whole objective.
+# and that it takes --base-baseline instead of --base-grpo / --base-reward.
+# InfoNCE remains the default; RankNet is available for rank-based post-training.
 
 set -euo pipefail
 

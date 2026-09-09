@@ -26,6 +26,8 @@ SUPPORTED_SAMPLING_LAWS = ("vmf", "gaussian")
 
 SUPPORTED_ROLLOUTS = ("product", "diagonal")
 
+SUPPORTED_BASELINE_LOSSES = ("infonce", "ranknet")
+
 
 def normalize_advantage_norm_mode(mode) -> str:
     """Map legacy bool values (and their YAML/CLI string forms) onto the mode names."""
@@ -207,6 +209,38 @@ class DataArguments:
 @dataclass
 class TrainingArguments(HFTrainingArguments):
     pass
+
+
+@dataclass
+class BaselineArguments:
+    """Objective settings for supervised post-training controls."""
+
+    baseline_loss: str = field(
+        default="infonce",
+        metadata={"help": "Supervised objective: infonce or ranknet"},
+    )
+    baseline_temperature: float = field(
+        default=0.03,
+        metadata={
+            "help": (
+                "Temperature applied to cosine scores before the supervised loss. "
+                "Used by both InfoNCE and RankNet."
+            )
+        },
+    )
+
+    def __post_init__(self) -> None:
+        self.baseline_loss = self.baseline_loss.strip().lower()
+        if self.baseline_loss not in SUPPORTED_BASELINE_LOSSES:
+            raise ValueError(
+                f"Unsupported baseline_loss: {self.baseline_loss!r}. "
+                f"Expected one of {SUPPORTED_BASELINE_LOSSES}."
+            )
+        if self.baseline_temperature <= 0:
+            raise ValueError(
+                "baseline_temperature must be positive, "
+                f"got {self.baseline_temperature}"
+            )
 
 
 @dataclass

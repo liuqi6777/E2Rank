@@ -1133,6 +1133,7 @@ class GRPOModel(nn.Module):
         positive_document: Dict[str, torch.Tensor] = None,
         negative_document: Dict[str, torch.Tensor] = None,
         relevance_labels: torch.Tensor = None,
+        rank_labels: torch.Tensor = None,
     ) -> GRPOModelOutput:
         if query is None:
             raise ValueError("query inputs are required for GRPO training")

@@ -118,6 +118,39 @@ def record_to_slate(
     return {"query": record["query"], "document": documents, "ranking": ranking}
 
 
+def normalize_listwise_record(record: dict[str, Any]) -> dict[str, Any]:
+    """Validate and normalize an E2Rank ``{query, document, ranking}`` record.
+
+    ``ranking`` is a 1-indexed permutation of document positions, ordered from most
+    to least relevant. Unlike BGE-M3 conversion, the complete candidate list and its
+    teacher ordering are preserved so graded rewards and rank-based supervised losses
+    consume exactly the same supervision.
+    """
+    query = record.get("query")
+    documents = record.get("document")
+    ranking = record.get("ranking")
+    if not isinstance(query, str) or not query:
+        raise ValueError("Listwise record requires a non-empty string field 'query'")
+    if not isinstance(documents, list) or not documents or not all(
+        isinstance(document, str) for document in documents
+    ):
+        raise ValueError("Listwise record requires a non-empty string list field 'document'")
+    if (
+        not isinstance(ranking, list)
+        or len(ranking) != len(documents)
+        or not all(isinstance(rank, int) and not isinstance(rank, bool) for rank in ranking)
+    ):
+        raise ValueError(
+            "Listwise record requires an integer 'ranking' with the same length as 'document'"
+        )
+    expected = list(range(1, len(documents) + 1))
+    if sorted(ranking) != expected:
+        raise ValueError(
+            f"Listwise ranking must be a 1-indexed permutation of {expected}, got {ranking}"
+        )
+    return {"query": query, "document": list(documents), "ranking": list(ranking)}
+
+
 class EmbeddingDataset(Dataset):
     query_prompt_template = "Instruct: {task_description}\nQuery:{query}"
 
@@ -164,6 +197,7 @@ class EmbeddingDataset(Dataset):
         self._locations: list[tuple[int, int]] = []
         self.entries: list[int] = []
         self._file_handles: dict[int, Any] = {}
+        self._record_sources: dict[str, list[str]] = {}
         self._rng = random.Random()
 
         self._discover_files(data_args.data_path)
@@ -179,7 +213,16 @@ class EmbeddingDataset(Dataset):
         """
         if os.path.isfile(data_path):
             source = _source_name_from_dir(os.path.basename(os.path.dirname(data_path)))
-            self._files.append({"path": data_path, "source": source, "batch_key": self._batch_key(source, data_path)})
+            self._files.append(
+                {
+                    "path": data_path,
+                    "source": source,
+                    "batch_key": self._batch_key(source, data_path),
+                    # A standalone E2Rank file may mix tasks and carries ``source`` per
+                    # record. BGE-M3 direct-file inputs simply fall back to the parent.
+                    "source_from_record": True,
+                }
+            )
             return
 
         if not os.path.isdir(data_path):
@@ -200,10 +243,24 @@ class EmbeddingDataset(Dataset):
                 for pattern in self.file_globs:
                     matched.update(glob.glob(os.path.join(full, pattern)))
                 for path in sorted(matched):
-                    self._files.append({"path": path, "source": source, "batch_key": self._batch_key(source, path)})
+                    self._files.append(
+                        {
+                            "path": path,
+                            "source": source,
+                            "batch_key": self._batch_key(source, path),
+                            "source_from_record": False,
+                        }
+                    )
             elif entry.endswith(".jsonl") or entry.endswith(".json"):
                 source = _source_name_from_dir(os.path.basename(data_path))
-                self._files.append({"path": full, "source": source, "batch_key": self._batch_key(source, full)})
+                self._files.append(
+                    {
+                        "path": full,
+                        "source": source,
+                        "batch_key": self._batch_key(source, full),
+                        "source_from_record": True,
+                    }
+                )
 
         if not self._files:
             raise FileNotFoundError(
@@ -229,12 +286,19 @@ class EmbeddingDataset(Dataset):
             return os.path.join(self.index_cache_dir, safe + ".e2rank_idx.json")
         return path + ".e2rank_idx.json"
 
-    def _scan_offsets(self, path: str) -> list[int]:
+    def _scan_offsets(
+        self,
+        path: str,
+        *,
+        source_from_record: bool = False,
+        fallback_source: str = "unknown",
+    ) -> list[int]:
         """Return the byte offset of every line in ``path``, caching to disk.
 
-        This never parses JSON — it only records where each record starts — so it stays
-        cheap even on multi-GB files. The cache is invalidated when the source file's
-        size or mtime changes.
+        BGE-M3 source-directory files only need byte offsets. Standalone/mixed
+        listwise files are parsed once while indexing so their per-record ``source``
+        values can preserve single-source batches; those sources are cached beside the
+        offsets. The cache is invalidated when file size or mtime changes.
         """
         cache_path = self._index_cache_path(path)
         stat = os.stat(path)
@@ -243,23 +307,48 @@ class EmbeddingDataset(Dataset):
             try:
                 with open(cache_path, "r") as f:
                     cached = json.load(f)
-                if cached.get("signature") == signature:
+                cached_sources = cached.get("sources")
+                sources_are_usable = (
+                    not source_from_record
+                    or (
+                        isinstance(cached_sources, list)
+                        and len(cached_sources) == len(cached.get("offsets", []))
+                    )
+                )
+                if cached.get("signature") == signature and sources_are_usable:
+                    if source_from_record:
+                        self._record_sources[path] = cached_sources
                     return cached["offsets"]
             except (json.JSONDecodeError, KeyError, OSError):
                 pass
 
         offsets: list[int] = []
+        sources: list[str] = []
         with open(path, "rb") as f:
             offset = f.tell()
             line = f.readline()
             while line:
                 if line.strip():
                     offsets.append(offset)
+                    if source_from_record:
+                        try:
+                            record = json.loads(line)
+                        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+                            raise ValueError(
+                                f"Invalid JSON record in {path} at byte offset {offset}"
+                            ) from exc
+                        raw_source = record.get("source") or fallback_source
+                        sources.append(_source_name_from_dir(str(raw_source)))
                 offset = f.tell()
                 line = f.readline()
+        if source_from_record:
+            self._record_sources[path] = sources
         try:
             with open(cache_path, "w") as f:
-                json.dump({"signature": signature, "offsets": offsets}, f)
+                cached_index = {"signature": signature, "offsets": offsets}
+                if source_from_record:
+                    cached_index["sources"] = sources
+                json.dump(cached_index, f)
         except OSError as exc:
             print(f"Warning: could not write offset cache {cache_path}: {exc}")
         return offsets
@@ -278,9 +367,23 @@ class EmbeddingDataset(Dataset):
         locations_by_source: dict[str, list[int]] = defaultdict(list)
         batch_key_by_location: dict[int, str] = {}
         for file_id, meta in enumerate(self._files):
-            source = meta["source"]
-            batch_key = meta["batch_key"]
-            for offset in self._scan_offsets(meta["path"]):
+            offsets = self._scan_offsets(
+                meta["path"],
+                source_from_record=meta["source_from_record"],
+                fallback_source=meta["source"],
+            )
+            record_sources = self._record_sources.get(meta["path"])
+            for record_index, offset in enumerate(offsets):
+                source = (
+                    record_sources[record_index]
+                    if record_sources is not None
+                    else meta["source"]
+                )
+                batch_key = (
+                    self._batch_key(source, meta["path"])
+                    if meta["source_from_record"]
+                    else meta["batch_key"]
+                )
                 location_id = len(self._locations)
                 self._locations.append((file_id, offset))
                 locations_by_source[source].append(location_id)
@@ -346,6 +449,20 @@ class EmbeddingDataset(Dataset):
             self._file_handles[file_id] = handle
         return handle
 
+    def close(self) -> None:
+        for handle in self._file_handles.values():
+            handle.close()
+        self._file_handles.clear()
+
+    def __del__(self):
+        # Dataset workers own independent lazy handles after fork. Closing whichever
+        # handles belong to this instance avoids leaking descriptors in short probes and
+        # tests while leaving normal DataLoader lifetime unchanged.
+        try:
+            self.close()
+        except Exception:
+            pass
+
     def _read_record(self, location_id: int) -> dict[str, Any]:
         file_id, offset = self._locations[location_id]
         handle = self._handle(file_id)
@@ -353,10 +470,24 @@ class EmbeddingDataset(Dataset):
         return json.loads(handle.readline())
 
     def _convert(self, file_id: int, record: dict[str, Any]) -> dict[str, Any] | None:
-        converted = record_to_slate(record, self.slate_size, self._rng)
+        if "document" in record or "ranking" in record:
+            if "document" not in record or "ranking" not in record:
+                raise ValueError(
+                    "Listwise records must contain both 'document' and 'ranking'"
+                )
+            converted = normalize_listwise_record(record)
+        elif "pos" in record or "neg" in record:
+            converted = record_to_slate(record, self.slate_size, self._rng)
+        else:
+            raise ValueError(
+                "Unsupported training record schema: expected either "
+                "{query, document, ranking} or {query, pos, neg}"
+            )
         if converted is None:
             return None
-        converted["query"] = self._format_query(self._files[file_id]["source"], converted["query"])
+        raw_source = record.get("source") or self._files[file_id]["source"]
+        source = _source_name_from_dir(str(raw_source))
+        converted["query"] = self._format_query(source, converted["query"])
         return converted
 
     def __getitem__(self, index: int) -> dict[str, Any]:
@@ -464,6 +595,27 @@ def build_relevance_labels(
     return relevance
 
 
+def build_rank_labels(ranking: torch.Tensor) -> torch.Tensor:
+    """Invert a 0-indexed teacher permutation into dense higher-is-better labels."""
+    if ranking.dim() != 2:
+        raise ValueError(f"ranking must be a 2D tensor, got shape {tuple(ranking.shape)}")
+    batch_size, slate_length = ranking.shape
+    labels = torch.zeros_like(ranking, dtype=torch.float32)
+    rank_values = torch.arange(
+        slate_length,
+        0,
+        -1,
+        device=ranking.device,
+        dtype=torch.float32,
+    )
+    labels.scatter_(
+        dim=1,
+        index=ranking,
+        src=rank_values.unsqueeze(0).expand(batch_size, -1),
+    )
+    return labels
+
+
 def build_slate_inputs(
     positive_document: Dict[str, torch.Tensor],
     negative_document: Dict[str, torch.Tensor],
@@ -528,10 +680,16 @@ class EmbeddingDataCollator:
             ranking=ranking,
             scheme=self.relevance_scheme,
         )
+        # Dense teacher-order targets for rank-based supervised objectives. ``ranking``
+        # maps rank position -> original document index; scatter inverts that mapping
+        # and assigns a larger value to every better-ranked document. Unlike the
+        # possibly coarsened relevance labels, these preserve the full permutation.
+        original_rank_labels = build_rank_labels(ranking)
 
         positive_documents: list[str] = []
         negative_documents: list[str] = []
         relevance_labels: list[torch.Tensor] = []
+        rank_labels: list[torch.Tensor] = []
         for sample_idx, instance in enumerate(instances):
             documents_for_sample = instance["document"]
             positive_index = int(ranking[sample_idx, 0].item())
@@ -549,6 +707,7 @@ class EmbeddingDataCollator:
                 dtype=torch.long,
             )
             relevance_labels.append(original_relevance_labels[sample_idx].gather(dim=0, index=ordered_indices))
+            rank_labels.append(original_rank_labels[sample_idx].gather(dim=0, index=ordered_indices))
 
         documents = [doc + self.tokenizer.pad_token for doc in [*positive_documents, *negative_documents]]
         document_inputs = self.tokenizer(
@@ -571,4 +730,5 @@ class EmbeddingDataCollator:
                 for key, value in document_inputs.items()
             },
             "relevance_labels": torch.stack(relevance_labels),
+            "rank_labels": torch.stack(rank_labels),
         }

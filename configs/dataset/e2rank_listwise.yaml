@@ -1,0 +1,16 @@
+# Original E2Rank listwise data: {query, document, ranking, [source]}.
+# ``ranking`` is a 1-indexed teacher permutation and is preserved in full.
+data_path: data/train.jsonl
+per_dataset_max_samples: 10000
+q_max_len: 512
+d_max_len: 1024
+relevance_scheme: graded
+
+# These loader options also apply to listwise files. ``slate_size`` is used only
+# when a BGE-M3 {pos, neg} record is converted, and does not truncate this data.
+slate_size: 8
+file_glob: "*.jsonl"
+batch_per_length_bucket: false
+include_sources: null
+index_cache_dir: .cache/dataset_index
+dev_samples_per_source: 200

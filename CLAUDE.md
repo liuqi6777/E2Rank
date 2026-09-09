@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-GRPO-based reinforcement-learning training for embedding models. Treats an embedding as a stochastic action on the unit hypersphere (von Mises–Fisher policy, sampled exactly with Wood's algorithm) and reuses an HF Trainer for the optimization loop. Ships with several reward presets (nDCG / contrastive / InfoNCE / MRR, singly or additively combined), a layered YAML config system, and an in-training MTEB/BEIR eval callback. The one supervised counterpart is InfoNCE (`src/train_baseline.py`), sharing the same data and trainer plumbing; it serves as Stage 1, as the compute-matched CL→CL control, and as the backpropagated twin of the InfoNCE-as-reward row.
+GRPO-based reinforcement-learning training for embedding models. Treats an embedding as a stochastic action on the unit hypersphere (von Mises–Fisher policy, sampled exactly with Wood's algorithm) and reuses an HF Trainer for the optimization loop. Ships with several reward presets (nDCG / contrastive / InfoNCE / MRR, singly or additively combined), a layered YAML config system, and an in-training MTEB/BEIR eval callback. The supervised counterpart (`src/train_baseline.py`) supports InfoNCE and RankNet over the same score slates: InfoNCE serves as Stage 1 and the compute-matched CL→CL control, while RankNet is the rank-based post-training control for the original E2Rank teacher permutations.
 
 Python 3.10, managed with `uv` (`.python-version` pinned). Single-source-of-truth deps in `pyproject.toml`; `uv sync` installs them.
 
@@ -27,7 +27,7 @@ bash ./scripts/run.sh \
   --base-eval   configs/eval/default.yaml \
   --learning_rate 5e-5            # any HfTrainingArguments / dataclass field can be appended
 
-# Supervised (InfoNCE) training — Stage 1 and the CL->CL control. Same slots minus grpo/reward.
+# Supervised training — InfoNCE by default, or RankNet via --base-baseline.
 bash ./scripts/run_baseline.sh --base-train configs/train/stage1.yaml ...
 
 # The paper's runs: one script per phase, driven by scripts/experiments/_common.sh.
@@ -91,7 +91,7 @@ With more than one term, per-term stats are emitted as `reward/<term>/{mean,std,
 A learnable `sigma` lives outside those `model.*` keys, so `GRPOTrainer._save` writes it to `grpo_state.json` and `restore_grpo_state` reloads it in `train.py` before the trainer is built (DeepSpeed partitions the parameter after that point).
 
 ### Data (`src/embedding_data.py`)
-`EmbeddingDataset` reads JSONL with fields `query`, `document` (list of texts), `ranking` (1-indexed permutation), and optional `source`. Source picks a task-specific instruction prompt from `TASK_PROMPTS` and formats `Instruct: <task>\nQuery:<query>`. Samples are pre-batched **per source** so every batch contains samples from a single task (the trailing partial batch per source is dropped); batches are then shuffled. `per_dataset_max_samples` caps each source independently.
+`EmbeddingDataset` auto-detects two coexisting JSONL schemas: original E2Rank listwise records with `query`, `document` (list of texts), `ranking` (1-indexed teacher permutation), and optional `source`; and BGE-M3 mining records with `query`, `pos`, `neg`, and optional teacher scores, converted into a fixed slate. Listwise records preserve the complete candidate list and ranking. Per-record `source` in a mixed listwise file still controls the task prompt and batching. Samples are pre-batched **per source** so every batch contains samples from a single task (the trailing partial batch per source is dropped); batches are then shuffled. `per_dataset_max_samples` caps each source independently.
 
 That layout survives to the GPU only because both trainers install `SingleSourceBatchSampler`, which shuffles whole batch-sized **blocks** rather than individual samples. Keep the dataset's `batch_size` equal to the dataloader's, or batches go mixed-source again (logged as a warning).
 

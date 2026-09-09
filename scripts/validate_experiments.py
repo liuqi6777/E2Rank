@@ -12,8 +12,8 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 os.chdir(REPO_ROOT)
 sys.path.insert(0, str(REPO_ROOT / "src"))
 from transformers import HfArgumentParser
-from config import (DataArguments, LoraArguments, ModelArguments, MTEBEvalArguments,
-                    RLArguments, TrainingArguments)
+from config import (BaselineArguments, DataArguments, LoraArguments, ModelArguments,
+                    MTEBEvalArguments, RLArguments, TrainingArguments)
 import train as train_mod
 import train_baseline as tb_mod
 from utils import parse_config_from_base_overrides, BASE_CONFIG_SLOTS, BASELINE_CONFIG_SLOTS
@@ -57,7 +57,7 @@ def collect():
 grpo_parser = HfArgumentParser((ModelArguments, DataArguments, TrainingArguments,
                                 LoraArguments, RLArguments, MTEBEvalArguments))
 base_parser = HfArgumentParser((ModelArguments, DataArguments, TrainingArguments,
-                                LoraArguments, MTEBEvalArguments))
+                                LoraArguments, BaselineArguments, MTEBEvalArguments))
 
 ok = 0
 bad = len(failures)

@@ -43,6 +43,7 @@ export WANDB_PROJECT="${WANDB_PROJECT:-E2Rank-RL}"
 DEFAULT_REWARD="${DEFAULT_REWARD:-configs/reward/default_mixture.yaml}"
 DEFAULT_GRPO="${DEFAULT_GRPO:-configs/grpo/default.yaml}"
 DEFAULT_DATASET="${DEFAULT_DATASET:-configs/dataset/stage2.yaml}"
+DEFAULT_BASELINE="${DEFAULT_BASELINE:-configs/baseline/default.yaml}"
 
 case "$SCALE" in
   0.6b) BASE_MODEL_CONFIG=configs/model/qwen3_0.6b.yaml; BASE_MODEL_ID=Qwen/Qwen3-0.6B ;;
@@ -82,6 +83,7 @@ train_stage1() {
     --base-train    configs/train/stage1.yaml \
     --base-dataset  configs/dataset/stage1.yaml \
     --base-model    "$BASE_MODEL_CONFIG" \
+    --base-baseline configs/baseline/default.yaml \
     --base-eval     configs/eval/default.yaml \
     --seed "$SEED" --run_name "$(basename "$out")" --output_dir "$out" "$@"
 }
@@ -126,12 +128,15 @@ train_rl() {
 # $1 run id   $2... overrides
 train_supervised_stage2() {
   local id="$1"; shift
+  local baseline="${BASELINE_CONFIG:-$DEFAULT_BASELINE}"
+  local dataset="${SUPERVISED_DATASET:-$DEFAULT_DATASET}"
   local out; out="$(run_dir "$id")"
   already_done "$out" && return 0
   launch bash ./scripts/run_baseline.sh \
     --base-train    configs/train/stage2.yaml \
-    --base-dataset  "$DEFAULT_DATASET" \
+    --base-dataset  "$dataset" \
     --base-model    "$BASE_MODEL_CONFIG" \
+    --base-baseline "$baseline" \
     --base-eval     configs/eval/default.yaml \
     --model_name_or_path "$(stage1_merged_dir)" \
     --seed "$SEED" --run_name "$(basename "$out")" --output_dir "$out" "$@"
