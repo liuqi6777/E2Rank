@@ -100,6 +100,29 @@ bash ./scripts/run_baseline.sh \
   --base-eval configs/eval/default.yaml
 ```
 
+The revised paper experiments initialize directly from an existing embedding
+checkpoint and are grouped by purpose:
+
+```bash
+bash scripts/experiments/posttrain_smoke.sh
+bash scripts/experiments/posttrain_core.sh
+bash scripts/experiments/posttrain_rewards.sh
+bash scripts/experiments/posttrain_ablations.sh
+bash scripts/experiments/posttrain_eval.sh full
+# Optional, after selecting an independent second embedding initialization:
+TRANSFER_MODEL_CONFIG=... TRANSFER_MODEL_ID=... \
+  bash scripts/experiments/posttrain_transfer.sh
+```
+
+All use `Qwen/Qwen3-Embedding-0.6B`, the E2Rank listwise data, and seed 42 by
+default. Override them with `INIT_MODEL_CONFIG`, `INIT_MODEL_ID`,
+`POSTTRAIN_DATASET`, `POSTTRAIN_TRAIN_CONFIG`, `POSTTRAIN_GRPO_CONFIG`, `SEED`,
+and `CKPT_ROOT`. Set `DRY_RUN=1` to inspect every command without launching
+training. `posttrain_eval.sh` evaluates the initialization and every checkpoint
+under `CKPT_ROOT`; set `EVAL_INITIALIZATION=0` or override `CKPT_GLOB` when
+needed. The older `stage1.sh` / `phase*.sh` scripts are retained for the
+superseded from-scratch experiment path and its ablations.
+
 Regular training arguments can still be appended after that:
 
 ```bash
