@@ -1,0 +1,4 @@
+_base_: base.yaml
+rag_objective: infonce
+run_name: rag-infonce
+output_dir: checkpoints/rag-infonce

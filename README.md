@@ -337,6 +337,95 @@ To enable the W&B login:
 wandb login
 ```
 
+## Fixed-corpus FlashRAG experiments
+
+The RAG pipeline uses only the datasets and `wiki18_100w` corpus from
+[`RUC-NLPIR/FlashRAG_datasets`](https://huggingface.co/datasets/RUC-NLPIR/FlashRAG_datasets).
+It does not download Search-R1 parquet files, checkpoints, trajectories,
+retrievals, generations, or reported results. The index manifest pins and hashes
+the corpus and 64 FP16 Qwen3 document-vector shards; training only instantiates a
+query encoder and query-side LoRA. The downloadable FlashRAG E5 index is
+intentionally unsupported because it is not in the Qwen3 embedding space.
+
+Data preparation invokes the external `hf download` CLI and uses Python's
+standard library to resolve the dataset revision. It does not add a direct
+`huggingface_hub` dependency to this project. Ensure `hf` is available on the
+host before running the preparation command.
+
+Install a CUDA-compatible exact FAISS build on the four-GPU training host. Run
+the frozen `Qwen/Qwen2.5-7B-Instruct` vLLM server in a separate GPU allocation
+for `answer_f1` training or final generation:
+
+```bash
+vllm serve Qwen/Qwen2.5-7B-Instruct \
+  --dtype bfloat16 --host 127.0.0.1 --port 8000
+```
+
+Prepare and hash the complete inputs, encode `contents` exactly once, and mine
+the immutable E0 candidate pool:
+
+```bash
+scripts/rag_pipeline.sh prepare --revision <FLASHRAG_COMMIT_SHA>
+scripts/rag_pipeline.sh encode \
+  --revision <QWEN3_EMBEDDING_COMMIT_SHA> --num-shards 64 --max-length 512
+scripts/rag_pipeline.sh candidates \
+  --model-revision <QWEN3_EMBEDDING_COMMIT_SHA> --depth 1000
+```
+
+The prepare step validates the expected 169,615 raw training rows and 51,713
+evaluation rows and audits normalized train/evaluation question overlap. NQ
+queries with no answer-containing E0 top-1000 passage and HotpotQA queries with
+unmappable supporting facts are excluded identically from every training method;
+coverage is recorded next to the candidate JSONL.
+
+Tune on the deterministic source-wise 95/5 split using the LR grid
+`5e-6,1e-5,2e-5` and temperature grid `0.02,0.03,0.05`. Example tuning runs are:
+
+```bash
+scripts/rag_pipeline.sh train configs/rag/infonce.yaml --rag_split train --learning_rate 1e-5 --rag_temperature 0.03
+scripts/rag_pipeline.sh train configs/rag/ranknet.yaml --rag_split train --learning_rate 1e-5 --rag_temperature 0.03
+scripts/rag_pipeline.sh train configs/rag/rl_source_aware.yaml --rag_split train --learning_rate 1e-5
+scripts/rag_pipeline.sh train configs/rag/rl_answer_mrr.yaml --rag_split train --learning_rate 1e-5
+scripts/rag_pipeline.sh train configs/rag/rl_answer_f1.yaml --rag_split train --learning_rate 1e-5
+```
+
+Score any tuning checkpoint without touching the seven official evaluation
+splits:
+
+```bash
+scripts/rag_pipeline.sh tune-eval \
+  --checkpoint checkpoints/rag-rl-source-aware-mrr/checkpoint-1000 \
+  --output results/tuning/source-aware-step1000.json
+```
+
+After selecting hyperparameters and a 95%-split step budget `S`, start a new
+output directory from E0, set `rag_split=full`, and use
+`max_steps=ceil(S/0.95)`. For example, `S=10000` becomes 10527:
+
+```bash
+scripts/rag_pipeline.sh train configs/rag/rl_source_aware.yaml \
+  --rag_split full --max_steps 10527 --learning_rate 1e-5 \
+  --run_name rag-rl-source-aware-final \
+  --output_dir checkpoints/rag-rl-source-aware-final
+```
+
+Evaluate E0 by omitting `--checkpoint`, or evaluate a project-produced LoRA
+adapter by providing it. The command reruns retrieval and generation and writes
+per-dataset retrieval/generation JSONL plus `summary.json`:
+
+```bash
+scripts/rag_pipeline.sh eval \
+  --checkpoint checkpoints/rag-rl-source-aware-mrr \
+  --output-dir results/rag-rl-source-aware-mrr \
+  --generator-endpoint http://127.0.0.1:8000
+```
+
+For an inexpensive retrieval smoke test, add `--retrieval-only`. The final run
+reports Recall@5/20, MRR@20, frozen-generator EM/F1, the seven-dataset macro,
+training-domain and held-out averages, plus multi-hop evidence coverage and
+runtime telemetry. `configs/grpo/query_only.yaml` remains the older slate
+ablation and is not an entrypoint for these fixed-corpus experiments.
+
 ## Evaluation
 
 The wrapper script runs retrieval evaluation with the settings currently baked into [`eval_mteb/scripts/run_mteb.sh`](eval_mteb/scripts/run_mteb.sh), including:

@@ -1,0 +1,70 @@
+model_name_or_path: Qwen/Qwen3-Embedding-0.6B
+pooling_method: last
+padding_side: left
+append_token: pad
+query_prompt_template: "Instruct: {task_description}\nQuery:{query}"
+document_prompt_template: "{document}"
+embedding_max_length: 8192
+
+lora_enabled: true
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0
+lora_bias: none
+
+rag_dataset_root: data/rag/flashrag
+rag_corpus_path: data/rag/corpus/wiki18_100w.jsonl
+rag_candidate_manifest: data/rag/candidates/nq_hotpotqa_train.jsonl
+rag_train_sources: nq,hotpotqa
+rag_tuning_fraction: 0.05
+rag_tuning_seed: 20260909
+rag_split: train
+rag_candidate_depth: 1000
+rag_query_max_length: 128
+rag_max_train_samples: null
+rag_temperature: 0.03
+
+rag_index_manifest: data/rag/qwen3_e0_index/index_manifest.json
+rag_index_backend: faiss
+rag_index_device: cuda
+rag_index_shard_assignment: round_robin
+rag_index_search_batch_size: 1024
+rag_index_verify_hashes: true
+
+rag_retrieval_reward: source_aware_mrr
+rag_retrieval_k: 20
+rag_group_size: 32
+rag_kappa: 755
+rag_advantage_normalize: true
+
+rag_generator_model: Qwen/Qwen2.5-7B-Instruct
+rag_generator_system_prompt: "Answer the question based on the given documents. Only give me the answer and do not output any other words."
+rag_generator_endpoint: null
+rag_generator_cache: data/rag/generator_cache.sqlite3
+rag_generator_top_k: 5
+rag_generator_max_input_length: 2048
+rag_generator_max_new_tokens: 32
+rag_generator_timeout_seconds: 600
+rag_generator_gpu_count: 1
+
+bf16: true
+tf32: true
+per_device_train_batch_size: 4
+gradient_accumulation_steps: 1
+gradient_checkpointing: true
+learning_rate: 0.00001
+warmup_ratio: 0
+lr_scheduler_type: constant
+num_train_epochs: 1
+logging_strategy: steps
+logging_steps: 1
+save_strategy: steps
+save_steps: 1000
+save_total_limit: 2
+remove_unused_columns: false
+report_to: wandb
+seed: 42
+data_seed: 42
+deepspeed: scripts/zero3.json
+output_dir: checkpoints/rag-base
+overwrite_output_dir: false

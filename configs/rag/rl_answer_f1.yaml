@@ -1,0 +1,7 @@
+_base_: base.yaml
+rag_objective: rl
+rag_retrieval_reward: answer_f1
+rag_group_size: 8
+rag_generator_endpoint: http://127.0.0.1:8000
+run_name: rag-rl-answer-f1
+output_dir: checkpoints/rag-rl-answer-f1

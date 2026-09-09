@@ -1,0 +1,4 @@
+_base_: base.yaml
+rag_objective: ranknet
+run_name: rag-ranknet
+output_dir: checkpoints/rag-ranknet
