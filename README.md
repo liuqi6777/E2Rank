@@ -122,11 +122,15 @@ TRANSFER_MODEL_CONFIG=... TRANSFER_MODEL_ID=... \
 All use `Qwen/Qwen3-Embedding-0.6B`, the E2Rank listwise data, and seed 42 by
 default. Override them with `INIT_MODEL_CONFIG`, `INIT_MODEL_ID`,
 `POSTTRAIN_DATASET`, `POSTTRAIN_TRAIN_CONFIG`, `POSTTRAIN_GRPO_CONFIG`, `SEED`,
-and `CKPT_ROOT`. Set `DRY_RUN=1` to inspect every command without launching
-training. `posttrain_eval.sh` evaluates the initialization and every checkpoint
-under `CKPT_ROOT`; set `EVAL_INITIALIZATION=0` or override `CKPT_GLOB` when
-needed. The older `stage1.sh` / `phase*.sh` scripts are retained for the
-superseded from-scratch experiment path and its ablations.
+and `CKPT_ROOT`. Post-training runs use `configs/eval/mteb.yaml` by default, so
+the `MTEB(eng, v1, subset)` benchmark runs on the initial weights and every
+saved checkpoint. Set `POSTTRAIN_EVAL_CONFIG=configs/eval/default.yaml` to
+disable it or point `POSTTRAIN_EVAL_CONFIG` at another eval preset. Set
+`DRY_RUN=1` to inspect every command without launching training.
+`posttrain_eval.sh` evaluates the initialization and every checkpoint under
+`CKPT_ROOT`; set `EVAL_INITIALIZATION=0` or override `CKPT_GLOB` when needed.
+The older `stage1.sh` / `phase*.sh` scripts are retained for the superseded
+from-scratch experiment path and its ablations.
 
 Regular training arguments can still be appended after that:
 
@@ -264,11 +268,11 @@ reward_type: contrastive
 contrastive_temperature: 0.03
 ```
 
-MTEB eval during GRPO training is disabled by default through [`configs/eval/default.yaml`](configs/eval/default.yaml). To evaluate every saved checkpoint with the existing `MTEB(eng, v1, subset)` benchmark preset, use:
+MTEB eval during regular GRPO training is disabled by default through [`configs/eval/default.yaml`](configs/eval/default.yaml). To evaluate the initial weights and every saved checkpoint with the existing `MTEB(eng, v1, subset)` benchmark preset, use:
 
 ```bash
 bash ./scripts/run.sh configs/exp/template.yaml \
-  --base-eval configs/eval/mteb_retrieval.yaml
+  --base-eval configs/eval/mteb.yaml
 ```
 
 The preset sets:

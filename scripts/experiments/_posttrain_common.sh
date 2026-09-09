@@ -15,7 +15,7 @@ INIT_MODEL_ID="${INIT_MODEL_ID:-Qwen/Qwen3-Embedding-0.6B}"
 POSTTRAIN_DATASET="${POSTTRAIN_DATASET:-configs/dataset/e2rank_listwise.yaml}"
 POSTTRAIN_TRAIN_CONFIG="${POSTTRAIN_TRAIN_CONFIG:-configs/train/posttrain.yaml}"
 POSTTRAIN_GRPO_CONFIG="${POSTTRAIN_GRPO_CONFIG:-configs/grpo/posttrain.yaml}"
-POSTTRAIN_EVAL_CONFIG="${POSTTRAIN_EVAL_CONFIG:-configs/eval/default.yaml}"
+POSTTRAIN_EVAL_CONFIG="${POSTTRAIN_EVAL_CONFIG:-configs/eval/mteb.yaml}"
 export WANDB_PROJECT="${WANDB_PROJECT:-E2Rank-RL-Posttrain}"
 
 model_tag() {
