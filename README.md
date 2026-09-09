@@ -48,6 +48,41 @@ Each listwise sample contains the fields used by
 - `ranking`
 - `source` (optional, used to choose task prompts)
 
+ReasonRank RL data can be converted to the same fixed 16-document format. The
+converter retains the first 16 candidates in the original retrieval order, filters the
+teacher permutation to those candidates, and intentionally ignores `relevant_docids`:
+
+```bash
+mkdir -p data/reasonrank
+hf download \
+  liuwenhan/reasonrank_data_rl \
+  train.parquet \
+  --local-dir data/reasonrank \
+  --repo-type dataset
+
+uv run python scripts/convert_reasonrank.py \
+  --input data/reasonrank/train.parquet \
+  --output data/reasonrank_train_slate16.jsonl
+```
+
+Rows with fewer than 16 candidates are skipped. The resulting JSONL uses the existing
+`{query, document, ranking, source}` schema and can be concatenated with the E2Rank
+listwise JSONL without changing the training code.
+
+The merged training artifact is `data/train_v2.jsonl`. It contains the original
+E2Rank listwise records plus the converted ReasonRank records; every sample keeps a
+16-document slate and derives supervision only from its teacher permutation. Use
+`configs/dataset/e2rank_listwise_v2.yaml` to load it. The matched continued-CL and RL
+experiments are launched together with:
+
+```bash
+bash scripts/experiments/posttrain_data_v2.sh
+```
+
+This produces D1 (continued InfoNCE with in-batch negatives) and D2 (RL with graded
+in-batch nDCG@10), both initialized from the same embedding checkpoint and trained on
+the same merged data and budget.
+
 BGE-M3 records use `query`, `pos`, `neg`, and optional `pos_scores` /
 `neg_scores`; they are converted to fixed-size slates according to the dataset
 config. Use `configs/dataset/e2rank_listwise.yaml` for the original listwise
@@ -113,14 +148,16 @@ bash scripts/experiments/posttrain_smoke.sh
 bash scripts/experiments/posttrain_core.sh
 bash scripts/experiments/posttrain_rewards.sh
 bash scripts/experiments/posttrain_ablations.sh
+bash scripts/experiments/posttrain_data_v2.sh
 bash scripts/experiments/posttrain_eval.sh full
 # Optional, after selecting an independent second embedding initialization:
 TRANSFER_MODEL_CONFIG=... TRANSFER_MODEL_ID=... \
   bash scripts/experiments/posttrain_transfer.sh
 ```
 
-All use `Qwen/Qwen3-Embedding-0.6B`, the E2Rank listwise data, and seed 42 by
-default. Override them with `INIT_MODEL_CONFIG`, `INIT_MODEL_ID`,
+All use `Qwen/Qwen3-Embedding-0.6B` and seed 42 by default. The standard runners use
+the original E2Rank listwise data; `posttrain_data_v2.sh` uses the merged `train_v2`
+corpus. Override their settings with `INIT_MODEL_CONFIG`, `INIT_MODEL_ID`,
 `POSTTRAIN_DATASET`, `POSTTRAIN_TRAIN_CONFIG`, `POSTTRAIN_GRPO_CONFIG`, `SEED`,
 and `CKPT_ROOT`. Post-training runs use `configs/eval/mteb.yaml` by default, so
 the `MTEB(eng, v1, subset)` benchmark runs on the initial weights and every
