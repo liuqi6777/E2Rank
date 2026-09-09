@@ -23,6 +23,7 @@ SCRIPTS = [
     "posttrain_core",
     "posttrain_rewards",
     "posttrain_ablations",
+    "posttrain_data_v2",
     "posttrain_transfer",
     "posttrain_eval",
     # Legacy/from-scratch experiment scripts remain parse-checked until retired.

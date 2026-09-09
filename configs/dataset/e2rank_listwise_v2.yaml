@@ -1,0 +1,5 @@
+# E2Rank listwise data merged with the converted ReasonRank teacher rankings.
+_base_:
+  - ./e2rank_listwise.yaml
+
+data_path: data/train_v2.jsonl
