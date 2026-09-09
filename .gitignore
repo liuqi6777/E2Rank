@@ -222,6 +222,11 @@ __marimo__/
 *.out
 *.synctex.gz
 *.toc
-paper/**/*.pdf
+# Paper build outputs and local historical snapshots. Figure PDFs remain
+# trackable because they are source assets used by LaTeX.
+paper/**/build*/
+paper/archive/
+paper/**/main.pdf
+!paper/**/figs/*.pdf
 
 .DS_Store
