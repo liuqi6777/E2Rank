@@ -100,6 +100,11 @@ bash ./scripts/run_baseline.sh \
   --base-eval configs/eval/default.yaml
 ```
 
+The revised paper controls use `configs/baseline/infonce_in_batch.yaml` and
+`configs/baseline/ranknet_in_batch.yaml`. They append the other samples' rank-1
+documents as detached cross-query candidates, matching the candidate pool of
+the primary in-batch nDCG reward.
+
 The revised paper experiments initialize directly from an existing embedding
 checkpoint and are grouped by purpose:
 
@@ -227,7 +232,7 @@ Important RL-related fields exposed by [`src/config.py`](src/config.py):
 Common GRPO component settings:
 
 - Query-only: `action_components: [[query]]`
-- Old grid: `action_components: [[query], [positive, negative]]`
+- Default query-by-slate product: `action_components: [[query], [positive, negative]]`
 - Old factorized: `action_components: [[query], [positive], [negative]]`
 - Doc-only joint: `action_components: [[positive, negative]]`
 - Pos-only: `action_components: [[positive]]`
@@ -250,6 +255,7 @@ Contrastive-style rewards now follow the paper appendix:
 - `contrastive`: `s+ - tau * logsumexp(s- / tau)` over negatives only
 - `infonce`: `s+ - tau * logsumexp([s+, s-] / tau)` over the full partition
 - `mrr`: under `graded` relevance, only labels with `relevance >= 2` count as relevant; under `binary`, the threshold remains `relevance > 0`
+- `mrr_in_batch`: the same MRR definition after appending in-batch candidates, parallel to `ndcg_in_batch`
 
 Example:
 

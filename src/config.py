@@ -228,6 +228,16 @@ class BaselineArguments:
             )
         },
     )
+    baseline_use_in_batch_negatives: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "Append the other samples' positive documents to each query's "
+                "candidate pool. Their embeddings are detached in the cross-query "
+                "scores, matching the frozen in-batch candidates used by RL."
+            )
+        },
+    )
 
     def __post_init__(self) -> None:
         self.baseline_loss = self.baseline_loss.strip().lower()
@@ -346,7 +356,8 @@ class RLArguments:
         default="ndcg",
         metadata={
             "help": (
-                "Reward type: ndcg, ndcg_in_batch, contrastive, infonce, or mrr. Used when "
+                "Reward type: ndcg, ndcg_in_batch, contrastive, infonce, mrr, or "
+                "mrr_in_batch. Used when "
                 "reward_terms is empty, and as the per-term default elsewhere."
             )
         },

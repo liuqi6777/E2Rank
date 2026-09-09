@@ -48,6 +48,37 @@ class BaselineTrainer(EmbeddingTrainerMixin, HFTrainer):
     train_metric_names = ()
 
 
+def compute_in_batch_positive_scores(
+    query_embeddings: Tensor,
+    positive_embeddings: Tensor,
+) -> Tensor:
+    """Score every query against the other samples' detached positives.
+
+    The diagonal is excluded because each query's own positive is already in its
+    listwise slate. Detaching only the cross-query use matches RL's frozen
+    in-batch candidates; the same document still receives gradients through its
+    own sample's slate.
+    """
+    if query_embeddings.dim() != 2 or positive_embeddings.dim() != 2:
+        raise ValueError(
+            "query_embeddings and positive_embeddings must both be 2D, "
+            f"got {tuple(query_embeddings.shape)} and {tuple(positive_embeddings.shape)}"
+        )
+    if query_embeddings.shape != positive_embeddings.shape:
+        raise ValueError(
+            "query_embeddings and positive_embeddings must have matching shapes, "
+            f"got {tuple(query_embeddings.shape)} and {tuple(positive_embeddings.shape)}"
+        )
+
+    batch_size = query_embeddings.size(0)
+    if batch_size <= 1:
+        return query_embeddings.new_empty((batch_size, 0))
+
+    cross_scores = torch.matmul(query_embeddings, positive_embeddings.detach().T)
+    off_diagonal = ~torch.eye(batch_size, device=cross_scores.device, dtype=torch.bool)
+    return cross_scores.masked_select(off_diagonal).reshape(batch_size, batch_size - 1)
+
+
 def compute_infonce_loss(
     scores: Tensor,
     relevance_labels: Tensor,
@@ -129,6 +160,25 @@ class BaselineModel(nn.Module):
         )
         document_embeddings = self.encode(document_inputs).reshape(batch_size, slate_length, -1)
         scores = torch.matmul(document_embeddings, query_embeddings.unsqueeze(-1)).squeeze(-1)
+
+        if self.baseline_args.baseline_use_in_batch_negatives:
+            in_batch_scores = compute_in_batch_positive_scores(
+                query_embeddings=query_embeddings,
+                positive_embeddings=document_embeddings[:, 0],
+            )
+            scores = torch.cat((scores, in_batch_scores), dim=-1)
+            relevance_labels = torch.cat(
+                (relevance_labels, relevance_labels.new_zeros(in_batch_scores.shape)),
+                dim=-1,
+            )
+            if rank_labels is not None:
+                # The teacher permutation orders the complete own-query slate.
+                # Cross-query positives are unrelated candidates below that slate;
+                # their shared zero label also excludes pairs among themselves.
+                rank_labels = torch.cat(
+                    (rank_labels, rank_labels.new_zeros(in_batch_scores.shape)),
+                    dim=-1,
+                )
 
         if self.baseline_args.baseline_loss == "infonce":
             per_sample_loss = compute_infonce_loss(

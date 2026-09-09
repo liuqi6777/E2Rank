@@ -4,12 +4,12 @@
 
 source "$(dirname "${BASH_SOURCE[0]}")/_posttrain_common.sh"
 
-train_rl_posttrain "c3-rl-ndcg"    "$POSTTRAIN_GRPO_CONFIG" configs/reward/ndcg_listwise.yaml
-train_rl_posttrain "r2-rl-mrr"     "$POSTTRAIN_GRPO_CONFIG" configs/reward/mrr_listwise.yaml
-train_rl_posttrain "r3-rl-infonce" "$POSTTRAIN_GRPO_CONFIG" configs/reward/infonce_listwise.yaml
+train_rl_posttrain "c3-rl-ndcg-ib"    "$POSTTRAIN_GRPO_CONFIG" configs/reward/ndcg_listwise_in_batch.yaml
+train_rl_posttrain "r2-rl-mrr-ib"     "$POSTTRAIN_GRPO_CONFIG" configs/reward/mrr_listwise.yaml
+train_rl_posttrain "r3-rl-infonce-ib" "$POSTTRAIN_GRPO_CONFIG" configs/reward/infonce_listwise.yaml
 
 if [ "${RUN_OPTIONAL_MIXTURE:-0}" = "1" ]; then
-  train_rl_posttrain "r4-rl-mixture" "$POSTTRAIN_GRPO_CONFIG" configs/reward/mixture_listwise.yaml
+  train_rl_posttrain "r4-rl-mixture-ib" "$POSTTRAIN_GRPO_CONFIG" configs/reward/mixture_listwise.yaml
 else
   echo "[R4] optional mixture skipped; set RUN_OPTIONAL_MIXTURE=1 to run it."
 fi

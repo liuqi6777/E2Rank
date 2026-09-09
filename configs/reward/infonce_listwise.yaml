@@ -1,5 +1,5 @@
-# Differentiable-reward control, restricted to the sample's own slate so it
-# matches the candidate set used by direct-backprop InfoNCE.
+# Differentiable-reward control over the same own-slate plus cross-query-positive
+# candidate pool used by direct-backprop InfoNCE.
 reward_type: infonce
-contrastive_use_in_batch_negatives: false
+contrastive_use_in_batch_negatives: true
 contrastive_temperature: 0.03

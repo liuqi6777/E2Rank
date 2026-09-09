@@ -13,6 +13,6 @@ if [ "${EVAL_INITIALIZATION:-0}" = "1" ]; then
 fi
 
 RUN_MODEL_CONFIG="$TRANSFER_MODEL_CONFIG" \
-  train_supervised_posttrain "t1-clcl" configs/baseline/default.yaml
+  train_supervised_posttrain "t1-clcl-ib" configs/baseline/infonce_in_batch.yaml
 RUN_MODEL_CONFIG="$TRANSFER_MODEL_CONFIG" \
-  train_rl_posttrain "t2-rl-ndcg" "$POSTTRAIN_GRPO_CONFIG" configs/reward/ndcg_listwise.yaml
+  train_rl_posttrain "t2-rl-ndcg-ib" "$POSTTRAIN_GRPO_CONFIG" configs/reward/ndcg_listwise_in_batch.yaml

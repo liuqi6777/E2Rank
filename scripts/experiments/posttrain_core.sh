@@ -9,6 +9,6 @@ if [ "${EVAL_INITIALIZATION:-0}" = "1" ]; then
   evaluate_model "$INIT_MODEL_ID" "MTEB(eng, v2)"
 fi
 
-train_supervised_posttrain "c1-clcl"    configs/baseline/default.yaml
-train_supervised_posttrain "c2-ranknet" configs/baseline/ranknet.yaml
-train_rl_posttrain         "c3-rl-ndcg" "$POSTTRAIN_GRPO_CONFIG" configs/reward/ndcg_listwise.yaml
+train_supervised_posttrain "c1-clcl-ib"    configs/baseline/infonce_in_batch.yaml
+train_supervised_posttrain "c2-ranknet-ib" configs/baseline/ranknet_in_batch.yaml
+train_rl_posttrain         "c3-rl-ndcg-ib" "$POSTTRAIN_GRPO_CONFIG" configs/reward/ndcg_listwise_in_batch.yaml

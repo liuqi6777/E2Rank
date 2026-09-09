@@ -7,14 +7,21 @@ import torch
 import torch.nn.functional as F
 
 
-SUPPORTED_REWARD_TYPES = {"ndcg", "ndcg_in_batch", "contrastive", "infonce", "mrr"}
+SUPPORTED_REWARD_TYPES = {
+    "ndcg",
+    "ndcg_in_batch",
+    "contrastive",
+    "infonce",
+    "mrr",
+    "mrr_in_batch",
+}
 
 # Rewards split into two families with incomparable scales: ranking metrics are bounded in
 # [0, 1] while the contrastive margins live on a temperature-scaled log-score axis whose
 # within-group spread is typically an order of magnitude larger. Mixing families under a raw
 # weighted sum therefore does NOT mix them in the ratio of their weights (see
 # SUPPORTED_REWARD_COMBINE_MODES), which is what these sets are used to warn about.
-BOUNDED_REWARD_TYPES = frozenset({"ndcg", "ndcg_in_batch", "mrr"})
+BOUNDED_REWARD_TYPES = frozenset({"ndcg", "ndcg_in_batch", "mrr", "mrr_in_batch"})
 UNBOUNDED_REWARD_TYPES = frozenset({"contrastive", "infonce"})
 
 # 'sum'            -- R = sum_i w_i R_i, then one advantage over the combined reward. Keeps the
@@ -256,7 +263,7 @@ def ranking_reward_pool_size(term: RewardTerm, slate_size: int, batch_size: int)
     """How many candidates a rank-based term ranks over. None for the score-based families."""
     if term.type == "mrr" or term.type == "ndcg":
         return slate_size
-    if term.type == "ndcg_in_batch":
+    if term.type in {"ndcg_in_batch", "mrr_in_batch"}:
         if term.ndcg_in_batch_include_negatives:
             return batch_size * slate_size
         return slate_size + max(batch_size - 1, 0)
@@ -306,7 +313,10 @@ def warn_on_inert_cutoffs(
 
 def reward_terms_need_in_batch_positives(reward_terms: Sequence[RewardTerm]) -> bool:
     return any(
-        (term.type == "ndcg_in_batch" and not term.ndcg_in_batch_include_negatives)
+        (
+            term.type in {"ndcg_in_batch", "mrr_in_batch"}
+            and not term.ndcg_in_batch_include_negatives
+        )
         or (term.type in {"contrastive", "infonce"} and term.contrastive_use_in_batch_negatives)
         for term in reward_terms
     )
@@ -314,7 +324,7 @@ def reward_terms_need_in_batch_positives(reward_terms: Sequence[RewardTerm]) -> 
 
 def reward_terms_need_in_batch_candidates(reward_terms: Sequence[RewardTerm]) -> bool:
     return any(
-        term.type == "ndcg_in_batch" and term.ndcg_in_batch_include_negatives
+        term.type in {"ndcg_in_batch", "mrr_in_batch"} and term.ndcg_in_batch_include_negatives
         for term in reward_terms
     )
 
@@ -484,12 +494,25 @@ def compute_reward_from_scores(
         idcg = (((2.0 ** ideal_relevance) - 1.0) * discounts).sum(dim=-1)
         return finish(torch.where(idcg > 0, dcg / idcg, torch.zeros_like(dcg)))
 
-    if reward_type == "mrr":
-        cutoff = slate_length if k is None else min(k, slate_length)
+    if reward_type in {"mrr", "mrr_in_batch"}:
+        ranking_scores = scores
+        ranking_labels = expanded_labels
+        if reward_type == "mrr_in_batch":
+            extra_scores = (
+                in_batch_candidate_scores
+                if ndcg_in_batch_include_negatives
+                else in_batch_positive_scores
+            )
+            if extra_scores is not None:
+                ranking_scores = torch.cat((ranking_scores, extra_scores), dim=-1)
+                ranking_labels = torch.cat((ranking_labels, torch.zeros_like(extra_scores)), dim=-1)
+
+        ranking_length = ranking_scores.size(-1)
+        cutoff = ranking_length if k is None else min(k, ranking_length)
         if cutoff <= 0:
             return finish(zero_reward())
-        ranked_indices = scores.topk(k=cutoff, dim=-1).indices
-        ranked_relevance = expanded_labels.gather(dim=-1, index=ranked_indices)
+        ranked_indices = ranking_scores.topk(k=cutoff, dim=-1).indices
+        ranked_relevance = ranking_labels.gather(dim=-1, index=ranked_indices)
         relevant_mask = resolve_relevant_mask(
             ranked_relevance=ranked_relevance,
             relevance_labels=relevance_labels,
@@ -525,4 +548,3 @@ def compute_reward_from_scores(
         positive_scores
         - _temperature_scaled_logsumexp(partition_scores, temperature=contrastive_temperature)
     )
-
