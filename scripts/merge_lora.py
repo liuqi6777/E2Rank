@@ -22,6 +22,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import pathlib
 import shutil
 
@@ -77,10 +78,17 @@ def main() -> None:
 
     # The tokenizer travels with the checkpoint: Stage 2 loads both from model_name_or_path.
     tokenizer_source = adapter_dir if (adapter_dir / "tokenizer_config.json").is_file() else args.base
+    protocol_path = adapter_dir / "embedding_protocol.json"
+    padding_side = "left"
+    if protocol_path.is_file():
+        with protocol_path.open(encoding="utf-8") as handle:
+            padding_side = json.load(handle).get("padding_side", padding_side)
     print(f"Saving tokenizer from {tokenizer_source}")
     AutoTokenizer.from_pretrained(
-        str(tokenizer_source), padding_side="left", trust_remote_code=True
+        str(tokenizer_source), padding_side=padding_side, trust_remote_code=True
     ).save_pretrained(str(out_dir))
+    if protocol_path.is_file():
+        shutil.copy2(protocol_path, out_dir / protocol_path.name)
 
     print(f"Done. Point Stage 2 at: --model_name_or_path {out_dir}")
 

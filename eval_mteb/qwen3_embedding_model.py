@@ -3,8 +3,10 @@ from __future__ import annotations
 import logging
 import queue
 import json
+import sys
 from collections.abc import Sequence
 from contextlib import nullcontext
+from pathlib import Path
 from typing import Any
 
 from tqdm.autonotebook import tqdm
@@ -18,6 +20,12 @@ from mteb.models.wrapper import Wrapper
 from mteb.model_meta import ModelMeta
 import mteb
 
+SRC_ROOT = Path(__file__).resolve().parents[1] / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+
+from embedding_protocol import append_configured_token, format_embedding_text, pool_embeddings
+
 logger = logging.getLogger(__name__)
 
 
@@ -29,19 +37,22 @@ class TransformersTextEmbedder(torch.nn.Module):
         do_norm: bool = False,
         truncate_dim: int = 0,
         padding_left: bool = False,
+        padding_side: str = 'left',
+        append_token: str = 'pad',
         attn_type: str = 'causal',
         **kwargs,
     ):
         super().__init__()
         self.base_model = AutoModel.from_pretrained(model, **kwargs)
         self.tokenizer = AutoTokenizer.from_pretrained(model, **kwargs)
-        self.tokenizer.padding_side = "left"
+        self.tokenizer.padding_side = padding_side
         self.pooler_type = pooler_type
         self.do_norm = do_norm
         self.truncate_dim = truncate_dim
         self.padding_left = padding_left
+        self.append_token = append_token
         self.attn_type = attn_type
-        if pooler_type == 'first':
+        if pooler_type in {'first', 'cls'}:
             assert padding_left is False
             self.pooling = self._pooling_first
         elif pooler_type == 'last':
@@ -67,7 +78,7 @@ class TransformersTextEmbedder(torch.nn.Module):
     def tokenize(self, texts, max_length: int, prompt=None) -> BatchEncoding:
         if prompt:
             texts = [prompt + t for t in texts]
-        texts = [t + "<|endoftext|>" for t in texts]  # add eos token, which is different from original code, since we modify the tokenizer
+        texts = append_configured_token(texts, self.tokenizer, self.append_token)
         inputs = self.tokenizer(texts, padding=True, truncation=True, max_length=max_length, return_tensors='pt')
         return inputs
 
@@ -83,10 +94,16 @@ class TransformersTextEmbedder(torch.nn.Module):
             return_dict=True,
             **kwargs
         )
-        embeddings = self.pooling(output.last_hidden_state, attention_mask)
+        canonical_pooler = 'cls' if self.pooler_type == 'first' else self.pooler_type
+        embeddings = pool_embeddings(
+            output.last_hidden_state,
+            attention_mask,
+            pooling_method=canonical_pooler,
+            normalize=self.do_norm,
+        )
         if self.truncate_dim > 0:
             embeddings = embeddings[:, :self.truncate_dim]
-        if self.do_norm:
+        if self.do_norm and self.truncate_dim > 0:
             embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
         return embeddings
 
@@ -178,6 +195,8 @@ class Qwen3Embedding(Wrapper):
         mp_qsize: int = 4,
         instruction_dict_path=None,
         instruction_template=None, 
+        query_prompt_template: str | None = None,
+        document_prompt_template: str = "{text}",
         **kwargs,  # For `TransformersTextEmbedder`
     ) -> None:
         
@@ -212,12 +231,13 @@ class Qwen3Embedding(Wrapper):
         self._output_queues = list()
         self._workers = list()
         self.instruction_dict = dict()
+        self.query_prompt_template = query_prompt_template
+        self.document_prompt_template = document_prompt_template
+        self.instruction_template = instruction_template
         if instruction_dict_path is not None:
             instruction_dict_path = instruction_dict_path
             with open(instruction_dict_path) as f:
                 self.instruction_dict = json.load(f)
-        if instruction_template is not None:
-            self.instruction_template = instruction_template
 
     def get_instruction(self, task_name, prompt_type):
         sym_task = False
@@ -261,7 +281,7 @@ class Qwen3Embedding(Wrapper):
         instruction = None
         if self.use_instruction:
             instruction = self.get_instruction(task_name, prompt_type)
-            if self.instruction_template:
+            if self.instruction_template and self.query_prompt_template is None:
                 instruction = self.format_instruction(instruction, prompt_type)
             logger.info(f"Using instruction: '{instruction}' for task: '{task_name}'")
 
@@ -294,13 +314,33 @@ class Qwen3Embedding(Wrapper):
             ):
                 for n, i in enumerate(range(0, num_texts, batch_size)):
                     batch = sentences[i: i + batch_size]
+                    prompt = instruction
+                    if self.query_prompt_template is not None:
+                        # MTEB uses ``passage`` only for the corpus side of asymmetric
+                        # retrieval.  Symmetric/classification tasks commonly pass None
+                        # and should follow the query/sentence protocol.
+                        use_query_template = prompt_type != PromptType.passage
+                        template = (
+                            self.query_prompt_template
+                            if use_query_template
+                            else self.document_prompt_template
+                        )
+                        batch = [
+                            format_embedding_text(
+                                template,
+                                text,
+                                task_description=instruction or "",
+                            )
+                            for text in batch
+                        ]
+                        prompt = None
                     if self._workers:
                         rank = n % self.world_size
-                        self._input_queues[rank].put((n, (batch, max_length, instruction)))
+                        self._input_queues[rank].put((n, (batch, max_length, prompt)))
                         if n >= self.world_size:
                             _receive(self._output_queues[rank])
                     else:
-                        result_dict[n] = self.model.embed(batch, max_length, instruction, self.device)
+                        result_dict[n] = self.model.embed(batch, max_length, prompt, self.device)
                         pbar.update(1)
         if self._workers:
             while len(result_dict) < num_batches:

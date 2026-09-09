@@ -19,6 +19,7 @@ from config import (
     normalize_advantage_norm_mode,
 )
 from embedding_data import build_slate_inputs
+from embedding_protocol import pool_embeddings
 from rewards import (
     SUPPORTED_REWARD_TYPES,
     compute_reward_terms,
@@ -158,20 +159,13 @@ def pool_last_token_embedding(
     attention_mask: Tensor,
     normalize: bool = True,
 ) -> Tensor:
-    left_padding = attention_mask[:, -1].sum() == attention_mask.shape[0]
-    if left_padding:
-        embeddings = last_hidden_states[:, -1]
-    else:
-        sequence_lengths = attention_mask.sum(dim=1) - 1
-        batch_size = last_hidden_states.shape[0]
-        embeddings = last_hidden_states[
-            torch.arange(batch_size, device=last_hidden_states.device),
-            sequence_lengths,
-        ]
-
-    if normalize:
-        embeddings = torch.nn.functional.normalize(embeddings, dim=-1, p=2)
-    return embeddings
+    """Backward-compatible last-token helper used by older scripts."""
+    return pool_embeddings(
+        last_hidden_states,
+        attention_mask,
+        pooling_method="last",
+        normalize=normalize,
+    )
 
 
 @dataclass
@@ -1091,10 +1085,12 @@ class GRPOModel(nn.Module):
         self,
         model: PreTrainedModel,
         rl_args: RLArguments,
+        pooling_method: str = "last",
     ):
         super().__init__()
         self.model = model
         self.config = self.model.config
+        self.pooling_method = pooling_method
         self.grpo = GRPO(
             action_components=rl_args.action_components,
             group_size=rl_args.group_size,
@@ -1121,9 +1117,10 @@ class GRPOModel(nn.Module):
         )
 
     def encode(self, model_inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
-        return pool_last_token_embedding(
+        return pool_embeddings(
             self.model(**model_inputs).last_hidden_state,
             model_inputs["attention_mask"],
+            pooling_method=self.pooling_method,
             normalize=True,
         )
 

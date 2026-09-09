@@ -14,6 +14,7 @@ import torch.distributed as dist
 from transformers import TrainerCallback
 
 from config import MTEBEvalArguments
+from embedding_protocol import save_embedding_protocol
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -28,9 +29,12 @@ DEFAULT_MTEB_MODEL_KWARGS = {
     "max_length": 8192,
     "attn_type": "causal",
     "pooler_type": "last",
+    "padding_side": "left",
+    "append_token": "pad",
     "do_norm": True,
     "use_instruction": True,
-    "instruction_template": "Instruct: {}\nQuery:",
+    "query_prompt_template": "Instruct: {task_description}\nQuery:{text}",
+    "document_prompt_template": "{text}",
     "instruction_dict_path": "eval_mteb/scripts/task_prompts.json",
 }
 
@@ -227,8 +231,9 @@ def _result_main_score(result: Any) -> float | None:
 class MTEBEvalCallback(TrainerCallback):
     PRETRAIN_TAG = "checkpoint-0"
 
-    def __init__(self, eval_args: MTEBEvalArguments):
+    def __init__(self, eval_args: MTEBEvalArguments, model_args=None):
         self.eval_args = eval_args
+        self.model_args = model_args
         self.tasks = _parse_tasks(eval_args.mteb_eval_tasks)
         self.trainer = None
         self._gloo_group = None
@@ -260,6 +265,18 @@ class MTEBEvalCallback(TrainerCallback):
 
     def _build_eval_arguments(self, checkpoint_dir: str, output_dir: str) -> EvalArguments:
         model_kwargs = {**DEFAULT_MTEB_MODEL_KWARGS}
+        if self.model_args is not None:
+            model_kwargs.update(
+                {
+                    "pooler_type": self.model_args.pooling_method,
+                    "padding_side": self.model_args.padding_side,
+                    "append_token": self.model_args.append_token,
+                    "query_prompt_template": self.model_args.query_prompt_template,
+                    "document_prompt_template": self.model_args.document_prompt_template,
+                    "max_length": self.model_args.embedding_max_length,
+                    "use_instruction": "{task_description}" in self.model_args.query_prompt_template,
+                }
+            )
         model_kwargs.update(_parse_json_object(self.eval_args.mteb_eval_model_kwargs, "mteb_eval_model_kwargs"))
         encode_kwargs = _parse_json_object(self.eval_args.mteb_eval_encode_kwargs, "mteb_eval_encode_kwargs")
 
@@ -299,6 +316,8 @@ class MTEBEvalCallback(TrainerCallback):
         checkpoint_dir = os.path.join(args.output_dir, self.PRETRAIN_TAG)
         if self.trainer is not None:
             self.trainer.save_model(checkpoint_dir)
+        if self._is_world_process_zero(args) and self.model_args is not None:
+            save_embedding_protocol(self.model_args, checkpoint_dir)
         if self._gloo_group is not None:
             dist.barrier(group=self._gloo_group)
 
@@ -309,6 +328,11 @@ class MTEBEvalCallback(TrainerCallback):
         if not self.enabled:
             return control
 
+        checkpoint_dir, _ = self._prepare_paths(args, state)
+        if self._is_world_process_zero(args) and self.model_args is not None:
+            save_embedding_protocol(self.model_args, checkpoint_dir)
+        if self._gloo_group is not None:
+            dist.barrier(group=self._gloo_group)
         self._dispatch_eval(args, state, **kwargs)
         return control
 

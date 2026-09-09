@@ -132,6 +132,47 @@ disable it or point `POSTTRAIN_EVAL_CONFIG` at another eval preset. Set
 The older `stage1.sh` / `phase*.sh` scripts are retained for the superseded
 from-scratch experiment path and its ablations.
 
+### Using a non-Qwen embedding checkpoint
+
+The model config defines the checkpoint's complete dense-embedding protocol;
+GRPO itself only receives normalized vectors. Supported pooling methods are
+`last`, `mean`, and `cls`. For example:
+
+```yaml
+model_name_or_path: intfloat/multilingual-e5-large
+pooling_method: mean
+padding_side: right
+append_token: none        # none, eos, or pad
+query_prompt_template: "query: {query}"
+document_prompt_template: "passage: {document}"
+embedding_max_length: 512
+lora_target_modules: [query, key, value]
+deepspeed: ./scripts/zero3.json
+```
+
+Ready-to-use retrieval-training examples are provided in
+`configs/model/bge_m3.yaml` and `configs/model/multilingual_e5_large.yaml`.
+They can be passed anywhere a model base config is accepted:
+
+```bash
+bash ./scripts/run.sh \
+  --base-train configs/train/posttrain.yaml \
+  --base-dataset configs/dataset/e2rank_listwise.yaml \
+  --base-model configs/model/bge_m3.yaml \
+  --base-grpo configs/grpo/posttrain.yaml \
+  --base-reward configs/reward/ndcg_listwise_in_batch.yaml \
+  --base-eval configs/eval/mteb.yaml
+```
+
+`query_prompt_template` may use `{query}` (or `{text}`) and
+`{task_description}`. `document_prompt_template` may use `{document}` (or
+`{text}`). The same protocol is automatically passed to in-training MTEB
+evaluation. When adding another architecture, set `lora_target_modules` to
+names that actually occur in that model; full fine-tuning does not require this
+field. Checkpoints that depend on extra SentenceTransformers projection modules
+are not represented by `AutoModel` alone and need a dedicated adapter before
+they can be trained faithfully.
+
 Regular training arguments can still be appended after that:
 
 ```bash

@@ -13,7 +13,7 @@ esac
 
 CKPT_GLOB="${CKPT_GLOB:-${CKPT_ROOT}/*}"
 if [ "${EVAL_INITIALIZATION:-1}" = "1" ]; then
-  evaluate_model "$INIT_MODEL_ID" "$BENCHMARK"
+  evaluate_model "$INIT_MODEL_ID" "$BENCHMARK" "$INIT_MODEL_CONFIG"
 fi
 
 for checkpoint in $CKPT_GLOB; do

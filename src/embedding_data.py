@@ -9,6 +9,8 @@ import torch
 import transformers
 from torch.utils.data import Dataset, Sampler
 
+from embedding_protocol import append_configured_token, format_embedding_text
+
 
 TASK_PROMPTS = {
     "msmarco": "Given a web search query, retrieve the documents that answer the query",
@@ -159,11 +161,14 @@ class EmbeddingDataset(Dataset):
         data_args: Any,
         batch_size: int | None = None,
         split: str = "train",
+        query_prompt_template: str | None = None,
     ):
         if split not in {"train", "dev"}:
             raise ValueError(f"split must be 'train' or 'dev', got {split!r}")
         self.batch_size = batch_size or 32
         self.split = split
+        if query_prompt_template is not None:
+            self.query_prompt_template = query_prompt_template
         self.per_dataset_max_samples = data_args.per_dataset_max_samples
         self.dev_samples_per_source = getattr(data_args, "dev_samples_per_source", 0)
         self.slate_size = getattr(data_args, "slate_size", 8)
@@ -437,9 +442,10 @@ class EmbeddingDataset(Dataset):
 
     def _format_query(self, task_name: str, query: str) -> str:
         retrieval_prompt = TASK_PROMPTS.get(task_name, DEFAULT_TASK_PROMPTS)
-        return self.query_prompt_template.format(
+        return format_embedding_text(
+            self.query_prompt_template,
+            query,
             task_description=retrieval_prompt,
-            query=query,
         )
 
     def _handle(self, file_id: int):
@@ -650,6 +656,8 @@ class EmbeddingDataCollator:
         query_max_length: int = 512,
         doc_max_length: int = 1024,
         relevance_scheme: str = "binary",
+        document_prompt_template: str = "{document}",
+        append_token: str = "pad",
         **_: Any,
     ):
         if relevance_scheme not in {"binary", "graded"}:
@@ -658,15 +666,27 @@ class EmbeddingDataCollator:
         self.query_max_length = query_max_length
         self.doc_max_length = doc_max_length
         self.relevance_scheme = relevance_scheme
+        self.document_prompt_template = document_prompt_template
+        self.append_token = append_token
         if not self.tokenizer.pad_token:
             if getattr(self.tokenizer, "eot_token", None):
                 self.tokenizer.pad_token = self.tokenizer.eot_token
+            elif self.tokenizer.eos_token:
+                self.tokenizer.pad_token = self.tokenizer.eos_token
             else:
                 self.tokenizer.pad_token = self.tokenizer.bos_token
+        if not self.tokenizer.pad_token:
+            raise ValueError(
+                "Tokenizer has no pad/eot/eos/bos token available for batched embedding inputs"
+            )
         print(f"use ``{self.tokenizer.pad_token}`` as pad token for llm")
 
     def __call__(self, instances: Sequence[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
-        queries = [instance["query"] + self.tokenizer.pad_token for instance in instances]
+        queries = append_configured_token(
+            [instance["query"] for instance in instances],
+            self.tokenizer,
+            self.append_token,
+        )
         query_inputs = self.tokenizer(
             queries,
             padding=True,
@@ -709,7 +729,11 @@ class EmbeddingDataCollator:
             relevance_labels.append(original_relevance_labels[sample_idx].gather(dim=0, index=ordered_indices))
             rank_labels.append(original_rank_labels[sample_idx].gather(dim=0, index=ordered_indices))
 
-        documents = [doc + self.tokenizer.pad_token for doc in [*positive_documents, *negative_documents]]
+        documents = [
+            format_embedding_text(self.document_prompt_template, document)
+            for document in [*positive_documents, *negative_documents]
+        ]
+        documents = append_configured_token(documents, self.tokenizer, self.append_token)
         document_inputs = self.tokenizer(
             documents,
             padding=True,

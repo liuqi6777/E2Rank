@@ -80,6 +80,10 @@ train_rl_posttrain() {
 
 # Evaluation is post-hoc so MTEB never selects training hyperparameters.
 evaluate_model() {
-  local model="$1" benchmark="${2:-MTEB(eng, v2)}"
-  launch bash eval_mteb/scripts/run_mteb.sh "$model" "$benchmark"
+  local model="$1" benchmark="${2:-MTEB(eng, v2)}" model_config="${3:-}"
+  if [ -n "$model_config" ]; then
+    launch bash eval_mteb/scripts/run_mteb.sh "$model" "$benchmark" "$model_config"
+  else
+    launch bash eval_mteb/scripts/run_mteb.sh "$model" "$benchmark"
+  fi
 }

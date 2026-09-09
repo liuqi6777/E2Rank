@@ -14,6 +14,9 @@ try:
 except ImportError:
     from qwen3_embedding_model import Qwen3Embedding
 
+from embedding_protocol import load_embedding_protocol, protocol_to_eval_kwargs
+from utils import load_raw_config_file
+
 
 logging.basicConfig(
     format="%(levelname)s|%(asctime)s|%(name)s#%(lineno)s: %(message)s",
@@ -35,6 +38,10 @@ class EvalArguments:
     model_name: Optional[str] = field(
         default=None,
         metadata={"help": "Model name for the save path"}
+    )
+    model_config: Optional[str] = field(
+        default=None,
+        metadata={"help": "Optional repository model YAML carrying the embedding protocol"},
     )
     model_kwargs: Optional[str] = field(
         default=None,
@@ -103,7 +110,11 @@ def get_tasks(names: list[str] | None, languages: list[str] | None = None, bench
 
 
 def get_model(model_path: str, precision: str = 'fp16', **kwargs):
-    model = Qwen3Embedding(model_path, precision=precision, **kwargs)
+    # Trained checkpoints carry this sidecar, so post-hoc evaluation cannot silently
+    # fall back to the Qwen pooling/prompt protocol. Explicit CLI kwargs still win.
+    protocol_kwargs = protocol_to_eval_kwargs(load_embedding_protocol(model_path))
+    protocol_kwargs.update(kwargs)
+    model = Qwen3Embedding(model_path, precision=precision, **protocol_kwargs)
     return model
 
 
@@ -187,6 +198,37 @@ def main():
         args, *_ = parser.parse_args_into_dataclasses()
         logger.warning(f"Args {args}")
     del parser
+
+    if args.model_config:
+        raw_model_config = load_raw_config_file(args.model_config)
+        protocol = {
+            key: raw_model_config[key]
+            for key in (
+                "pooling_method",
+                "padding_side",
+                "append_token",
+                "query_prompt_template",
+                "document_prompt_template",
+            )
+            if key in raw_model_config
+        }
+        missing = {
+            "pooling_method",
+            "padding_side",
+            "append_token",
+            "query_prompt_template",
+            "document_prompt_template",
+        } - protocol.keys()
+        if missing:
+            raise ValueError(
+                f"model_config {args.model_config!r} is missing embedding protocol fields: "
+                f"{sorted(missing)}"
+            )
+        protocol["normalize"] = True
+        protocol["max_length"] = raw_model_config.get("embedding_max_length", 8192)
+        config_kwargs = protocol_to_eval_kwargs(protocol)
+        config_kwargs.update(args.model_kwargs)
+        args.model_kwargs = config_kwargs
 
     tasks = get_tasks(args.tasks, args.langs, args.benchmark)
     # print('args.model_kwargs', args.model_kwargs)

@@ -5,6 +5,7 @@ from typing import Optional
 
 from transformers import TrainingArguments as HFTrainingArguments
 
+from embedding_protocol import validate_embedding_protocol
 from rewards import (
     SUPPORTED_REWARD_TYPES,
     normalize_reward_combine_mode,
@@ -109,6 +110,60 @@ class ModelArguments:
         default=None,
         metadata={"help": "Directory used to cache downloaded model files"},
     )
+    pooling_method: str = field(
+        default="last",
+        metadata={"help": "Embedding pooling rule: last, mean, or cls"},
+    )
+    padding_side: str = field(
+        default="left",
+        metadata={"help": "Tokenizer padding side used by this embedding checkpoint"},
+    )
+    append_token: str = field(
+        default="pad",
+        metadata={
+            "help": (
+                "Special token appended to every text before tokenization: none, eos, or pad. "
+                "The default preserves the original Qwen embedding protocol."
+            )
+        },
+    )
+    query_prompt_template: str = field(
+        default="Instruct: {task_description}\nQuery:{query}",
+        metadata={
+            "help": (
+                "Query formatting template. Supports {text}/{query} and {task_description}."
+            )
+        },
+    )
+    document_prompt_template: str = field(
+        default="{document}",
+        metadata={"help": "Document formatting template. Supports {text}/{document}."},
+    )
+    embedding_max_length: int = field(
+        default=8192,
+        metadata={
+            "help": (
+                "Maximum sequence length supported by the embedding checkpoint. Training "
+                "query/document limits are clamped to this value."
+            )
+        },
+    )
+
+    def __post_init__(self) -> None:
+        self.pooling_method = self.pooling_method.strip().lower()
+        self.padding_side = self.padding_side.strip().lower()
+        self.append_token = self.append_token.strip().lower()
+        if self.embedding_max_length <= 0:
+            raise ValueError(
+                f"embedding_max_length must be positive, got {self.embedding_max_length}"
+            )
+        validate_embedding_protocol(
+            pooling_method=self.pooling_method,
+            padding_side=self.padding_side,
+            append_token=self.append_token,
+            query_prompt_template=self.query_prompt_template,
+            document_prompt_template=self.document_prompt_template,
+        )
 
 
 @dataclass

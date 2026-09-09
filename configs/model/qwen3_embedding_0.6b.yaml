@@ -1,2 +1,10 @@
 model_name_or_path: Qwen/Qwen3-Embedding-0.6B
+# Checkpoint-native embedding protocol. Keeping this explicit makes model swaps
+# auditable and is also reused by the in-training MTEB callback.
+pooling_method: last
+padding_side: left
+append_token: pad
+query_prompt_template: "Instruct: {task_description}\nQuery:{query}"
+document_prompt_template: "{document}"
+embedding_max_length: 8192
 deepspeed: ./scripts/zero3.json

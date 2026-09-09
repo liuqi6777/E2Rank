@@ -3,4 +3,10 @@
 # Merging (rather than passing lora_path) matters when kl_coef > 0: the KL anchor is taken
 # by disabling the adapter, so the reference must be the Stage-1 model, not the base LLM.
 model_name_or_path: checkpoints/stage1-qwen3-0.6b-merged
+pooling_method: last
+padding_side: left
+append_token: pad
+query_prompt_template: "Instruct: {task_description}\nQuery:{query}"
+document_prompt_template: "{document}"
+embedding_max_length: 8192
 deepspeed: ./scripts/zero3.json

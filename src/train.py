@@ -31,6 +31,7 @@ from grpo_trainer import GRPOTrainer, restore_grpo_state
 from mteb_eval_callback import MTEBEvalCallback
 from rewards import warn_on_inert_cutoffs
 from embedding_data import EmbeddingDataCollator, EmbeddingDataset
+from embedding_protocol import save_embedding_protocol
 from utils import (
     BASE_CONFIG_SLOTS,
     parse_config_file,
@@ -161,7 +162,7 @@ def load_backbone_and_tokenizer(model_args: ModelArguments, lora_args: LoraArgum
     )
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.tokenizer_name if model_args.tokenizer_name else model_args.model_name_or_path,
-        padding_side="left",
+        padding_side=model_args.padding_side,
         cache_dir=model_args.cache_dir,
         trust_remote_code=True,
     )
@@ -202,12 +203,18 @@ def apply_gradient_checkpointing(model, training_args: HFTrainingArguments, lora
     logger.info("Gradient checkpointing kwargs %s", training_args.gradient_checkpointing_kwargs)
 
 
-def build_embedding_data(data_args: DataArguments, training_args: HFTrainingArguments, tokenizer):
+def build_embedding_data(
+    data_args: DataArguments,
+    training_args: HFTrainingArguments,
+    tokenizer,
+    model_args: ModelArguments | None = None,
+):
     """Train dataset, optional held-out dev dataset, and the shared collator."""
     train_dataset = EmbeddingDataset(
         data_args=data_args,
         batch_size=training_args.per_device_train_batch_size,
         split="train",
+        query_prompt_template=(model_args.query_prompt_template if model_args else None),
     )
     # Held-out dev split for model selection, so smoothing/LR are never tuned on MTEB.
     eval_dataset = None
@@ -216,12 +223,23 @@ def build_embedding_data(data_args: DataArguments, training_args: HFTrainingArgu
             data_args=data_args,
             batch_size=training_args.per_device_eval_batch_size,
             split="dev",
+            query_prompt_template=(model_args.query_prompt_template if model_args else None),
         )
     data_collator = EmbeddingDataCollator(
         tokenizer=tokenizer,
-        query_max_length=data_args.q_max_len,
-        doc_max_length=data_args.d_max_len,
+        query_max_length=min(
+            data_args.q_max_len,
+            model_args.embedding_max_length if model_args else data_args.q_max_len,
+        ),
+        doc_max_length=min(
+            data_args.d_max_len,
+            model_args.embedding_max_length if model_args else data_args.d_max_len,
+        ),
         relevance_scheme=data_args.relevance_scheme,
+        document_prompt_template=(
+            model_args.document_prompt_template if model_args else "{document}"
+        ),
+        append_token=model_args.append_token if model_args else "pad",
     )
     return train_dataset, eval_dataset, data_collator
 
@@ -231,6 +249,8 @@ def save_run_artifacts(trainer, training_args: HFTrainingArguments, tokenizer, *
     save_model_for_trainer(trainer=trainer, output_dir=training_args.output_dir)
     if trainer.is_world_process_zero():
         tokenizer.save_pretrained(training_args.output_dir)
+        if "model_args" in argument_objects:
+            save_embedding_protocol(argument_objects["model_args"], training_args.output_dir)
         torch.save(training_args, os.path.join(training_args.output_dir, "training_args.bin"))
         for name, argument_object in argument_objects.items():
             torch.save(argument_object, os.path.join(training_args.output_dir, f"{name}.bin"))
@@ -265,6 +285,7 @@ def main() -> None:
     model = GRPOModel(
         model=backbone,
         rl_args=rl_args,
+        pooling_method=model_args.pooling_method,
     )
     model.train()
 
@@ -277,7 +298,12 @@ def main() -> None:
 
     apply_gradient_checkpointing(model, training_args, lora_args)
 
-    train_dataset, eval_dataset, data_collator = build_embedding_data(data_args, training_args, tokenizer)
+    train_dataset, eval_dataset, data_collator = build_embedding_data(
+        data_args,
+        training_args,
+        tokenizer,
+        model_args,
+    )
 
     # Both halves of this check live in different config slots -- the cutoff in reward/, the
     # slate in dataset/ -- so nothing else notices when a change to one invalidates the other.
@@ -297,7 +323,7 @@ def main() -> None:
         compute_metrics=None,
         data_collator=data_collator,
     )
-    mteb_callback = MTEBEvalCallback(mteb_eval_args)
+    mteb_callback = MTEBEvalCallback(mteb_eval_args, model_args=model_args)
     if mteb_callback.enabled:
         trainer.add_callback(mteb_callback.bind_trainer(trainer))
 

@@ -21,7 +21,7 @@ from config import (
     TrainingArguments,
 )
 from embedding_data import build_slate_inputs
-from grpo import pool_last_token_embedding
+from embedding_protocol import pool_embeddings
 from grpo_trainer import EmbeddingTrainerMixin
 from mteb_eval_callback import MTEBEvalCallback
 from train import (
@@ -129,16 +129,23 @@ def compute_ranknet_loss(
 
 
 class BaselineModel(nn.Module):
-    def __init__(self, model: PreTrainedModel, baseline_args: BaselineArguments):
+    def __init__(
+        self,
+        model: PreTrainedModel,
+        baseline_args: BaselineArguments,
+        pooling_method: str = "last",
+    ):
         super().__init__()
         self.model = model
         self.config = self.model.config
         self.baseline_args = baseline_args
+        self.pooling_method = pooling_method
 
     def encode(self, model_inputs: Dict[str, Tensor]) -> Tensor:
-        return pool_last_token_embedding(
+        return pool_embeddings(
             self.model(**model_inputs).last_hidden_state,
             model_inputs["attention_mask"],
+            pooling_method=self.pooling_method,
             normalize=True,
         )
 
@@ -242,12 +249,21 @@ def main() -> None:
     set_seed(training_args.seed)
 
     backbone, tokenizer = load_backbone_and_tokenizer(model_args, lora_args)
-    model = BaselineModel(model=backbone, baseline_args=baseline_args)
+    model = BaselineModel(
+        model=backbone,
+        baseline_args=baseline_args,
+        pooling_method=model_args.pooling_method,
+    )
     model.train()
 
     apply_gradient_checkpointing(model, training_args, lora_args)
 
-    train_dataset, eval_dataset, data_collator = build_embedding_data(data_args, training_args, tokenizer)
+    train_dataset, eval_dataset, data_collator = build_embedding_data(
+        data_args,
+        training_args,
+        tokenizer,
+        model_args,
+    )
 
     trainer = BaselineTrainer(
         model=model,
@@ -258,7 +274,7 @@ def main() -> None:
         compute_metrics=None,
         data_collator=data_collator,
     )
-    mteb_callback = MTEBEvalCallback(mteb_eval_args)
+    mteb_callback = MTEBEvalCallback(mteb_eval_args, model_args=model_args)
     if mteb_callback.enabled:
         trainer.add_callback(mteb_callback.bind_trainer(trainer))
 

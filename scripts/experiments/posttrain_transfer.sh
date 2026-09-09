@@ -9,7 +9,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/_posttrain_common.sh"
 
 echo "[T0] transfer initialization, evaluation only: $TRANSFER_MODEL_ID"
 if [ "${EVAL_INITIALIZATION:-0}" = "1" ]; then
-  evaluate_model "$TRANSFER_MODEL_ID" "MTEB(eng, v2)"
+  evaluate_model "$TRANSFER_MODEL_ID" "MTEB(eng, v2)" "$TRANSFER_MODEL_CONFIG"
 fi
 
 RUN_MODEL_CONFIG="$TRANSFER_MODEL_CONFIG" \

@@ -45,12 +45,15 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 
 from config import DataArguments
 from embedding_data import EmbeddingDataCollator, EmbeddingDataset, build_slate_inputs
-from grpo import bessel_ratio, pool_last_token_embedding
+from embedding_protocol import load_embedding_protocol, pool_embeddings
+from grpo import bessel_ratio
+from utils import load_raw_config_file
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", required=True, help="merged checkpoint or base model id")
+    parser.add_argument("--model_config", help="model YAML carrying the embedding protocol")
     parser.add_argument("--data_path", required=True)
     parser.add_argument("--slate_size", type=int, default=8)
     parser.add_argument("--batch_size", type=int, default=8)
@@ -70,17 +73,48 @@ def parse_args() -> argparse.Namespace:
 
 
 @torch.no_grad()
-def encode(model, tokenizer, inputs, device) -> torch.Tensor:
+def encode(model, inputs, device, pooling_method) -> torch.Tensor:
     inputs = {key: value.to(device) for key, value in inputs.items()}
     hidden = model(**inputs).last_hidden_state
-    return pool_last_token_embedding(hidden, inputs["attention_mask"], normalize=True)
+    return pool_embeddings(
+        hidden,
+        inputs["attention_mask"],
+        pooling_method=pooling_method,
+        normalize=True,
+    )
 
 
 def main() -> None:
     args = parse_args()
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
+    protocol = {
+        "pooling_method": "last",
+        "padding_side": "left",
+        "append_token": "pad",
+        "query_prompt_template": "Instruct: {task_description}\nQuery:{query}",
+        "document_prompt_template": "{document}",
+        "max_length": 8192,
+    }
+    protocol.update(load_embedding_protocol(args.model))
+    if args.model_config:
+        raw_model_config = load_raw_config_file(args.model_config)
+        protocol.update(
+            {
+                key: raw_model_config[key]
+                for key in protocol
+                if key in raw_model_config
+            }
+        )
+        protocol["max_length"] = raw_model_config.get(
+            "embedding_max_length", protocol["max_length"]
+        )
+
+    tokenizer = AutoTokenizer.from_pretrained(
+        args.model,
+        padding_side=protocol["padding_side"],
+        trust_remote_code=True,
+    )
     model = AutoModel.from_pretrained(
         args.model,
         torch_dtype=torch.float32,  # fp32 throughout: the gaps being measured are ~1e-2
@@ -91,18 +125,25 @@ def main() -> None:
         data_path=args.data_path,
         per_dataset_max_samples=args.num_batches * args.batch_size,
         q_max_len=args.q_max_len,
-        d_max_len=args.d_max_len,
+        d_max_len=min(args.d_max_len, protocol["max_length"]),
         relevance_scheme="binary",
         slate_size=args.slate_size,
         file_glob=args.file_glob,
         include_sources=args.include_sources,
     )
-    dataset = EmbeddingDataset(data_args=data_args, batch_size=args.batch_size, split="train")
+    dataset = EmbeddingDataset(
+        data_args=data_args,
+        batch_size=args.batch_size,
+        split="train",
+        query_prompt_template=protocol["query_prompt_template"],
+    )
     collator = EmbeddingDataCollator(
         tokenizer=tokenizer,
-        query_max_length=args.q_max_len,
-        doc_max_length=args.d_max_len,
+        query_max_length=min(args.q_max_len, protocol["max_length"]),
+        doc_max_length=min(args.d_max_len, protocol["max_length"]),
         relevance_scheme="binary",
+        document_prompt_template=protocol["document_prompt_template"],
+        append_token=protocol["append_token"],
     )
 
     gaps: list[torch.Tensor] = []
@@ -118,12 +159,12 @@ def main() -> None:
         batch_size = batch["relevance_labels"].size(0)
         slate = batch["relevance_labels"].size(1)
 
-        query = encode(model, tokenizer, batch["query"], device)
+        query = encode(model, batch["query"], device, protocol["pooling_method"])
         documents = encode(
             model,
-            tokenizer,
             build_slate_inputs(batch["positive_document"], batch["negative_document"], batch_size, slate),
             device,
+            protocol["pooling_method"],
         ).reshape(batch_size, slate, -1)
 
         scores = torch.einsum("bd,bnd->bn", query, documents)
