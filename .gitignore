@@ -237,3 +237,6 @@ paper/**/main.pdf
 
 # Generated audit artifacts stay local; Markdown reports remain tracked.
 /paper/audits/**/*.json
+
+# Local verification suite; kept outside version control by project choice.
+/scripts/tests/

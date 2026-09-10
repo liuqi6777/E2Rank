@@ -15,9 +15,73 @@ import re
 import shutil
 import tempfile
 import unicodedata
+from typing import Any, Iterator
+
+import pyarrow.parquet as pq
 
 ROOT = Path(__file__).resolve().parents[1]
-from convert_reasonrank import iter_parquet_rows, parse_query_and_passages, parse_teacher_ranking, _user_prompt
+PASSAGE_MARKER = re.compile(r"(?m)^\[(\d+)\]\s+")
+LABEL_FORMAT = re.compile(r"^\s*\[\d+\](?:\s*>\s*\[\d+\])*\s*$")
+SEARCH_QUERY_MARKER = "\nSearch Query: "
+RANK_INSTRUCTION_MARKER = "\nRank the "
+
+
+def iter_parquet_rows(path: Path, batch_size: int = 128) -> Iterator[dict[str, Any]]:
+    parquet = pq.ParquetFile(path)
+    for batch in parquet.iter_batches(batch_size=batch_size):
+        yield from batch.to_pylist()
+
+
+def _user_prompt(messages: Any) -> str:
+    if not isinstance(messages, list):
+        raise ValueError("'prompt' must be a list of chat messages")
+    for message in reversed(messages):
+        if isinstance(message, dict) and message.get("role") == "user":
+            content = message.get("content")
+            if isinstance(content, str) and content:
+                return content
+            break
+    raise ValueError("'prompt' does not contain a non-empty user message")
+
+
+def parse_query_and_passages(prompt: str) -> tuple[str, list[str]]:
+    passage_section, separator, footer = prompt.rpartition(SEARCH_QUERY_MARKER)
+    if not separator:
+        raise ValueError("user prompt is missing the final 'Search Query:' marker")
+
+    query, separator, _ = footer.partition(RANK_INSTRUCTION_MARKER)
+    query = query.strip()
+    if not separator or not query:
+        raise ValueError("user prompt has a malformed final query/ranking instruction")
+
+    matches = list(PASSAGE_MARKER.finditer(passage_section))
+    passage_numbers = [int(match.group(1)) for match in matches]
+    expected_numbers = list(range(1, len(matches) + 1))
+    if passage_numbers != expected_numbers:
+        raise ValueError(
+            f"passage identifiers must be consecutive from 1, got {passage_numbers}"
+        )
+
+    passages = []
+    for index, match in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(passage_section)
+        passage = passage_section[match.end() : end].strip()
+        if not passage:
+            raise ValueError(f"passage [{index + 1}] is empty")
+        passages.append(passage)
+    return query, passages
+
+
+def parse_teacher_ranking(label: Any, candidate_count: int) -> list[int]:
+    if not isinstance(label, str) or not LABEL_FORMAT.fullmatch(label):
+        raise ValueError(f"malformed teacher label: {label!r}")
+    ranking = [int(value) for value in re.findall(r"\[(\d+)\]", label)]
+    expected = list(range(1, candidate_count + 1))
+    if sorted(ranking) != expected:
+        raise ValueError(
+            f"teacher label must be a permutation of {expected}, got {ranking}"
+        )
+    return ranking
 
 
 def validate_record(record):
@@ -78,8 +142,7 @@ READY_SCHEMA = 'embedding_candidates_v1'
 
 
 def document_key(text):
-    normalized = ' '.join(unicodedata.normalize('NFKC', text).casefold().split())
-    return hashlib.sha256(normalized.encode()).hexdigest()
+    return hashlib.sha256(normalize(text).encode()).hexdigest()
 
 
 def prepare_training_record(public, metadata):
@@ -257,29 +320,31 @@ def write_jsonl(path, rows):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--input', type=Path, default=ROOT/'data/audit_reasonrank_bright/reasonrank/train.parquet')
+    parser.add_argument('--data-dir', type=Path, default=ROOT/'data/audit_reasonrank_bright',
+                        help='Downloaded inputs and results/ from the BRIGHT audit')
     parser.add_argument('--output-dir', type=Path, default=ROOT/'data/processed/reasonrank_simple')
-    parser.add_argument('--audit-dir', type=Path, default=ROOT/'paper/audits/reasonrank_bright')
-    parser.add_argument('--internal-matches', type=Path, default=ROOT/'data/audit_reasonrank_bright/results/internal_query_matches.json')
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--split-seed', type=int, default=20260911)
     parser.add_argument('--dev-size', type=int, default=0)
     parser.add_argument('--include-msmarco', action='store_true')
     parser.add_argument('--compile-only', action='store_true', help='Compile existing public data and metadata for training')
     args = parser.parse_args()
+    args.input = args.data_dir / "reasonrank/train.parquet"
+    args.audit_dir = args.data_dir / "results"
+    args.internal_matches = args.audit_dir / "internal_query_matches.json"
     if args.compile_only:
         for path in compile_directory(args.output_dir):
             print(path)
         return
     if args.output_dir.exists():
         raise FileExistsError(f'Output already exists; choose a new directory: {args.output_dir}')
-    fingerprints = json.loads((args.audit_dir/'download_manifest.json').read_text())
+    fingerprints = json.loads((args.data_dir/'download_manifest.json').read_text())
     expected = next(f for f in fingerprints['files'] if f['repo']=='liuwenhan/reasonrank_data_rl' and f['source_path']=='train.parquet')
     if sha(args.input) != expected['sha256']:
         raise ValueError('Input hash differs from audited parquet; exclusion row IDs are not portable')
     exclusions_path = args.audit_dir/'quarantine_manifest.json'
     exclusions = {r['row'] for r in json.loads(exclusions_path.read_text())['rows'] if r['split']=='train'}
-    pairs = json.loads(args.internal_matches.read_text())
+    pairs = json.loads(args.internal_matches.read_text()) if args.dev_size else []
     records, decisions, seen = [], [], set()
     for row_index, row in enumerate(iter_parquet_rows(args.input)):
         record = None
@@ -324,9 +389,9 @@ def main():
         write_json(stage/'manifest.json', dict(version=1,split_seed=args.split_seed,
             positive_selection_seed=args.seed, selection='fixed_budget_final_checkpoint' if not dev else 'independent_dev', input=dict(path=str(args.input.resolve()),sha256=sha(args.input),revision=expected['revision']),
             exclusions=dict(path=str(exclusions_path.resolve()),sha256=sha(exclusions_path)),
-            internal_matches=dict(path=str(args.internal_matches.resolve()),sha256=sha(args.internal_matches)),
+            internal_matches=dict(path=str(args.internal_matches.resolve()),sha256=sha(args.internal_matches)) if args.dev_size else None,
             artifacts=artifacts,split_audit=artifacts[-1],evaluation_protocol=None,
-            note='Data preparation complete; final evaluation protocol and masked trainer integration remain pending.'))
+            note='Prepared candidate data; padding and batch masks are handled by the trainer.'))
         stage.rename(args.output_dir)
     finally:
         if stage.exists():

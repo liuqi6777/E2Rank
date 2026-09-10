@@ -64,7 +64,7 @@ uv run --no-project --with pyarrow --with scikit-learn --with rapidfuzz python s
 
 ## 4. 现有 converter 不适合原样沿用
 
-`scripts/convert_reasonrank.py` 当前只取原始检索顺序前 16 篇，并丢弃候选不足 16 篇的记录；仅输出文本和 teacher ranking，主动忽略 `relevant_docids`。
+已退役的 `scripts/convert_reasonrank.py` 曾只取原始检索顺序前 16 篇，并丢弃候选不足 16 篇的记录；仅输出文本和 teacher ranking，主动忽略 `relevant_docids`。
 
 实测后果：
 
