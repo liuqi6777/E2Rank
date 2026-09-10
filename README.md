@@ -135,41 +135,32 @@ bash ./scripts/run_baseline.sh \
   --base-eval configs/eval/default.yaml
 ```
 
-The revised paper controls use `configs/baseline/infonce_in_batch.yaml` and
-`configs/baseline/ranknet_in_batch.yaml`. They append the other samples' rank-1
-documents as detached cross-query candidates, matching the candidate pool of
-the primary in-batch nDCG reward.
+### Paper experiments: one entry point
 
-The revised paper experiments initialize directly from an existing embedding
-checkpoint and are grouped by purpose:
+Edit [configs/experiments.yaml](configs/experiments.yaml) for common model, data,
+learning-rate and step settings. Use the same entry point for all three groups:
 
 ```bash
-bash scripts/experiments/posttrain_smoke.sh
-bash scripts/experiments/posttrain_core.sh
-bash scripts/experiments/posttrain_rewards.sh
-bash scripts/experiments/posttrain_ablations.sh
-bash scripts/experiments/posttrain_data_v2.sh
-bash scripts/experiments/posttrain_eval.sh full
-# Optional, after selecting an independent second embedding initialization:
-TRANSFER_MODEL_CONFIG=... TRANSFER_MODEL_ID=... \
-  bash scripts/experiments/posttrain_transfer.sh
+.venv/bin/python scripts/experiment.py prepare G1
+.venv/bin/python scripts/experiment.py list
+.venv/bin/python scripts/experiment.py show G1-J-RL
+.venv/bin/python scripts/experiment.py check G1
+.venv/bin/python scripts/experiment.py train G1-J-RL --gpus 4
 ```
 
-All use `Qwen/Qwen3-Embedding-0.6B` and seed 42 by default. Each model config declares
-its default training recipe with `_default_train_`; the standard runners select it
-automatically. They use
-the original E2Rank listwise data; `posttrain_data_v2.sh` uses the merged `train_v2`
-corpus. Override their settings with `INIT_MODEL_CONFIG`, `INIT_MODEL_ID`,
-`POSTTRAIN_DATASET`, `POSTTRAIN_TRAIN_CONFIG`, `POSTTRAIN_GRPO_CONFIG`, `SEED`,
-and `CKPT_ROOT`. Post-training runs use `configs/eval/mteb.yaml` by default, so
-the `MTEB(eng, v1, subset)` benchmark runs on the initial weights and every
-saved checkpoint. Set `POSTTRAIN_EVAL_CONFIG=configs/eval/default.yaml` to
-disable it or point `POSTTRAIN_EVAL_CONFIG` at another eval preset. Set
-`DRY_RUN=1` to inspect every command without launching training.
-`posttrain_eval.sh` evaluates the initialization and every checkpoint under
-`CKPT_ROOT`; set `EVAL_INITIALIZATION=0` or override `CKPT_GLOB` when needed.
-The older `stage1.sh` / `phase*.sh` scripts are retained for the superseded
-from-scratch experiment path and its ablations.
+G1 data is already prepared in `data/processed/reasonrank_simple/`; `prepare`
+refuses to overwrite it. Training rows expose only `id`, `query`, `positive`,
+`negatives`, and `source`. Preprocessing compiles `train.ready.jsonl` with ordered
+candidates, labels, and deduplication keys. The loader reads that file directly;
+only padding/masks and current-batch filtering remain dynamic. All 4,963 cleaned
+records remain in train.
+
+`show` is read-only; use `--verbose` for the internal resolved configuration.
+`check` still reports implementation/protocol requirements before GPU training.
+Advanced presets and the current readiness notes are in the
+[experiment guide](configs/experiments/iclr2027/README.md).
+The older `posttrain_*.sh`, `stage1.sh`, and `phase*.sh` scripts remain historical
+recipes and are not the G1/G2/G3 paper run set.
 
 ### Using a non-Qwen embedding checkpoint
 

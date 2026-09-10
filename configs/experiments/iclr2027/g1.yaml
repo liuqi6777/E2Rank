@@ -1,0 +1,28 @@
+_base_:
+  - ../../train/posttrain.yaml
+  - ../../model/qwen3_embedding_0.6b.yaml
+  - ../../eval/default.yaml
+# Provisional shape only. Numeric calibration/budget lives in suite protocol.
+data_path: data/processed/reasonrank_simple/train.ready.jsonl
+per_dataset_max_samples: null
+q_max_len: 512
+d_max_len: 1024
+relevance_scheme: binary
+slate_size: 20 # Legacy parser placeholder, NOT permission to truncate/filter to 20.
+file_glob: '*.jsonl'
+batch_per_length_bucket: false
+index_cache_dir: .cache/dataset_index/g1
+dev_samples_per_source: 0 # Disable old independent RNG splits; manifest loader is required.
+num_train_epochs: 1
+max_steps: -1
+save_steps: 100
+overwrite_output_dir: false
+report_to: none
+lora_enabled: false
+seed: 42
+data_seed: 42
+
+# Initial no-dev recipe: fixed final checkpoint, shared by CL/RankNet/RL.
+optim: adamw_torch
+max_grad_norm: 1.0
+save_total_limit: 2

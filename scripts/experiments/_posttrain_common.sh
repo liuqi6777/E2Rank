@@ -4,6 +4,9 @@
 
 set -euo pipefail
 
+# Historical recipes: the current paper suite has explicit G1/G2/G3 contracts.
+printf '%s\n' '[legacy experiment recipe] Current plan: python scripts/experiments/iclr2027.py list' >&2
+
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 

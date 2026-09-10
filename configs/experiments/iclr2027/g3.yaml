@@ -1,0 +1,13 @@
+_base_:
+  - ../../rag/base.yaml
+# One QA source first; data/index manifests must agree with this resolved setting.
+rag_train_sources: nq
+rag_candidate_manifest: data/rag/candidates/nq_train.jsonl
+max_steps: -1
+save_steps: 100
+save_total_limit: null
+overwrite_output_dir: false
+report_to: none
+lora_enabled: false
+seed: 42
+data_seed: 42

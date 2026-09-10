@@ -230,3 +230,10 @@ paper/**/main.pdf
 !paper/**/figs/*.pdf
 
 .DS_Store
+
+# Local manuscript sources and figure-generation scripts (Markdown stays tracked).
+/paper/iclr2027/
+/paper/scripts/
+
+# Generated audit artifacts stay local; Markdown reports remain tracked.
+/paper/audits/**/*.json

@@ -1,0 +1,23 @@
+_base_:
+  - ../../train/posttrain.yaml
+  - ../../eval/default.yaml
+# Base checkpoint and embedding protocol intentionally have no fallback.
+data_path: data/processed/e2rank/train.jsonl
+per_dataset_max_samples: null
+q_max_len: 512
+d_max_len: 1024
+relevance_scheme: graded
+slate_size: 16
+file_glob: '*.jsonl'
+batch_per_length_bucket: false
+index_cache_dir: .cache/dataset_index/g2
+dev_samples_per_source: 0
+num_train_epochs: 1
+max_steps: -1
+save_steps: 100
+save_total_limit: null
+overwrite_output_dir: false
+report_to: none
+lora_enabled: false
+seed: 42
+data_seed: 42

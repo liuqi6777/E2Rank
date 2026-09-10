@@ -1,0 +1,24 @@
+# Common settings for the paper experiments. Internal objectives/masks stay in presets.
+output_dir: checkpoints/iclr2027
+
+G1:
+  data: data/processed/reasonrank_simple
+  model: Qwen/Qwen3-Embedding-0.6B
+  learning_rate: 0.000005
+  steps: 450
+  checkpoint_every: 100
+  batch_size: 32
+  micro_batch_size: 8
+
+G2:
+  model: null  # Choose the base LLM before training.
+  learning_rate: null
+  steps: null
+  warmup_steps: null
+  checkpoint_every: null
+
+G3:
+  model: Qwen/Qwen3-Embedding-0.6B
+  learning_rate: null
+  steps: null
+  checkpoint_every: null
