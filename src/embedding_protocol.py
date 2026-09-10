@@ -181,3 +181,15 @@ def pool_embeddings(
         )
 
     return F.normalize(embeddings, dim=-1, p=2) if normalize else embeddings
+
+
+def encode_valid_candidates(encode, inputs, candidate_mask):
+    """Encode real rows only, scattering back zeros with no padding gradient."""
+    flat_mask = candidate_mask.reshape(-1).bool()
+    if not flat_mask.any():
+        raise ValueError("A document batch must contain a valid candidate")
+    compact = {key: value[flat_mask] for key, value in inputs.items()}
+    vectors = encode(compact)
+    return vectors.new_zeros(flat_mask.numel(), vectors.size(-1)).index_copy(
+        0, flat_mask.nonzero(as_tuple=True)[0], vectors
+    )

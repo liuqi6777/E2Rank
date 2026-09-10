@@ -1,4 +1,6 @@
 import glob
+import hashlib
+import unicodedata
 import json
 import os
 import random
@@ -6,10 +8,17 @@ from collections import defaultdict
 from typing import Any, Dict, Iterator, Sequence
 
 import torch
+import torch.nn.functional as F
 import transformers
 from torch.utils.data import Dataset, Sampler
 
 from embedding_protocol import append_configured_token, format_embedding_text
+
+
+def document_key(text):
+    """Identify duplicate documents in uncompiled teacher-ranking data."""
+    normalized = " ".join(unicodedata.normalize("NFKC", text).casefold().split())
+    return hashlib.sha256(normalized.encode()).hexdigest()
 
 
 TASK_PROMPTS = {
@@ -128,6 +137,8 @@ def normalize_listwise_record(record: dict[str, Any]) -> dict[str, Any]:
     teacher ordering are preserved so graded rewards and rank-based supervised losses
     consume exactly the same supervision.
     """
+    if record.get("schema") is not None or "relevance" in record:
+        raise ValueError("Use the prepared candidate format for explicit relevance records")
     query = record.get("query")
     documents = record.get("document")
     ranking = record.get("ranking")
@@ -476,7 +487,11 @@ class EmbeddingDataset(Dataset):
         return json.loads(handle.readline())
 
     def _convert(self, file_id: int, record: dict[str, Any]) -> dict[str, Any] | None:
-        if "document" in record or "ranking" in record:
+        if record.get("schema") == "embedding_candidates_v1":
+            converted = dict(record)
+        elif "positive" in record or "negatives" in record:
+            raise ValueError("Compile public records during preprocessing and load train.ready.jsonl")
+        elif "document" in record or "ranking" in record:
             if "document" not in record or "ranking" not in record:
                 raise ValueError(
                     "Listwise records must contain both 'document' and 'ranking'"
@@ -695,39 +710,68 @@ class EmbeddingDataCollator:
             return_tensors="pt",
         )
 
-        ranking = torch.tensor([instance["ranking"] for instance in instances], dtype=torch.long) - 1
-        original_relevance_labels = build_relevance_labels(
-            ranking=ranking,
-            scheme=self.relevance_scheme,
-        )
-        # Dense teacher-order targets for rank-based supervised objectives. ``ranking``
-        # maps rank position -> original document index; scatter inverts that mapping
-        # and assigns a larger value to every better-ranked document. Unlike the
-        # possibly coarsened relevance labels, these preserve the full permutation.
-        original_rank_labels = build_rank_labels(ranking)
+        explicit = ["relevance" in instance for instance in instances]
+        if any("relevance" in item and item.get("schema") != "embedding_candidates_v1" for item in instances):
+            raise ValueError("Explicit relevance must use preprocessed embedding_candidates_v1 records")
+        if any(explicit) and not all(explicit):
+            raise ValueError("Do not mix explicit relevance and teacher-grade records in one batch")
+        width = max(len(instance["document"]) for instance in instances)
+        if width < 2:
+            raise ValueError("At least two candidates are required")
+        positive_documents, negative_documents = [], []
+        ordered_keys, known_id_sets = [], []
+        relevance_labels, rank_labels, masks, ordered_ids = [], [], [], []
+        for instance in instances:
+            docs = instance["document"]
+            n = len(docs)
+            ready = instance.get("schema") == "embedding_candidates_v1"
+            if ready:
+                labels = torch.tensor(instance["relevance"], dtype=torch.float32)
+                ranks = torch.tensor(instance["rank_labels"], dtype=torch.float32)
+                if len(labels) != n or len(ranks) != n or labels[0] != 1 or labels[1:].any():
+                    raise ValueError("Prepared labels must match candidates with one positive first")
+                positive_index = 0
+            else:
+                ranking = torch.tensor([instance["ranking"]], dtype=torch.long) - 1
+                labels = build_relevance_labels(ranking, self.relevance_scheme)[0]
+                ranks = build_rank_labels(ranking)[0]
+                positive_index = int(ranking[0, 0])
+            order = list(range(n)) if ready else [positive_index] + [i for i in range(n) if i != positive_index]
+            reordered = [docs[i] for i in order]
+            positive_documents.append(reordered[0])
+            negative_documents.extend(reordered[1:] + [""] * (width-n))
+            relevance_labels.append(F.pad(labels[order], (0, width-n)))
+            rank_labels.append(F.pad(ranks[order], (0, width-n)))
+            masks.append([True]*n + [False]*(width-n))
+            ids = instance.get("document_ids", [None]*n)
+            ordered_ids.append([ids[i] for i in order] + [None]*(width-n))
+            keys = instance["document_keys"] if ready else [document_key(d) for d in docs]
+            if len(keys) != n or len(ids) != n:
+                raise ValueError("Candidate metadata must match document count")
+            ordered_keys.append([keys[i] for i in order] + [None]*(width-n))
+            known_id_sets.append(set(instance["known_document_ids"]) if ready else
+                                 set(instance.get("original_relevant_docids", [])) | set(ids))
 
-        positive_documents: list[str] = []
-        negative_documents: list[str] = []
-        relevance_labels: list[torch.Tensor] = []
-        rank_labels: list[torch.Tensor] = []
-        for sample_idx, instance in enumerate(instances):
-            documents_for_sample = instance["document"]
-            positive_index = int(ranking[sample_idx, 0].item())
-            negative_indices = [
-                document_idx
-                for document_idx in range(len(documents_for_sample))
-                if document_idx != positive_index
-            ]
-
-            positive_documents.append(documents_for_sample[positive_index])
-            negative_documents.extend(documents_for_sample[document_idx] for document_idx in negative_indices)
-            ordered_indices = torch.tensor(
-                [positive_index, *negative_indices],
-                device=original_relevance_labels.device,
-                dtype=torch.long,
-            )
-            relevance_labels.append(original_relevance_labels[sample_idx].gather(dim=0, index=ordered_indices))
-            rank_labels.append(original_rank_labels[sample_idx].gather(dim=0, index=ordered_indices))
+        # Separate duplicate filters for positive-only and all-document cross pools.
+        batch_size = len(instances)
+        cross_masks = []
+        for positive_only in (True, False):
+            cross = torch.zeros(batch_size, batch_size, width, dtype=torch.bool)
+            for i, instance in enumerate(instances):
+                seen = set(ordered_keys[i]) - {None}
+                known_ids = known_id_sets[i]
+                for j, other in enumerate(instances):
+                    if i == j:
+                        continue
+                    for k in range(1 if positive_only else width):
+                        if not masks[j][k]:
+                            continue
+                        key = ordered_keys[j][k]
+                        known = (instance.get("source") == other.get("source") and ordered_ids[j][k] in known_ids)
+                        if key not in seen and not known:
+                            cross[i,j,k] = True
+                            seen.add(key)
+            cross_masks.append(cross)
 
         documents = [
             format_embedding_text(self.document_prompt_template, document)
@@ -755,4 +799,7 @@ class EmbeddingDataCollator:
             },
             "relevance_labels": torch.stack(relevance_labels),
             "rank_labels": torch.stack(rank_labels),
+            "candidate_mask": torch.tensor(masks, dtype=torch.bool),
+            "in_batch_positive_mask": cross_masks[0][..., 0],
+            "in_batch_candidate_mask": cross_masks[1],
         }

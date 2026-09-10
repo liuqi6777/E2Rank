@@ -19,7 +19,7 @@ from config import (
     normalize_advantage_norm_mode,
 )
 from embedding_data import build_slate_inputs
-from embedding_protocol import pool_embeddings
+from embedding_protocol import pool_embeddings, encode_valid_candidates
 from rewards import (
     SUPPORTED_REWARD_TYPES,
     compute_reward_terms,
@@ -148,6 +148,7 @@ class _ActionComponent:
     # action_components config, so it is identical on every rank -- a requirement of the
     # cross-rank metric reduce, which walks accumulator keys in insertion order.
     name: str = ""
+    document_mask: torch.Tensor | None = None
 
     @property
     def is_active(self) -> bool:
@@ -438,41 +439,28 @@ class GRPO(nn.Module):
             num_samples=self.group_size,
         )
 
-    def _sample_document_embeddings(
-        self,
-        rollout_document_embeddings: torch.Tensor,
-        kappa: torch.Tensor,
-    ) -> torch.Tensor:
+    def _sample_document_embeddings(self, rollout_document_embeddings, kappa, document_mask=None):
         batch_size, slate_length, dim = rollout_document_embeddings.shape
-        samples = self._draw(
-            rollout_document_embeddings.detach().reshape(batch_size * slate_length, dim),
-            kappa,
-        )
-        return samples.reshape(batch_size, slate_length, self.group_size, dim).permute(0, 2, 1, 3)
+        if document_mask is None:
+            document_mask = torch.ones((batch_size, slate_length), device=rollout_document_embeddings.device, dtype=torch.bool)
+        flat_mask = document_mask.reshape(-1)
+        valid = rollout_document_embeddings.detach().reshape(-1, dim)[flat_mask]
+        samples = self._draw(valid, kappa)
+        full = samples.new_zeros(batch_size * slate_length, self.group_size, dim)
+        full = full.index_copy(0, flat_mask.nonzero(as_tuple=True)[0], samples)
+        return full.reshape(batch_size, slate_length, self.group_size, dim).permute(0, 2, 1, 3)
 
-    def _document_component(
-        self,
-        rollout_embeddings: torch.Tensor,
-        policy_embeddings: torch.Tensor | None,
-        kappa: torch.Tensor,
-        sample: bool,
-        role_name: str,
-        name: str,
-    ) -> _ActionComponent:
-        """One document-side action component, sampled or frozen at its rollout mean."""
+    def _document_component(self, rollout_embeddings, policy_embeddings, kappa, sample,
+                            role_name, name, document_mask=None):
         if not sample:
-            return _ActionComponent(role="document", rollout_embeddings=rollout_embeddings, name=name)
+            return _ActionComponent(role="document", rollout_embeddings=rollout_embeddings,
+                                    name=name, document_mask=document_mask)
         if policy_embeddings is None:
-            raise ValueError(
-                f"policy_{role_name}_document_embeddings are required when {role_name} is sampled"
-            )
+            raise ValueError(f"policy_{role_name}_document_embeddings required when sampled")
         return _ActionComponent(
-            role="document",
-            rollout_embeddings=rollout_embeddings,
-            policy_embeddings=policy_embeddings,
-            sampled_embeddings=self._sample_document_embeddings(rollout_embeddings, kappa),
-            kappa=kappa,
-            name=name,
+            role="document", rollout_embeddings=rollout_embeddings, policy_embeddings=policy_embeddings,
+            sampled_embeddings=self._sample_document_embeddings(rollout_embeddings, kappa, document_mask),
+            kappa=kappa, name=name, document_mask=document_mask,
         )
 
     @staticmethod
@@ -631,7 +619,8 @@ class GRPO(nn.Module):
         if self.in_batch_use_sampled_documents:
             return component
         return _ActionComponent(
-            role=component.role, rollout_embeddings=component.rollout_embeddings, name=component.name
+            role=component.role, rollout_embeddings=component.rollout_embeddings, name=component.name,
+            document_mask=component.document_mask,
         )
 
     def _frozen_doc_scale(self, document_components: Sequence[_ActionComponent]) -> torch.Tensor | None:
@@ -661,6 +650,9 @@ class GRPO(nn.Module):
         relevance_labels: torch.Tensor,
         rank_labels: torch.Tensor | None,
         components: Sequence[_ActionComponent],
+        candidate_mask=None,
+        in_batch_positive_mask=None,
+        in_batch_candidate_mask=None,
     ) -> tuple[torch.Tensor, dict[str, torch.Tensor], torch.Tensor, torch.Tensor]:
         active_components = tuple(component for component in components if component.is_active)
         query_components = [component for component in components if component.role == "query"]
@@ -695,6 +687,7 @@ class GRPO(nn.Module):
                         policy_document_embeddings=component.policy_embeddings,
                         sampled_document_embeddings=component.sampled_embeddings,
                         kappa=component.kappa,
+                        document_mask=component.document_mask,
                     )
                 )
             else:
@@ -717,6 +710,10 @@ class GRPO(nn.Module):
             if frozen_doc_scale is not None and not document_component.is_active:
                 score_table = score_table * frozen_doc_scale.to(score_table.dtype)
             if cross:
+                if document_component.document_mask is not None:
+                    mask = document_component.document_mask
+                    shape = [1, batch_size] + [1] * (score_table.ndim-3) + [mask.size(-1)]
+                    score_table = score_table.masked_fill(~mask.reshape(shape), float("-inf"))
                 score_table = self._mask_cross_batch_diagonal(score_table, batch_size)
             return self._expand_score_table(
                 score_table=score_table,
@@ -739,17 +736,23 @@ class GRPO(nn.Module):
         # the UNION of what the terms ask for and shared by all of them.
         if batch_size > 1 and reward_terms_need_in_batch_positives(self.reward_terms):
             in_batch_positive_scores = score_grid(document_components[0], cross=True)[..., 0]
+            if in_batch_positive_mask is not None:
+                shape = [batch_size] + [1] * num_components + [batch_size]
+                in_batch_positive_scores = in_batch_positive_scores.masked_fill(
+                    ~in_batch_positive_mask.reshape(shape), float("-inf"))
 
         if batch_size > 1 and reward_terms_need_in_batch_candidates(self.reward_terms):
-            in_batch_candidate_scores = torch.cat(
-                [
-                    score_grid(document_component, cross=True).reshape(
-                        batch_size, *([group_size] * num_components), -1
-                    )
-                    for document_component in document_components
-                ],
-                dim=-1,
-            )
+            tables, start = [], 0
+            for component in document_components:
+                table = score_grid(component, cross=True)
+                length = component.rollout_embeddings.size(1)
+                if in_batch_candidate_mask is not None:
+                    mask = in_batch_candidate_mask[..., start:start+length]
+                    shape = [batch_size] + [1]*num_components + [batch_size, length]
+                    table = table.masked_fill(~mask.reshape(shape), float("-inf"))
+                tables.append(table.reshape(batch_size, *([group_size]*num_components), -1))
+                start += length
+            in_batch_candidate_scores = torch.cat(tables, dim=-1)
 
         term_rewards = {
             name: reward.float()
@@ -757,6 +760,7 @@ class GRPO(nn.Module):
                 self.reward_terms,
                 scores=scores,
                 relevance_labels=relevance_labels,
+                candidate_mask=candidate_mask,
                 rank_labels=rank_labels,
                 in_batch_positive_scores=in_batch_positive_scores,
                 in_batch_candidate_scores=in_batch_candidate_scores,
@@ -871,6 +875,7 @@ class GRPO(nn.Module):
         policy_embeddings: torch.Tensor,
         reference_embeddings: torch.Tensor,
         kappa: torch.Tensor,
+        document_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         # KL between two vMF distributions with the same concentration:
         #   KL(vMF(μ_pol, κ) || vMF(μ_ref, κ)) = κ · A_d(κ) · (1 - μ_pol^T μ_ref),
@@ -880,7 +885,10 @@ class GRPO(nn.Module):
         alignment = (policy_embeddings.float() * reference_embeddings).sum(dim=-1)
         kappa = kappa.float()
         mean_resultant_length = bessel_ratio(policy_embeddings.size(-1) / 2.0, kappa)
-        return kappa * mean_resultant_length * (1.0 - alignment).mean()
+        distances = 1.0 - alignment
+        if document_mask is not None:
+            distances = (distances * document_mask).sum(-1) / document_mask.sum(-1).clamp_min(1)
+        return kappa * mean_resultant_length * distances.mean()
 
     @staticmethod
     def _normalize_policy(
@@ -913,6 +921,9 @@ class GRPO(nn.Module):
         reference_positive_document_embeddings: torch.Tensor | None = None,
         reference_negative_document_embeddings: torch.Tensor | None = None,
         rank_labels: torch.Tensor | None = None,
+        candidate_mask: torch.Tensor | None = None,
+        in_batch_positive_mask: torch.Tensor | None = None,
+        in_batch_candidate_mask: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, dict[str, torch.Tensor], dict[str, torch.Tensor], torch.Tensor, torch.Tensor]:
         if relevance_labels is None:
             raise ValueError("relevance_labels are required for GRPO training")
@@ -945,6 +956,12 @@ class GRPO(nn.Module):
                 f"got ranks={tuple(rank_labels.shape)} labels={tuple(relevance_labels.shape)}"
             )
 
+        if candidate_mask is None:
+            candidate_mask = torch.ones_like(relevance_labels, dtype=torch.bool)
+        if candidate_mask.shape != relevance_labels.shape or not candidate_mask[:, 0].all():
+            raise ValueError("candidate_mask must match labels and keep the positive at position 0")
+        if candidate_mask.dtype != torch.bool:
+            raise ValueError("candidate_mask must be bool")
         rollout_query_embeddings = F.normalize(rollout_query_embeddings, dim=-1)
         policy_query_embeddings = self._normalize_policy(
             policy_query_embeddings,
@@ -1015,6 +1032,7 @@ class GRPO(nn.Module):
                 sample=True,
                 role_name="positive",
                 name="documents",
+                document_mask=candidate_mask,
             ))
         else:
             components.append(self._document_component(
@@ -1024,6 +1042,7 @@ class GRPO(nn.Module):
                 sample=self.sample_positive,
                 role_name="positive",
                 name="positive",
+                document_mask=candidate_mask[:, :1],
             ))
             components.append(self._document_component(
                 rollout_embeddings=rollout_negative_document_embeddings,
@@ -1032,12 +1051,16 @@ class GRPO(nn.Module):
                 sample=self.sample_negative,
                 role_name="negative",
                 name="negative",
+                document_mask=candidate_mask[:, 1:],
             ))
 
         loss, reward_stats, advantages, degenerate_frac = self._compute_component_loss(
             relevance_labels=relevance_labels,
             rank_labels=rank_labels,
             components=tuple(components),
+            candidate_mask=candidate_mask,
+            in_batch_positive_mask=in_batch_positive_mask,
+            in_batch_candidate_mask=in_batch_candidate_mask,
         )
 
         kl = torch.zeros((), device=loss.device, dtype=torch.float32)
@@ -1060,7 +1083,7 @@ class GRPO(nn.Module):
                     dim=1,
                 )
                 kl_terms.append(
-                    self._kl_term(policy_document_embeddings, reference_document_embeddings, kappa)
+                    self._kl_term(policy_document_embeddings, reference_document_embeddings, kappa, candidate_mask)
                 )
             else:
                 for role_name, sampled, policy_embeddings, reference_embeddings in (
@@ -1084,7 +1107,7 @@ class GRPO(nn.Module):
                             f"reference_{role_name}_document_embeddings required when kl_coef > 0 "
                             f"and {role_name} is sampled"
                         )
-                    kl_terms.append(self._kl_term(policy_embeddings, reference_embeddings, kappa))
+                    kl_terms.append(self._kl_term(policy_embeddings, reference_embeddings, kappa, candidate_mask[:, :1] if role_name == "positive" else candidate_mask[:, 1:]))
             if kl_terms:
                 kl = torch.stack(kl_terms).sum()
                 loss = loss + self.kl_coef * kl
@@ -1146,6 +1169,9 @@ class GRPOModel(nn.Module):
         negative_document: Dict[str, torch.Tensor] = None,
         relevance_labels: torch.Tensor = None,
         rank_labels: torch.Tensor = None,
+        candidate_mask: torch.Tensor = None,
+        in_batch_positive_mask: torch.Tensor = None,
+        in_batch_candidate_mask: torch.Tensor = None,
     ) -> GRPOModelOutput:
         if query is None:
             raise ValueError("query inputs are required for GRPO training")
@@ -1157,6 +1183,8 @@ class GRPOModel(nn.Module):
             raise ValueError("relevance_labels are required for GRPO training")
 
         batch_size, slate_length = relevance_labels.shape
+        if candidate_mask is None:
+            candidate_mask = torch.ones_like(relevance_labels, dtype=torch.bool)
         if self.grpo.sample_query:
             policy_query_embeddings = self.encode(query)
             rollout_query_embeddings = policy_query_embeddings.detach()
@@ -1175,7 +1203,7 @@ class GRPOModel(nn.Module):
 
         sample_document = self.grpo.sample_positive or self.grpo.sample_negative
         if sample_document:
-            encoded_document_embeddings = self.encode(document_inputs)
+            encoded_document_embeddings = encode_valid_candidates(self.encode, document_inputs, candidate_mask)
             policy_document_embeddings = encoded_document_embeddings.reshape(batch_size, slate_length, -1)
             rollout_document_embeddings = policy_document_embeddings.detach()
             policy_positive_document_embeddings = (
@@ -1186,7 +1214,7 @@ class GRPOModel(nn.Module):
             )
         else:
             with torch.no_grad():
-                encoded_document_embeddings = self.encode(document_inputs)
+                encoded_document_embeddings = encode_valid_candidates(self.encode, document_inputs, candidate_mask)
             rollout_document_embeddings = encoded_document_embeddings.detach().reshape(batch_size, slate_length, -1)
             policy_positive_document_embeddings = None
             policy_negative_document_embeddings = None
@@ -1211,7 +1239,7 @@ class GRPOModel(nn.Module):
                         if self.grpo.sample_query:
                             reference_query_embeddings = self.encode(query)
                         if sample_document:
-                            encoded_reference_documents = self.encode(document_inputs).reshape(
+                            encoded_reference_documents = encode_valid_candidates(self.encode, document_inputs, candidate_mask).reshape(
                                 batch_size, slate_length, -1
                             )
                             if self.grpo.sample_positive:
@@ -1227,6 +1255,9 @@ class GRPOModel(nn.Module):
             rollout_negative_document_embeddings=rollout_negative_document_embeddings,
             relevance_labels=relevance_labels,
             rank_labels=rank_labels,
+            candidate_mask=candidate_mask,
+            in_batch_positive_mask=in_batch_positive_mask,
+            in_batch_candidate_mask=in_batch_candidate_mask,
             policy_query_embeddings=policy_query_embeddings,
             policy_positive_document_embeddings=policy_positive_document_embeddings,
             policy_negative_document_embeddings=policy_negative_document_embeddings,

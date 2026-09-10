@@ -362,6 +362,7 @@ def compute_reward_terms(
     in_batch_positive_scores: torch.Tensor | None = None,
     in_batch_candidate_scores: torch.Tensor | None = None,
     rank_labels: torch.Tensor | None = None,
+    candidate_mask: torch.Tensor | None = None,
 ) -> dict[str, torch.Tensor]:
     """Evaluate every reward term against one shared score table.
 
@@ -371,6 +372,7 @@ def compute_reward_terms(
     return {
         term.name: compute_reward_from_scores(
             scores=scores,
+            candidate_mask=candidate_mask,
             relevance_labels=relevance_labels,
             rank_labels=rank_labels,
             reward_type=term.type,
@@ -445,7 +447,29 @@ def compute_reward_from_scores(
     in_batch_candidate_scores: torch.Tensor | None = None,
     rank_labels: torch.Tensor | None = None,
     rbo_p: float = 0.9,
+    candidate_mask: torch.Tensor | None = None,
 ) -> torch.Tensor:
+    if candidate_mask is not None:
+        if candidate_mask.shape != relevance_labels.shape or candidate_mask.dtype != torch.bool:
+            raise ValueError("candidate_mask must be bool [batch, candidates]")
+        if not candidate_mask.any(dim=-1).all():
+            raise ValueError("Each query needs valid candidates")
+        if not candidate_mask.all():
+            # Exact compaction also handles order-based rewards (RBO/pairwise) and k=None.
+            # Preserve the batch's relevance convention when evaluating individual rows.
+            scheme = relevance_scheme or ("graded" if (relevance_labels > 1).any() else "binary")
+            return torch.cat([
+                compute_reward_from_scores(
+                    scores=scores[i:i+1][..., mask], relevance_labels=relevance_labels[i:i+1, mask],
+                    reward_type=reward_type, k=k,
+                    ndcg_in_batch_include_negatives=ndcg_in_batch_include_negatives,
+                    contrastive_use_in_batch_negatives=contrastive_use_in_batch_negatives,
+                    contrastive_temperature=contrastive_temperature, relevance_scheme=scheme,
+                    in_batch_positive_scores=None if in_batch_positive_scores is None else in_batch_positive_scores[i:i+1],
+                    in_batch_candidate_scores=None if in_batch_candidate_scores is None else in_batch_candidate_scores[i:i+1],
+                    rank_labels=None if rank_labels is None else rank_labels[i:i+1, mask], rbo_p=rbo_p,
+                ) for i, mask in enumerate(candidate_mask)
+            ], dim=0)
     squeeze_rollout_dim = False
     if scores.dim() == 2:
         scores = scores.unsqueeze(1)

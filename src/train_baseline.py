@@ -21,7 +21,7 @@ from config import (
     TrainingArguments,
 )
 from embedding_data import build_slate_inputs
-from embedding_protocol import pool_embeddings
+from embedding_protocol import pool_embeddings, encode_valid_candidates
 from grpo_trainer import EmbeddingTrainerMixin
 from mteb_eval_callback import MTEBEvalCallback
 from train import (
@@ -83,10 +83,14 @@ def compute_infonce_loss(
     scores: Tensor,
     relevance_labels: Tensor,
     temperature: float = 0.03,
+    candidate_mask: Tensor | None = None,
 ) -> Tensor:
     if temperature <= 0:
         raise ValueError(f"infonce temperature must be positive, got {temperature}")
 
+    if candidate_mask is not None:
+        scores = scores.masked_fill(~candidate_mask, float("-inf"))
+        relevance_labels = relevance_labels.masked_fill(~candidate_mask, 0)
     positive_exists = relevance_labels.max(dim=-1).values > 0
     positive_indices = relevance_labels.argmax(dim=-1, keepdim=True)
     scaled_scores = scores / float(temperature)
@@ -100,6 +104,7 @@ def compute_ranknet_loss(
     scores: Tensor,
     rank_labels: Tensor,
     temperature: float = 0.03,
+    candidate_mask: Tensor | None = None,
 ) -> Tensor:
     """Return the mean RankNet loss over all strictly ordered pairs per sample.
 
@@ -114,10 +119,14 @@ def compute_ranknet_loss(
             f"got {tuple(scores.shape)} and {tuple(rank_labels.shape)}"
         )
 
+    if candidate_mask is not None:
+        scores = scores.masked_fill(~candidate_mask, 0)
     scaled_scores = scores / float(temperature)
     score_differences = scaled_scores.unsqueeze(2) - scaled_scores.unsqueeze(1)
     label_differences = rank_labels.unsqueeze(2) - rank_labels.unsqueeze(1)
     ordered_pairs = label_differences > 0
+    if candidate_mask is not None:
+        ordered_pairs = ordered_pairs & candidate_mask.unsqueeze(2) & candidate_mask.unsqueeze(1)
     pair_losses = F.softplus(-score_differences)
     pair_counts = ordered_pairs.sum(dim=(1, 2))
     loss_sums = (pair_losses * ordered_pairs.to(pair_losses.dtype)).sum(dim=(1, 2))
@@ -156,8 +165,13 @@ class BaselineModel(nn.Module):
         negative_document: Dict[str, Tensor] = None,
         relevance_labels: Tensor = None,
         rank_labels: Tensor = None,
+        candidate_mask: Tensor = None,
+        in_batch_positive_mask: Tensor = None,
+        in_batch_candidate_mask: Tensor = None,
     ) -> BaselineModelOutput:
         batch_size, slate_length = relevance_labels.shape
+        if candidate_mask is None:
+            candidate_mask = torch.ones_like(relevance_labels, dtype=torch.bool)
         query_embeddings = self.encode(query)
         document_inputs = build_slate_inputs(
             positive_document=positive_document,
@@ -165,7 +179,7 @@ class BaselineModel(nn.Module):
             batch_size=batch_size,
             slate_length=slate_length,
         )
-        document_embeddings = self.encode(document_inputs).reshape(batch_size, slate_length, -1)
+        document_embeddings = encode_valid_candidates(self.encode, document_inputs, candidate_mask).reshape(batch_size, slate_length, -1)
         scores = torch.matmul(document_embeddings, query_embeddings.unsqueeze(-1)).squeeze(-1)
 
         if self.baseline_args.baseline_use_in_batch_negatives:
@@ -173,6 +187,12 @@ class BaselineModel(nn.Module):
                 query_embeddings=query_embeddings,
                 positive_embeddings=document_embeddings[:, 0],
             )
+            if in_batch_positive_mask is None:
+                extra_mask = torch.ones_like(in_batch_scores, dtype=torch.bool)
+            else:
+                off_diagonal = ~torch.eye(batch_size, device=scores.device, dtype=torch.bool)
+                extra_mask = in_batch_positive_mask[off_diagonal].reshape(batch_size, -1)
+            candidate_mask = torch.cat((candidate_mask, extra_mask), dim=-1)
             scores = torch.cat((scores, in_batch_scores), dim=-1)
             relevance_labels = torch.cat(
                 (relevance_labels, relevance_labels.new_zeros(in_batch_scores.shape)),
@@ -192,12 +212,14 @@ class BaselineModel(nn.Module):
                 scores=scores,
                 relevance_labels=relevance_labels,
                 temperature=self.baseline_args.baseline_temperature,
+                candidate_mask=candidate_mask,
             )
         elif self.baseline_args.baseline_loss == "ranknet":
             per_sample_loss = compute_ranknet_loss(
                 scores=scores,
                 rank_labels=rank_labels if rank_labels is not None else relevance_labels,
                 temperature=self.baseline_args.baseline_temperature,
+                candidate_mask=candidate_mask,
             )
         else:  # BaselineArguments validates this; keep the model failure explicit.
             raise ValueError(
