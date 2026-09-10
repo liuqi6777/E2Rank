@@ -161,7 +161,7 @@ work before final runs.
 For CL->CL, CL->RankNet, and CL->RL, hold fixed:
 
 - initial model weights;
-- LoRA target modules, rank, and initialization;
+- the full backbone as the trainable parameter set;
 - train/dev records and candidate slates;
 - own-slate plus cross-query-positive candidate construction;
 - trainable parameter set and query/document gradient participation;
@@ -306,7 +306,7 @@ and decoding settings. Initialize a separate trainable query encoder from `E0`.
 | E0 + query RL | exact retrieval reward | no | query-only RL test |
 | E0 + query RL | deterministic answer-aware reward | no | stronger programmability extension |
 
-Use the same train/dev/test queries and query-side LoRA placement for every
+Use the same train/dev/test queries and fully trainable query encoder for every
 trained row. Report retrieval Recall@5/20 and MRR, plus end-to-end EM/F1 from the
 frozen generator. If the answer-aware row is not run, describe the experiment as
 retrieval adaptation for RAG rather than direct RAG-reward optimization.

@@ -7,5 +7,4 @@ append_token: none
 query_prompt_template: "query: {query}"
 document_prompt_template: "passage: {document}"
 embedding_max_length: 512
-lora_target_modules: [query, key, value]
 deepspeed: ./scripts/zero3.json

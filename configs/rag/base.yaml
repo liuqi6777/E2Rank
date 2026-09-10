@@ -6,11 +6,9 @@ query_prompt_template: "Instruct: {task_description}\nQuery:{query}"
 document_prompt_template: "{document}"
 embedding_max_length: 8192
 
-lora_enabled: true
-lora_r: 16
-lora_alpha: 32
-lora_dropout: 0
-lora_bias: none
+# RAG updates the complete query encoder while the corpus encoder, document
+# vectors, ANN index, and generator remain frozen.
+lora_enabled: false
 
 rag_dataset_root: data/rag/flashrag
 rag_corpus_path: data/rag/corpus/wiki18_100w.jsonl
@@ -53,8 +51,9 @@ per_device_train_batch_size: 4
 gradient_accumulation_steps: 1
 gradient_checkpointing: true
 learning_rate: 0.00001
-warmup_ratio: 0
-lr_scheduler_type: constant
+warmup_ratio: 0.03
+lr_scheduler_type: cosine
+weight_decay: 0.01
 num_train_epochs: 1
 logging_strategy: steps
 logging_steps: 1

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from pathlib import Path
 
 import torch
 from peft import PeftModel
@@ -30,21 +31,25 @@ class FrozenQueryEncoder:
         self.pooling_method = pooling_method
         self.append_token = append_token
         self.query_prompt_template = query_prompt_template
+        checkpoint_path = Path(adapter_path).resolve() if adapter_path else None
+        is_adapter = bool(checkpoint_path and (checkpoint_path / "adapter_config.json").is_file())
+        model_source = model_name_or_path if not checkpoint_path or is_adapter else str(checkpoint_path)
+        model_revision = revision if model_source == model_name_or_path else None
         self.tokenizer = AutoTokenizer.from_pretrained(
-            model_name_or_path,
-            revision=revision,
+            model_source,
+            revision=model_revision,
             padding_side=padding_side,
             trust_remote_code=True,
         )
         dtype = torch.float16 if self.device.type == "cuda" else torch.float32
         model = AutoModel.from_pretrained(
-            model_name_or_path,
-            revision=revision,
+            model_source,
+            revision=model_revision,
             torch_dtype=dtype,
             trust_remote_code=True,
         )
-        if adapter_path:
-            model = PeftModel.from_pretrained(model, adapter_path, is_trainable=False)
+        if is_adapter:
+            model = PeftModel.from_pretrained(model, str(checkpoint_path), is_trainable=False)
         self.model = model.to(self.device).eval()
 
     def encode(self, questions: Sequence[str]) -> torch.Tensor:

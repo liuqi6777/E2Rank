@@ -185,14 +185,15 @@ append_token: none        # none, eos, or pad
 query_prompt_template: "query: {query}"
 document_prompt_template: "passage: {document}"
 embedding_max_length: 512
-lora_target_modules: [query, key, value]
 deepspeed: ./scripts/zero3.json
 ```
 
 Ready-to-use retrieval-training examples are provided in
 `configs/model/bge_m3.yaml` and `configs/model/multilingual_e5_large.yaml`.
-Their `_default_train_` directives select architecture-appropriate batch size,
-learning rate, warmup, and scheduler settings whenever `--base-train` is omitted.
+Their `_default_train_` directives select the shared full-fine-tuning budget whenever
+`--base-train` is omitted. The model-specific recipe files are extension points for
+future calibration, but currently keep the same micro-batch and optimizer settings so
+the in-batch candidate pool and trainable parameter set remain controlled.
 An explicit `--base-train` or `POSTTRAIN_TRAIN_CONFIG` always takes precedence.
 They can be passed anywhere a model base config is accepted:
 
@@ -209,9 +210,10 @@ bash ./scripts/run.sh \
 `query_prompt_template` may use `{query}` (or `{text}`) and
 `{task_description}`. `document_prompt_template` may use `{document}` (or
 `{text}`). The same protocol is automatically passed to in-training MTEB
-evaluation. When adding another architecture, set `lora_target_modules` to
-names that actually occur in that model; full fine-tuning does not require this
-field. Checkpoints that depend on extra SentenceTransformers projection modules
+evaluation. Main post-training uses full fine-tuning, so architecture-specific LoRA
+target lists are not needed. If LoRA is enabled in an explicit override, its target
+modules must be audited against that architecture. Checkpoints that depend on extra
+SentenceTransformers projection modules
 are not represented by `AutoModel` alone and need a dedicated adapter before
 they can be trained faithfully.
 
@@ -375,12 +377,9 @@ mteb_eval_langs: eng
 mteb_eval_batch_size: 16
 ```
 
-By default the training config enables:
-
-- LoRA
-- DeepSpeed ZeRO-3
-- gradient checkpointing
-- Weights & Biases reporting
+The legacy `configs/train/default.yaml` enables LoRA. Model-selected post-training
+recipes and the fixed-corpus RAG experiments use full fine-tuning. Both paths enable
+DeepSpeed ZeRO-3, gradient checkpointing, and Weights & Biases reporting.
 
 To enable the W&B login:
 
@@ -394,8 +393,8 @@ The RAG pipeline uses only the datasets and `wiki18_100w` corpus from
 [`RUC-NLPIR/FlashRAG_datasets`](https://huggingface.co/datasets/RUC-NLPIR/FlashRAG_datasets).
 It does not download Search-R1 parquet files, checkpoints, trajectories,
 retrievals, generations, or reported results. The index manifest pins and hashes
-the corpus and 64 FP16 Qwen3 document-vector shards; training only instantiates a
-query encoder and query-side LoRA. The downloadable FlashRAG E5 index is
+the corpus and 64 FP16 Qwen3 document-vector shards; training instantiates and
+fully fine-tunes only the query encoder. The downloadable FlashRAG E5 index is
 intentionally unsupported because it is not in the Qwen3 embedding space.
 
 Data preparation invokes the external `hf download` CLI and uses Python's
@@ -460,9 +459,10 @@ scripts/rag_pipeline.sh train configs/rag/rl_source_aware.yaml \
   --output_dir checkpoints/rag-rl-source-aware-final
 ```
 
-Evaluate E0 by omitting `--checkpoint`, or evaluate a project-produced LoRA
-adapter by providing it. The command reruns retrieval and generation and writes
-per-dataset retrieval/generation JSONL plus `summary.json`:
+Evaluate E0 by omitting `--checkpoint`, or evaluate a project-produced full-model
+checkpoint by providing it. Legacy LoRA adapters remain loadable. The command
+reruns retrieval and generation and writes per-dataset retrieval/generation JSONL
+plus `summary.json`:
 
 ```bash
 scripts/rag_pipeline.sh eval \

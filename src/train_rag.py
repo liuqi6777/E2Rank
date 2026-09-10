@@ -51,29 +51,25 @@ class RAGTrainer(EmbeddingTrainerMixin, HFTrainer):
 
 
 def _validate_protocol(lora_args: LoraArguments, data_args: RAGDatasetArguments) -> None:
-    if not lora_args.lora_enabled:
-        raise ValueError("RAG training requires query-side LoRA; set lora_enabled=true")
+    if lora_args.lora_enabled:
+        raise ValueError("RAG training uses full query-encoder fine-tuning; set lora_enabled=false")
     if lora_args.lora_path:
         raise ValueError(
             "RAG methods must initialize from E0; use Trainer resume checkpoints only to resume the same run"
         )
-    expected = (16, 32, 0.0)
-    actual = (lora_args.lora_r, lora_args.lora_alpha, lora_args.lora_dropout)
-    if actual != expected:
-        raise ValueError(f"RAG protocol requires LoRA (r, alpha, dropout)={expected}, got {actual}")
     if not data_args.rag_candidate_manifest:
         raise ValueError("rag_candidate_manifest is required")
 
 
-def _assert_only_lora_trainable(backbone) -> None:
+def _assert_full_backbone_trainable(backbone) -> None:
     trainable = [name for name, parameter in backbone.named_parameters() if parameter.requires_grad]
     if not trainable:
-        raise RuntimeError("Query encoder has no trainable LoRA parameters")
-    unexpected = [name for name in trainable if "lora_" not in name]
-    if unexpected:
+        raise RuntimeError("Query encoder has no trainable parameters")
+    frozen = [name for name, parameter in backbone.named_parameters() if not parameter.requires_grad]
+    if frozen:
         raise RuntimeError(
-            "Only query-side LoRA parameters may be trainable; unexpected parameters: "
-            + ", ".join(unexpected[:10])
+            "RAG full fine-tuning requires the complete query encoder to be trainable; "
+            "frozen parameters: " + ", ".join(frozen[:10])
         )
 
 
@@ -192,7 +188,7 @@ def main() -> None:
     _validate_candidate_manifest(data_args, index)
     initial_index_hash = sha256_file(index.manifest_path)
     backbone, tokenizer = load_backbone_and_tokenizer(model_args, lora_args)
-    _assert_only_lora_trainable(backbone)
+    _assert_full_backbone_trainable(backbone)
     base_config = getattr(backbone, "config", None)
     validate_query_index_protocol(
         index.manifest,

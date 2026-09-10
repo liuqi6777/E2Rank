@@ -1,4 +1,5 @@
 _base_:
   - ./posttrain.yaml
 
-# Default post-training recipe for Qwen3-family embedding checkpoints.
+# Model-specific extension point. It currently uses the shared full-FT recipe
+# unchanged so every embedding initialization has the same optimization budget.

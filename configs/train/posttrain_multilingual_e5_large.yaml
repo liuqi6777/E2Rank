@@ -1,8 +1,5 @@
 _base_:
   - ./posttrain.yaml
 
-# E5 is limited to 512 tokens, allowing a larger batch than BGE-M3.
-per_device_train_batch_size: 32
-learning_rate: 0.00005
-warmup_ratio: 0.03
-lr_scheduler_type: cosine
+# Model-specific extension point. E5's 512-token limit is applied by the model
+# protocol without changing the shared micro-batch or optimization budget.

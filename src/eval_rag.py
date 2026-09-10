@@ -291,7 +291,11 @@ def main() -> None:
     parser.add_argument("--index-manifest", default="data/rag/qwen3_e0_index/index_manifest.json")
     parser.add_argument("--model", default="Qwen/Qwen3-Embedding-0.6B")
     parser.add_argument("--model-revision", default=None)
-    parser.add_argument("--checkpoint", default=None, help="Project-produced LoRA adapter; omit for E0")
+    parser.add_argument(
+        "--checkpoint",
+        default=None,
+        help="Project-produced full-model checkpoint or legacy LoRA adapter; omit for E0",
+    )
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--index-backend", choices=("faiss", "torch"), default="faiss")

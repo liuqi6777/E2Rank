@@ -8,7 +8,4 @@ query_prompt_template: "{query}"
 document_prompt_template: "{document}"
 embedding_max_length: 8192
 
-# XLM-R/BERT-style attention projections. Override this list if a custom
-# checkpoint exposes different module names.
-lora_target_modules: [query, key, value]
 deepspeed: ./scripts/zero3.json
