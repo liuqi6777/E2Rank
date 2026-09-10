@@ -24,7 +24,7 @@ profiles:
     final_evaluation: [bright, mteb_retrieval_retention]
     requirements: []
     protocol:
-      labels: sampled_single_positive_binary
+      labels: teacher_grades_3_2_1_0_with_selected_positive_for_cl
       exclude_sources: [msmarco]
       variable_candidates: true
       positive_selection: per_query_seeded_uniform_once
@@ -75,6 +75,12 @@ runs:
   G1-Q-LL: {group: G1, objective: lambdaloss, scope: query_only, requirements: [frozen_document]}
   G1-J-RL: {group: G1, objective: rl, scope: joint}
   G1-Q-RL: {group: G1, objective: rl, scope: query_only, requirements: [frozen_document]}
+  G1-A-Binary:
+    group: G1
+    objective: rl
+    scope: joint
+    control: G1-J-RL
+    overrides: {relevance_scheme: binary}
   G1-A-Paired:
     group: G1
     objective: rl
@@ -92,7 +98,7 @@ runs:
     objective: rl
     scope: joint
     control: G1-J-RL
-    overrides: {reward_type: mrr_in_batch}
+    overrides: {reward_type: mrr_in_batch, relevance_scheme: binary}
   G2-D-CL: {group: G2, objective: infonce, scope: joint}
   G2-D-LL: {group: G2, objective: lambdaloss, scope: joint}
   G2-D-RL: {group: G2, objective: rl, scope: joint}

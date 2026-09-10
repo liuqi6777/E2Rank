@@ -116,15 +116,17 @@ G1 不再划分 train/dev，清理后全部用于训练。预处理支持可选�
 ### 2.2 主监督与候选协议
 
 主比较用 seed 42 按 query 独立固定抽取一个原始正例，删除其他已知正例，保留负例。
-各方法使用同一份 **single-positive binary relevance**，RL reward 为 nDCG@10。
+候选集合相同，但正例身份与排序监督分开保存。RL 主 reward 为 teacher-derived graded nDCG@10：
+保留候选中 teacher 第 1 名为 3，第 2–5 名为 2，第 6–10 名为 1，其余为 0。
+E2Rank pilot 支持该设置，ReasonRank 的收益由 binary 消融验证。
 不把 teacher 第一名当正例；BRIGHT 评测保留完整官方标签。
 
 | Objective | 主监督定义 |
 |---|---|
 | Single-positive InfoNCE | 对固定抽取正例计算 log-softmax loss；其余有效候选为负例 |
-| RankNet | 仅构造已标注正例高于负例的 pairs，不强制正例之间的 teacher 次序 |
-| LambdaLoss | LambdaRank variant：pairwise logistic × 当前排序的 `|ΔnDCG@10|`；使用相同 binary gains 与候选，`gain=2^rel-1`、`sigma=1.0` |
-| Proposed RL | 同标签与候选上的 exact nDCG@10 |
+| RankNet | 使用保留候选的完整 teacher 排序构造有序 pairs |
+| LambdaLoss | LambdaRank variant：pairwise logistic × 当前排序的 `|ΔnDCG@10|`；使用与 RL 相同的 graded 标签与候选，`gain=2^rel-1`、`sigma=1.0` |
+| Proposed RL | teacher-derived graded 标签与相同候选上的 exact nDCG@10 |
 
 主协议沿用扩展候选池设计：加入其他记录固定抽取的正例作为 in-batch 候选，
 所有 objective 相同。合并同文本/同 ID 项；若当前 query 被删除的已知正例重新出现则 mask 掉，
@@ -134,7 +136,7 @@ G1 不再划分 train/dev，清理后全部用于训练。预处理支持可选�
 记录 microbatch、world size、accumulation；当前 in-batch 池是 device-local，
 梯度累积不扩大候选池。开发集固定候选，不随评测 batch 改变。
 Own-query-only 消融检查扩展候选的作用。Mean-score calibration 只在确有冻结候选时评测。
-Teacher-order agreement 是可选的独立监督实验，不能与主 binary 比较混为一张受控结果表。
+CL 使用已知正例，排序方法使用 teacher 信号，监督信息并不完全一致；LL 与 RL 是同 graded 目标的主要对照，不能仅由 CL 对比归因于估计器。
 
 ### 2.3 主结果表
 
@@ -164,6 +166,7 @@ G1-J-RL 超过 E0 只证明额外训练有益；超过 CL 但不超过 LL 不能
 
 | ID | 改动 | 优先级 |
 |---|---|---|
+| G1-A-Binary | 相同数据与预算，nDCG 改用已知正例 binary 标签 | 核心 |
 | G1-A-Paired | 同 G、相同 component samples，使用 paired/diagonal 而非 product rollout | 核心 |
 | G1-A-Cal | 禁用 frozen-candidate mean-score rescaling | 核心 |
 | G1-A-MRR | reward 改为 binary MRR@10，相关阈值为 label=1 | 核心 |
@@ -204,7 +207,7 @@ CL 使用 rank-1 正例和相同候选池；LL 使用与 RL 完全相同的 grad
 CL 与 RL 使用的监督信息粒度不同，因此 **LL 是必需的同标签强对照**。
 可选 RankNet 补充 full-order 控制；不能只比较单正例 CL 就归因于 RL 估计器。
 此处 grades 是 teacher 目标，不是人工相关性；MRR 若报告，明确 grade ≥2 的定义，
-不要沿用 G1 binary relevance 的阈值解释。
+G1/G2 graded 均采用相同 teacher 排名分段；已知正例身份另行保存。
 
 ### 3.2 两个问题、两组对照
 
@@ -283,8 +286,8 @@ CL/LL/RetRL；动态检索版本作为部署结果单列。如改用共同动态
 - [ ] G1 最终同题复核。
 - [ ] G2 E2Rank 版本与规模、外部 overlap 审计、唯一 train/dev/test manifest。
 - [ ] 固定 E0、B0、pooling/prompts 和各组评测协议；校验 full FT 与冻结分支。
-- [x] 接入 single-positive CL、binary RankNet 和可变长 RL。
-- [x] 实现指定 LambdaLoss variant；G1 使用 binary relevance，G2 使用 teacher grades 3/2/1/0，padding 不参与 loss。
+- [x] 接入 single-positive CL、teacher-order RankNet 和可变长 RL。
+- [x] 实现指定 LambdaLoss variant；G1/G2 使用 teacher grades 3/2/1/0，padding 不参与 loss。
 - [ ] 明确两套标签的 MRR 阈值，确保 padding 不参与 reward。
 - [ ] 修复 split loader；实现固定候选 deterministic dev evaluation 与全 corpus 检索。
 - [ ] 固定各组 LR/目标网格、trial 与主训练预算、tie-break 和 G2 的 T/W。
@@ -344,7 +347,7 @@ G3 验证固定 generator 的可复现输出和 reward 成本。完成低成本�
 新增 logical IDs 需要显式 config/runner mapping；不要使用旧 `all` 模式代替新核心集合。
 保证 checkpoint 复用、训练数和实际预算可追踪，旧运行目录不覆盖。
 
-下一次正文同步需修改：整体定位、三组实验结构、G1 binary 与 G2 teacher-grade 监督、
+下一次正文同步需修改：整体定位、三组实验结构、G1/G2 teacher-grade 监督及 CL 正例身份、
 base 初始化与共同 warm-up、MTEB 辅助/外部评测角色、RAG 答案指标，以及对应表格。
 未经测量的结果保持 TBD；full-FT 不能通过禁用 adapter 得到初始参考策略。
 

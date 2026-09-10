@@ -730,6 +730,10 @@ class EmbeddingDataCollator:
                 ranks = torch.tensor(instance["rank_labels"], dtype=torch.float32)
                 if len(labels) != n or len(ranks) != n or labels[0] != 1 or labels[1:].any():
                     raise ValueError("Prepared labels must match candidates with one positive first")
+                if self.relevance_scheme == "graded":
+                    labels = torch.tensor(instance["graded_relevance"], dtype=torch.float32)
+                    if len(labels) != n:
+                        raise ValueError("Prepared grades must match candidates")
                 positive_index = 0
             else:
                 ranking = torch.tensor([instance["ranking"]], dtype=torch.long) - 1

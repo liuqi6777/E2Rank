@@ -7,7 +7,7 @@ data_path: data/processed/reasonrank_simple/train.ready.jsonl
 per_dataset_max_samples: null
 q_max_len: 512
 d_max_len: 1024
-relevance_scheme: binary
+relevance_scheme: graded
 slate_size: 20 # Legacy parser placeholder, NOT permission to truncate/filter to 20.
 file_glob: '*.jsonl'
 batch_per_length_bucket: false

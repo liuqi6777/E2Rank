@@ -148,9 +148,14 @@ def document_key(text):
 def prepare_training_record(public, metadata):
     """Compile static sample semantics once, keeping audit fields out of training."""
     record = _join_preprocessing_metadata(public, metadata)
+    n = len(record['document'])
+    grades, ranks = [0] * n, [0] * n
+    for position, candidate in enumerate(record['teacher_ranking']):
+        grades[candidate - 1] = 3 if position == 0 else 2 if position < 5 else 1 if position < 10 else 0
+        ranks[candidate - 1] = n - position
     return dict(schema=READY_SCHEMA, id=public['id'], query=record['query'], source=record['source'],
                 document=record['document'], document_ids=record['document_ids'],
-                relevance=record['relevance'], rank_labels=list(record['relevance']),
+                relevance=record['relevance'], graded_relevance=grades, rank_labels=ranks,
                 document_keys=[document_key(d) for d in record['document']],
                 known_document_ids=sorted(set(record['original_relevant_docids']) | set(record['document_ids'])))
 

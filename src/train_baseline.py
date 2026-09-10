@@ -314,9 +314,12 @@ class BaselineModel(nn.Module):
                 )
 
         if self.baseline_args.baseline_loss == "infonce":
+            # Collation puts the selected positive first, independently of teacher grades.
+            positive_labels = torch.zeros_like(relevance_labels)
+            positive_labels[:, 0] = 1
             per_sample_loss = compute_infonce_loss(
                 scores=scores,
-                relevance_labels=relevance_labels,
+                relevance_labels=positive_labels,
                 temperature=self.baseline_args.baseline_temperature,
                 candidate_mask=candidate_mask,
             )

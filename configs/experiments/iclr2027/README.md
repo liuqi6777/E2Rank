@@ -66,7 +66,7 @@ JSONL 不存 padding，模型和 loss/reward 均排除 padding。
 
 ## 实验行与依赖
 
-共 23 个逻辑行：20 个训练执行、2 个 E0 评测、1 个复用。
+共 24 个逻辑行：21 个训练执行、2 个 E0 评测、1 个复用。
 
 - G1：`J` / `Q` 表示 joint / query-only；CL、RN、LL、RL 是四类目标。
   `A-Paired`、`A-Cal`、`A-MRR` 的对照均为 `G1-J-RL`。
@@ -90,3 +90,12 @@ G3 仍需候选访问控制、答案 F1 选模；检索 RL 需要 nDCG，不能�
 模型保存在 `checkpoints/iclr2027/RUN-s42/`，展开后的配置和启动记录在
 `checkpoints/iclr2027/.launches/RUN-s42/`。公共配置 `output_dir` 可更改根目录。
 既有输出或启动记录会阻止重复运行；自动恢复尚未接入。
+
+## G1 排序监督
+
+主设置为 graded：保留候选的 teacher 排名第 1 名 → 3，第 2–5 名 → 2，
+第 6–10 名 → 1，其余 → 0。CL 仍使用已知正例；RankNet 使用完整 teacher 排序，
+LambdaLoss 与 RL nDCG 使用 graded。ready 文件分别保存 relevance（已知正例）、
+graded_relevance 与 rank_labels。teacher 排序不被强行改为已知正例第一。
+G1-A-Binary 只将 RL nDCG 标签改为已知正例 binary；G1-A-MRR 也使用 binary。
+CL 与排序方法的监督信息不同；LL 与 RL 才是相同 graded 目标下的主要对照。
