@@ -1,4 +1,0 @@
-_base_:
-  - ./default.yaml
-# Legacy: leaks other samples' perturbations into this sample's advantages.
-in_batch_use_sampled_documents: true

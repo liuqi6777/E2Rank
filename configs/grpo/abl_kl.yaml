@@ -1,4 +1,0 @@
-_base_:
-  - ./default.yaml
-# Optional vMF reference anchor against the LoRA-disabled base. Requires lora_enabled.
-kl_coef: 0.001

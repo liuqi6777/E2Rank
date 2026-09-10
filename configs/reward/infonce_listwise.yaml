@@ -1,5 +1,0 @@
-# Differentiable-reward control over the same own-slate plus cross-query-positive
-# candidate pool used by direct-backprop InfoNCE.
-reward_type: infonce
-contrastive_use_in_batch_negatives: true
-contrastive_temperature: 0.03

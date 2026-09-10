@@ -1,5 +1,5 @@
 model_name_or_path: Qwen/Qwen3-Embedding-0.6B
-_default_train_: ../train/posttrain_qwen3_embedding.yaml
+_default_train_: ../train/posttrain.yaml
 # Checkpoint-native embedding protocol. Keeping this explicit makes model swaps
 # auditable and is also reused by the in-training MTEB callback.
 pooling_method: last

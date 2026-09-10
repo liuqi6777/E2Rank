@@ -1,3 +1,0 @@
-_base_:
-  - ./default.yaml
-rollout: diagonal

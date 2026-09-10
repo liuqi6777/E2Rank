@@ -1,4 +1,0 @@
-# Binary-label view of the same listwise corpus, useful for matched CL controls.
-_base_:
-  - ./e2rank_listwise.yaml
-relevance_scheme: binary

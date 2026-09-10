@@ -1,7 +1,0 @@
-_base_:
-  - ./default.yaml
-sigma_learnable: true
-sigma_min: 0.001
-sigma_max: 0.5
-kappa: null
-sigma: 0.0364          # = 755^-0.5, so the learnable run starts at the fixed default

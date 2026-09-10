@@ -1,5 +1,0 @@
-_base_:
-  - ./posttrain.yaml
-
-# Model-specific extension point. E5's 512-token limit is applied by the model
-# protocol without changing the shared micro-batch or optimization budget.

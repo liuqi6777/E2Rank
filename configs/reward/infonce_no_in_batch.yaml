@@ -1,3 +1,0 @@
-reward_type: infonce
-contrastive_use_in_batch_negatives: false
-contrastive_temperature: 0.03

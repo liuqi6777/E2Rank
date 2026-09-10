@@ -1,7 +1,0 @@
-_base_:
-  - ./stage2.yaml
-
-# Full fine-tuning. Note kl_coef > 0 is unavailable here: the vMF KL anchor is taken by
-# disabling a LoRA adapter, and there is none.
-lora_enabled: false
-learning_rate: 0.00001

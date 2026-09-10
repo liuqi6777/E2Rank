@@ -1,4 +1,0 @@
-# Top-heavy alternative over the same in-batch candidate pool as primary nDCG.
-reward_type: mrr_in_batch
-reward_ndcg_k: 10
-ndcg_in_batch_include_negatives: false

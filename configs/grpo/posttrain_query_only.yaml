@@ -1,4 +1,0 @@
-_base_:
-  - ./posttrain.yaml
-action_components:
-  - [query]

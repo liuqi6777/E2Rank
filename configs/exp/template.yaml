@@ -1,12 +1,12 @@
-# One-file entrypoint, equivalent to composing the slots on the command line. The _base_ list
-# names the DEFAULT of every slot, so this file is what a run looks like with nothing changed.
+# Standalone teacher-ranking example. Paper runs use scripts/experiment.py.
 _base_:
-  - ../train/stage2.yaml
-  - ../dataset/stage2.yaml
-  - ../model/qwen3_0.6b.yaml
-  - ../grpo/default.yaml
-  - ../reward/default_mixture.yaml
+  - ../train/posttrain.yaml
+  - ../dataset/e2rank_listwise.yaml
+  - ../model/qwen3_embedding_0.6b.yaml
+  - ../grpo/posttrain.yaml
+  - ../reward/ndcg_listwise_in_batch.yaml
   - ../eval/default.yaml
 
 output_dir: checkpoints/example-run
 run_name: example-run
+overwrite_output_dir: false

@@ -1,3 +1,0 @@
-# Own-slate control for measuring the contribution of in-batch candidates.
-reward_type: ndcg
-reward_ndcg_k: 10

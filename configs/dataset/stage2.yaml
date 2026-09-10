@@ -1,7 +1,0 @@
-# Stage 2 (ranking RL) -- THE DEFAULT. Binary labels, because BGE-M3 mining data gives one
-# positive and a pool of mined negatives with no multi-level relevance judgement.
-# stage2_graded.yaml is the ablation that questions this; it is not the default.
-_base_:
-  - ./default.yaml
-per_dataset_max_samples: 10000
-relevance_scheme: binary

@@ -1,501 +1,98 @@
 # RL Training and Evaluation for Embedding
 
-This repository keeps the RL training pipeline and evaluation scripts for embedding models.
+Embedding RL、InfoNCE / RankNet 与固定索引 RAG。当前实验按 G1 / G2 / G3 组织。
 
-Current scope:
-
-- GRPO-based RL training in [`src/train.py`](src/train.py)
-- Config-driven experiments in [`configs/`](configs)
-- Shell launcher in [`scripts/run.sh`](scripts/run.sh)
-- MTEB/BEIR-style evaluation in [`eval_mteb/`](eval_mteb)
-
-## Environment Setup
-
-This project uses `uv` and targets Python `3.10` (`.python-version` is already included). First install uv by:
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-Then run:
+## 环境
 
 ```bash
 uv sync
 source .venv/bin/activate
 ```
 
-## Data and Model Preparation
+训练需要 GPU；配置展开与检查不下载模型、不启动训练。
 
-Training accepts both the original E2Rank listwise JSONL format and BGE-M3 mining
-records. The formats can coexist; the loader detects each record schema.
+## 实验入口
 
-For the listwise post-training data, download `data/train.jsonl` with:
+日常只编辑 [configs/experiments.yaml](configs/experiments.yaml)，使用一个入口：
 
 ```bash
-mkdir -p data
-hf download \
-  Alibaba-NLP/E2Rank_ranking_datasets \
-  train.jsonl \
-  --local-dir ./data \
-  --repo-type dataset
+python scripts/experiment.py prepare G1
+python scripts/experiment.py list
+python scripts/experiment.py show G1-J-RL
+python scripts/experiment.py show G1-J-RL --verbose
+python scripts/experiment.py check G1-J-RL
+python scripts/experiment.py train G1-J-RL --gpus 4
 ```
 
-Each listwise sample contains the fields used by
-[`src/embedding_data.py`](src/embedding_data.py):
+| 组 | 目的 | 当前状态 |
+|---|---|---|
+| G1 | 开源 embedding model → ReasonRank reasoning 训练，BRIGHT 主评测 | Joint CL / RankNet / RL 与 RL 消融已接入；LambdaLoss、固定 document 分支待实现 |
+| G2 | Base LLM 上大规模 CL / RL，以及共同 CL warm-up 后的比较 | 预算、表示协议和部分训练能力待补齐 |
+| G3 | 固定索引 RAG 的检索与答案目标 | 保留现有 RAG 工具；论文实验的候选控制和选模等尚待接入 |
 
-- `query`
-- `document`
-- `ranking`
-- `source` (optional, used to choose task prompts)
+`list` 展示 READY / BLOCKED / EVAL / REUSE；`check G1` 检查整组，因此包含未实现行时返回非零。
+READY 表示启动前检查通过，不代表已完成 GPU 训练。入口只启动指定的一行，不自动运行依赖或覆盖输出。
 
-ReasonRank RL data can be converted to the same fixed 16-document format. The
-converter retains the first 16 candidates in the original retrieval order, filters the
-teacher permutation to those candidates, and intentionally ignores `relevant_docids`:
+详细参数、run IDs、预算与输出规则见 [实验配置指南](configs/experiments/iclr2027/README.md)。
+研究设计见 [实验计划](paper/EXPERIMENT_PLAN.md)。
+
+## 数据
+
+G1 使用 `data/processed/reasonrank_simple/` 中的 4,963 条全量训练数据，无 dev。
+`prepare G1` 每个 query 固定抽一个正例，移除其余已知正例，保留变长负例，生成 `train.ready.jsonl`。
+Loader 直接读 ready 文件；collator 动态补齐和生成 mask。公开文本与审计 sidecar 不参与训练加载。
+已有 ready 文件不会自动重写。
+
+原始数据下载、BRIGHT 重叠审计和预处理各脚本的职责见 [脚本索引](scripts/README.md)。
+
+G2 的原始 E2Rank 数据可下载为：
 
 ```bash
-mkdir -p data/reasonrank
-hf download \
-  liuwenhan/reasonrank_data_rl \
-  train.parquet \
-  --local-dir data/reasonrank \
-  --repo-type dataset
-
-uv run python scripts/convert_reasonrank.py \
-  --input data/reasonrank/train.parquet \
-  --output data/reasonrank_train_slate16.jsonl
+hf download Alibaba-NLP/E2Rank_ranking_datasets train.jsonl --local-dir data --repo-type dataset
 ```
 
-Rows with fewer than 16 candidates are skipped. The resulting JSONL uses the existing
-`{query, document, ranking, source}` schema and can be concatenated with the E2Rank
-listwise JSONL without changing the training code.
+原始格式是 `{query, document, ranking, source}`，`ranking` 为从 1 开始的 teacher permutation。
+G2 配置中的 `data/processed/e2rank/train.jsonl` 是待准备的实验输入；下载原始数据不等于完成 G2 数据协议。
+通用 loader 仍支持 BGE-M3 的 `query/pos/neg` 格式。
 
-The merged training artifact is `data/train_v2.jsonl`. It contains the original
-E2Rank listwise records plus the converted ReasonRank records; every sample keeps a
-16-document slate and derives supervision only from its teacher permutation. Use
-`configs/dataset/e2rank_listwise_v2.yaml` to load it. The matched continued-CL and RL
-experiments are launched together with:
+## 通用工具
+
+论文以外的单次试验可直接组合底层配置：
 
 ```bash
-bash scripts/experiments/posttrain_data_v2.sh
-```
-
-This produces D1 (continued InfoNCE with in-batch negatives) and D2 (RL with graded
-in-batch nDCG@10), both initialized from the same embedding checkpoint and trained on
-the same merged data and budget.
-
-BGE-M3 records use `query`, `pos`, `neg`, and optional `pos_scores` /
-`neg_scores`; they are converted to fixed-size slates according to the dataset
-config. Use `configs/dataset/e2rank_listwise.yaml` for the original listwise
-data and `configs/dataset/default.yaml` for BGE-M3.
-
-## Training
-
-The recommended entrypoint is the shell wrapper plus an explicit config path:
-
-```bash
-bash ./scripts/run.sh configs/exp/template.yaml
-```
-
-You can run training without any `configs/exp/*.yaml` and compose the config directly from the shell:
-
-```bash
-bash ./scripts/run.sh \
-  --base-train configs/train/default.yaml \
-  --base-dataset configs/dataset/default.yaml \
-  --base-model configs/model/e2rank_0.6b_embedding_only.yaml \
-  --base-grpo configs/grpo/default.yaml \
-  --base-reward configs/reward/contrastive_in_batch.yaml \
-  --base-eval configs/eval/default.yaml
-```
-
-If you omit `run_name` and `output_dir`, they are auto-generated. For example, the command above becomes:
-
-- `run_name=e2rank_0.6b_embedding_only__contrastive_in_batch`
-- `output_dir=checkpoints/<run_name>`
-
-Supported base config flags:
-
-- `--base-train`
-- `--base-dataset`
-- `--base-model`
-- `--base-baseline` (supervised launcher only)
-- `--base-grpo`
-- `--base-reward`
-- `--base-eval`
-
-Supervised post-training supports InfoNCE and RankNet. For example, RankNet on
-the original teacher ranking is launched with:
-
-```bash
-bash ./scripts/run_baseline.sh \
-  --base-train configs/train/stage2.yaml \
+NPROC_PER_NODE=1 bash scripts/run.sh configs/exp/template.yaml
+NPROC_PER_NODE=1 bash scripts/run_baseline.sh \
+  --base-train configs/train/posttrain.yaml \
   --base-dataset configs/dataset/e2rank_listwise.yaml \
   --base-model configs/model/qwen3_embedding_0.6b.yaml \
   --base-baseline configs/baseline/ranknet.yaml \
   --base-eval configs/eval/default.yaml
 ```
 
-### Paper experiments: one entry point
+这些工具不应用 G1/G2/G3 的实验检查。模型配置定义 pooling、padding、append token 和 query/document 模板；
+更换模型时需要同步表示协议。`configs/train/posttrain.yaml` 为共享 full FT 参数，
+`configs/train/default.yaml` 是显式选择的 LoRA 示例。
 
-Edit [configs/experiments.yaml](configs/experiments.yaml) for common model, data,
-learning-rate and step settings. Use the same entry point for all three groups:
+现有固定索引 RAG 工具保留在 `scripts/rag_pipeline.sh`，支持 prepare / encode / candidates / train / tune-eval / eval。
+`configs/rag/` 是底层 RAG 配方；G3 正式运行仍通过 `experiment.py` 检查。
+RAG 数据准备需要 `hf`，索引需要兼容 CUDA 的 FAISS；答案生成需要单独部署 generator 服务。
+每个命令的参数可通过 `scripts/rag_pipeline.sh COMMAND --help` 查看（train 的参数入口是配置文件）。
 
-```bash
-.venv/bin/python scripts/experiment.py prepare G1
-.venv/bin/python scripts/experiment.py list
-.venv/bin/python scripts/experiment.py show G1-J-RL
-.venv/bin/python scripts/experiment.py check G1
-.venv/bin/python scripts/experiment.py train G1-J-RL --gpus 4
-```
-
-G1 data is already prepared in `data/processed/reasonrank_simple/`; `prepare`
-refuses to overwrite it. Training rows expose only `id`, `query`, `positive`,
-`negatives`, and `source`. Preprocessing compiles `train.ready.jsonl` with ordered
-candidates, labels, and deduplication keys. The loader reads that file directly;
-only padding/masks and current-batch filtering remain dynamic. All 4,963 cleaned
-records remain in train.
-
-`show` is read-only; use `--verbose` for the internal resolved configuration.
-`check` still reports implementation/protocol requirements before GPU training.
-Advanced presets and the current readiness notes are in the
-[experiment guide](configs/experiments/iclr2027/README.md).
-The older `posttrain_*.sh`, `stage1.sh`, and `phase*.sh` scripts remain historical
-recipes and are not the G1/G2/G3 paper run set.
-
-### Using a non-Qwen embedding checkpoint
-
-The model config defines the checkpoint's complete dense-embedding protocol;
-GRPO itself only receives normalized vectors. Supported pooling methods are
-`last`, `mean`, and `cls`. For example:
-
-```yaml
-model_name_or_path: intfloat/multilingual-e5-large
-pooling_method: mean
-padding_side: right
-append_token: none        # none, eos, or pad
-query_prompt_template: "query: {query}"
-document_prompt_template: "passage: {document}"
-embedding_max_length: 512
-deepspeed: ./scripts/zero3.json
-```
-
-Ready-to-use retrieval-training examples are provided in
-`configs/model/bge_m3.yaml` and `configs/model/multilingual_e5_large.yaml`.
-Their `_default_train_` directives select the shared full-fine-tuning budget whenever
-`--base-train` is omitted. The model-specific recipe files are extension points for
-future calibration, but currently keep the same micro-batch and optimizer settings so
-the in-batch candidate pool and trainable parameter set remain controlled.
-An explicit `--base-train` or `POSTTRAIN_TRAIN_CONFIG` always takes precedence.
-They can be passed anywhere a model base config is accepted:
+评测入口：
 
 ```bash
-bash ./scripts/run.sh \
-  --base-train configs/train/posttrain.yaml \
-  --base-dataset configs/dataset/e2rank_listwise.yaml \
-  --base-model configs/model/bge_m3.yaml \
-  --base-grpo configs/grpo/posttrain.yaml \
-  --base-reward configs/reward/ndcg_listwise_in_batch.yaml \
-  --base-eval configs/eval/mteb.yaml
+bash eval_mteb/scripts/run_mteb.sh CHECKPOINT 'MTEB(eng, v2)' configs/model/qwen3_embedding_0.6b.yaml
 ```
 
-`query_prompt_template` may use `{query}` (or `{text}`) and
-`{task_description}`. `document_prompt_template` may use `{document}` (or
-`{text}`). The same protocol is automatically passed to in-training MTEB
-evaluation. Main post-training uses full fine-tuning, so architecture-specific LoRA
-target lists are not needed. If LoRA is enabled in an explicit override, its target
-modules must be audited against that architecture. Checkpoints that depend on extra
-SentenceTransformers projection modules
-are not represented by `AutoModel` alone and need a dedicated adapter before
-they can be trained faithfully.
+## 目录
 
-Regular training arguments can still be appended after that:
+- `configs/experiments.yaml`：日常参数。
+- `configs/experiments/iclr2027/`：三组实验定义和共享 profile。
+- `configs/{train,dataset,model,grpo,reward,baseline,eval,rag}/`：通用参数组件。
+- `scripts/experiment.py`：唯一推荐的论文实验入口。
+- `scripts/experiments/iclr2027.py`：入口调用的内部解析与运行模块。
+- `scripts/README.md`：数据、训练、RAG 和诊断脚本索引。
+- `src/`：训练与模型实现；`eval_mteb/`：离线评测。
 
-```bash
-bash ./scripts/run.sh \
-  --base-train configs/train/default.yaml \
-  --base-dataset configs/dataset/default.yaml \
-  --base-model configs/model/qwen3_embedding_0.6b.yaml \
-  --base-grpo configs/grpo/default.yaml \
-  --base-reward configs/reward/mrr.yaml \
-  --base-eval configs/eval/default.yaml \
-  --learning_rate 5e-5 \
-  --sigma 0.03
-```
-
-You can still override either one manually:
-
-```bash
-bash ./scripts/run.sh \
-  --base-train configs/train/default.yaml \
-  --base-dataset configs/dataset/default.yaml \
-  --base-model configs/model/qwen3_embedding_0.6b.yaml \
-  --base-grpo configs/grpo/default.yaml \
-  --base-reward configs/reward/mrr.yaml \
-  --base-eval configs/eval/default.yaml \
-  --run_name qwen3-embed-mrr
-```
-
-In that case `output_dir` falls back to `checkpoints/qwen3-embed-mrr`.
-
-If you still want to keep a top-level experiment template, the old form also works:
-
-```bash
-bash ./scripts/run.sh configs/exp/template.yaml
-```
-
-For simple sweeps over `train/dataset/model/grpo/reward/eval` entries, use [`scripts/run_grid.py`](scripts/run_grid.py):
-
-```bash
-uv run python scripts/run_grid.py \
-  --set-base train=configs/train/default.yaml \
-  --set-base dataset=configs/dataset/default.yaml \
-  --set-base model=configs/model/qwen3_0.6b.yaml,configs/model/e2rank_0.6b_embedding_only.yaml \
-  --set-base grpo=configs/grpo/default.yaml \
-  --set-base reward=configs/reward/ndcg.yaml,configs/reward/contrastive_in_batch.yaml \
-  --set-base eval=configs/eval/default.yaml,configs/eval/mteb_retrieval.yaml \
-  --run-name-prefix sweep \
-  --output-root checkpoints/sweep \
-  --dry-run
-```
-
-The example top-level config is `configs/exp/template.yaml`.
-
-The config layout is:
-
-```text
-configs/
-  train/
-  dataset/
-  model/
-  grpo/
-  reward/
-  eval/
-  exp/
-```
-
-Example inheritance:
-
-```yaml
-_base_:
-  - ../train/default.yaml
-  - ../dataset/default.yaml
-  - ../model/e2rank_0.6b_embedding_only.yaml
-  - ../grpo/default.yaml
-  - ../reward/ndcg.yaml
-  - ../eval/default.yaml
-
-output_dir: checkpoints/E2Rank-Full-GRPO-0.6B
-run_name: E2Rank-Full-GRPO-0.6B
-```
-
-Important data fields exposed by [`src/config.py`](src/config.py):
-
-- `data_path`
-- `per_dataset_max_samples` (`null` keeps all samples)
-- `q_max_len`
-- `d_max_len`
-- `relevance_scheme`
-
-Important RL-related fields exposed by [`src/config.py`](src/config.py):
-
-- `action_components`
-- `group_size`
-- `sigma`
-- `sigma_learnable`
-- `reward_type`
-- `reward_ndcg_k`
-- `reward_rbo_p`
-- `ndcg_in_batch_include_negatives`
-- `contrastive_use_in_batch_negatives`
-- `contrastive_temperature`
-- `advantage_norm`
-
-Common GRPO component settings:
-
-- Query-only: `action_components: [[query]]`
-- Default query-by-slate product: `action_components: [[query], [positive, negative]]`
-- Old factorized: `action_components: [[query], [positive], [negative]]`
-- Doc-only joint: `action_components: [[positive, negative]]`
-- Pos-only: `action_components: [[positive]]`
-- Neg-only: `action_components: [[negative]]`
-
-Supported reward presets in [`configs/reward/`](configs/reward):
-
-- `ndcg.yaml`
-- `ndcg_in_batch.yaml`
-- `contrastive_in_batch.yaml`
-- `contrastive_no_in_batch.yaml`
-- `infonce_in_batch.yaml`
-- `infonce_no_in_batch.yaml`
-- `mrr.yaml`
-- `top_weighted_pairwise_listwise.yaml`
-- `rbo_listwise.yaml`
-
-Reward semantics:
-
-- `ndcg`: per-query slate nDCG only, kept as the backward-compatible no-in-batch option
-- `ndcg_in_batch`: append positives from other samples in the batch as extra zero-relevance candidates; set `ndcg_in_batch_include_negatives: true` to append all candidates from other samples
-- `contrastive`: `s+ - tau * logsumexp(s- / tau)` over negatives only
-- `infonce`: `s+ - tau * logsumexp([s+, s-] / tau)` over the full partition
-- `mrr`: under `graded` relevance, only labels with `relevance >= 2` count as relevant; under `binary`, the threshold remains `relevance > 0`
-- `mrr_in_batch`: the same MRR definition after appending in-batch candidates, parallel to `ndcg_in_batch`
-- `top_weighted_pairwise`: own-slate agreement on every teacher-preferred pair whose better document lies in the teacher top-k; each pair is weighted by that better rank's logarithmic discount
-- `rbo`: normalized truncated rank-biased overlap between the model and teacher permutations; `reward_rbo_p` controls how quickly prefix weights decay
-
-The two permutation-native rewards consume `rank_labels` and intentionally operate on the
-record's own slate. Cross-query documents are not included because the data provides no teacher
-order for them.
-
-Example:
-
-```yaml
-reward_type: contrastive
-contrastive_temperature: 0.03
-```
-
-MTEB eval during regular GRPO training is disabled by default through [`configs/eval/default.yaml`](configs/eval/default.yaml). To evaluate the initial weights and every saved checkpoint with the existing `MTEB(eng, v1, subset)` benchmark preset, use:
-
-```bash
-bash ./scripts/run.sh configs/exp/template.yaml \
-  --base-eval configs/eval/mteb.yaml
-```
-
-The preset sets:
-
-```yaml
-mteb_eval_benchmark: "MTEB(eng, v1, subset)"
-mteb_eval_langs: eng
-mteb_eval_batch_size: 16
-```
-
-The legacy `configs/train/default.yaml` enables LoRA. Model-selected post-training
-recipes and the fixed-corpus RAG experiments use full fine-tuning. Both paths enable
-DeepSpeed ZeRO-3, gradient checkpointing, and Weights & Biases reporting.
-
-To enable the W&B login:
-
-```bash
-wandb login
-```
-
-## Fixed-corpus FlashRAG experiments
-
-The RAG pipeline uses only the datasets and `wiki18_100w` corpus from
-[`RUC-NLPIR/FlashRAG_datasets`](https://huggingface.co/datasets/RUC-NLPIR/FlashRAG_datasets).
-It does not download Search-R1 parquet files, checkpoints, trajectories,
-retrievals, generations, or reported results. The index manifest pins and hashes
-the corpus and 64 FP16 Qwen3 document-vector shards; training instantiates and
-fully fine-tunes only the query encoder. The downloadable FlashRAG E5 index is
-intentionally unsupported because it is not in the Qwen3 embedding space.
-
-Data preparation invokes the external `hf download` CLI and uses Python's
-standard library to resolve the dataset revision. It does not add a direct
-`huggingface_hub` dependency to this project. Ensure `hf` is available on the
-host before running the preparation command.
-
-Install a CUDA-compatible exact FAISS build on the four-GPU training host. Run
-the frozen `Qwen/Qwen2.5-7B-Instruct` vLLM server in a separate GPU allocation
-for `answer_f1` training or final generation:
-
-```bash
-vllm serve Qwen/Qwen2.5-7B-Instruct \
-  --dtype bfloat16 --host 127.0.0.1 --port 8000
-```
-
-Prepare and hash the complete inputs, encode `contents` exactly once, and mine
-the immutable E0 candidate pool:
-
-```bash
-scripts/rag_pipeline.sh prepare --revision <FLASHRAG_COMMIT_SHA>
-scripts/rag_pipeline.sh encode \
-  --revision <QWEN3_EMBEDDING_COMMIT_SHA> --num-shards 64 --max-length 512
-scripts/rag_pipeline.sh candidates \
-  --model-revision <QWEN3_EMBEDDING_COMMIT_SHA> --depth 1000
-```
-
-The prepare step validates the expected 169,615 raw training rows and 51,713
-evaluation rows and audits normalized train/evaluation question overlap. NQ
-queries with no answer-containing E0 top-1000 passage and HotpotQA queries with
-unmappable supporting facts are excluded identically from every training method;
-coverage is recorded next to the candidate JSONL.
-
-Tune on the deterministic source-wise 95/5 split using the LR grid
-`5e-6,1e-5,2e-5` and temperature grid `0.02,0.03,0.05`. Example tuning runs are:
-
-```bash
-scripts/rag_pipeline.sh train configs/rag/infonce.yaml --rag_split train --learning_rate 1e-5 --rag_temperature 0.03
-scripts/rag_pipeline.sh train configs/rag/ranknet.yaml --rag_split train --learning_rate 1e-5 --rag_temperature 0.03
-scripts/rag_pipeline.sh train configs/rag/rl_source_aware.yaml --rag_split train --learning_rate 1e-5
-scripts/rag_pipeline.sh train configs/rag/rl_answer_mrr.yaml --rag_split train --learning_rate 1e-5
-scripts/rag_pipeline.sh train configs/rag/rl_answer_f1.yaml --rag_split train --learning_rate 1e-5
-```
-
-Score any tuning checkpoint without touching the seven official evaluation
-splits:
-
-```bash
-scripts/rag_pipeline.sh tune-eval \
-  --checkpoint checkpoints/rag-rl-source-aware-mrr/checkpoint-1000 \
-  --output results/tuning/source-aware-step1000.json
-```
-
-After selecting hyperparameters and a 95%-split step budget `S`, start a new
-output directory from E0, set `rag_split=full`, and use
-`max_steps=ceil(S/0.95)`. For example, `S=10000` becomes 10527:
-
-```bash
-scripts/rag_pipeline.sh train configs/rag/rl_source_aware.yaml \
-  --rag_split full --max_steps 10527 --learning_rate 1e-5 \
-  --run_name rag-rl-source-aware-final \
-  --output_dir checkpoints/rag-rl-source-aware-final
-```
-
-Evaluate E0 by omitting `--checkpoint`, or evaluate a project-produced full-model
-checkpoint by providing it. Legacy LoRA adapters remain loadable. The command
-reruns retrieval and generation and writes per-dataset retrieval/generation JSONL
-plus `summary.json`:
-
-```bash
-scripts/rag_pipeline.sh eval \
-  --checkpoint checkpoints/rag-rl-source-aware-mrr \
-  --output-dir results/rag-rl-source-aware-mrr \
-  --generator-endpoint http://127.0.0.1:8000
-```
-
-For an inexpensive retrieval smoke test, add `--retrieval-only`. The final run
-reports Recall@5/20, MRR@20, frozen-generator EM/F1, the seven-dataset macro,
-training-domain and held-out averages, plus multi-hop evidence coverage and
-runtime telemetry. `configs/grpo/query_only.yaml` remains the older slate
-ablation and is not an entrypoint for these fixed-corpus experiments.
-
-## Evaluation
-
-The wrapper script runs retrieval evaluation with the settings currently baked into [`eval_mteb/scripts/run_mteb.sh`](eval_mteb/scripts/run_mteb.sh), including:
-
-- `--benchmark MTEB(eng, v1)`
-- `--langs eng`
-- `--batch_size 16`
-
-Run evaluation with:
-
-```bash
-bash eval_mteb/scripts/run_mteb.sh \
-  checkpoints/E2Rank-Full-GRPO-0.6B \
-  exp/E2Rank-Full-GRPO-0.6B
-```
-
-Results are written under `results/mteb/<model_name>/`.
-
-To summarize scores:
-
-```bash
-python eval_mteb/summary.py \
-  results/mteb/E2Rank-Full-GRPO-0.6B/E2Rank-Full-GRPO-0.6B/no_version_available \
-  "MTEB(eng, v2)"
-```
-
-If you need custom evaluation arguments, call the Python entrypoint directly:
-
-```bash
-python eval_mteb/run_mteb.py --help
-```
+旧 Stage/Phase、posttrain shell 实验集合及其专用配置已移除，可从 Git 历史查阅。
+论文 LaTeX 源码与图稿仅保留在本地，Markdown 和审计记录可提交。

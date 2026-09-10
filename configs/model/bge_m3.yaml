@@ -1,6 +1,6 @@
 # BGE-M3 dense embedding protocol (CLS pooling, no role prefix).
 model_name_or_path: BAAI/bge-m3
-_default_train_: ../train/posttrain_bge_m3.yaml
+_default_train_: ../train/posttrain.yaml
 pooling_method: cls
 padding_side: right
 append_token: none

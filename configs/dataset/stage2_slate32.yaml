@@ -1,7 +1,0 @@
-# Slate-size ablation (tab:ablation-slate). Under binary single-positive labels the slate is
-# the ranking reward's RESOLUTION as well as the task's difficulty: an n-candidate pool admits
-# at most n distinct reward values. This is the one resolution lever that does not depend on
-# the batch -- and unlike the in-batch variants it costs encoder time, linearly in n.
-_base_:
-  - ./stage2.yaml
-slate_size: 32

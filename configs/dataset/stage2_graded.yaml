@@ -1,7 +1,0 @@
-# X4 -- teacher-score grades on the negatives. Grades the neg_scores-sorted mined negatives
-# 2 and 1, i.e. asserts that a top-scoring mined negative is PARTIALLY RELEVANT. That is a
-# substantively different supervision claim, not a label-scheme detail, which is why it is one
-# appendix row rather than the default (EXPERIMENT_PLAN.md SS0.5).
-_base_:
-  - ./stage2.yaml
-relevance_scheme: graded

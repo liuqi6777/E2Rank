@@ -1,4 +1,0 @@
-_base_:
-  - ./default.yaml
-# Predicted failure: reward/std -> 0, degenerate_frac -> 1. Requires an in-batch reward.
-frozen_doc_rescale: false

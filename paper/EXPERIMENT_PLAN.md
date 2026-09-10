@@ -340,7 +340,7 @@ G3 验证固定 generator 的可复现输出和 reward 成本。完成低成本�
 旧 A3 query-only exploration 不等于 G1-Q 的 document encoder 冻结。
 旧 RAG RankNet 对照可保留作额外结果，主强监督行计划为 LL。
 
-`scripts/experiments/posttrain_*.sh` 和现有 config 仅为实现起点，不是本计划就绪证明。
+旧 `posttrain_*.sh` 已退役；当前运行入口为 `scripts/experiment.py`，以 `check RUN` 核实实现就绪状态。
 新增 logical IDs 需要显式 config/runner mapping；不要使用旧 `all` 模式代替新核心集合。
 保证 checkpoint 复用、训练数和实际预算可追踪，旧运行目录不覆盖。
 

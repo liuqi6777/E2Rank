@@ -1,5 +1,0 @@
-_base_:
-  - ./posttrain.yaml
-
-# Model-specific extension point. Keep the shared micro-batch unchanged because
-# it also determines the in-batch candidate pool used by the objectives.
