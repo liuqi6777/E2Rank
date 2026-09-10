@@ -13,7 +13,9 @@ CKPT_ROOT="${CKPT_ROOT:-checkpoints/posttrain}"
 INIT_MODEL_CONFIG="${INIT_MODEL_CONFIG:-configs/model/qwen3_embedding_0.6b.yaml}"
 INIT_MODEL_ID="${INIT_MODEL_ID:-Qwen/Qwen3-Embedding-0.6B}"
 POSTTRAIN_DATASET="${POSTTRAIN_DATASET:-configs/dataset/e2rank_listwise.yaml}"
-POSTTRAIN_TRAIN_CONFIG="${POSTTRAIN_TRAIN_CONFIG:-configs/train/posttrain.yaml}"
+# Empty means: use the preset declared by the selected model config. Setting this
+# variable remains an explicit override for calibration runs and ablations.
+POSTTRAIN_TRAIN_CONFIG="${POSTTRAIN_TRAIN_CONFIG:-}"
 POSTTRAIN_GRPO_CONFIG="${POSTTRAIN_GRPO_CONFIG:-configs/grpo/posttrain.yaml}"
 POSTTRAIN_EVAL_CONFIG="${POSTTRAIN_EVAL_CONFIG:-configs/eval/mteb.yaml}"
 export WANDB_PROJECT="${WANDB_PROJECT:-E2Rank-RL-Posttrain}"
@@ -52,13 +54,18 @@ train_supervised_posttrain() {
   local model_config="${RUN_MODEL_CONFIG:-$INIT_MODEL_CONFIG}"
   local out; out="$(run_dir "$id" "$model_config")"
   already_done "$out" && return 0
-  launch bash ./scripts/run_baseline.sh \
-    --base-train    "$POSTTRAIN_TRAIN_CONFIG" \
+  local command=(bash ./scripts/run_baseline.sh)
+  if [ -n "$POSTTRAIN_TRAIN_CONFIG" ]; then
+    command+=(--base-train "$POSTTRAIN_TRAIN_CONFIG")
+  fi
+  command+=( \
     --base-dataset  "$POSTTRAIN_DATASET" \
     --base-model    "$model_config" \
     --base-baseline "$baseline" \
     --base-eval     "$POSTTRAIN_EVAL_CONFIG" \
-    --seed "$SEED" --run_name "$(basename "$out")" --output_dir "$out" "$@"
+    --seed "$SEED" --run_name "$(basename "$out")" --output_dir "$out" "$@" \
+  )
+  launch "${command[@]}"
 }
 
 # $1 run id, $2 GRPO config, $3 reward config, $4... command-line overrides.
@@ -68,14 +75,19 @@ train_rl_posttrain() {
   local model_config="${RUN_MODEL_CONFIG:-$INIT_MODEL_CONFIG}"
   local out; out="$(run_dir "$id" "$model_config")"
   already_done "$out" && return 0
-  launch bash ./scripts/run.sh \
-    --base-train   "$POSTTRAIN_TRAIN_CONFIG" \
+  local command=(bash ./scripts/run.sh)
+  if [ -n "$POSTTRAIN_TRAIN_CONFIG" ]; then
+    command+=(--base-train "$POSTTRAIN_TRAIN_CONFIG")
+  fi
+  command+=( \
     --base-dataset "$POSTTRAIN_DATASET" \
     --base-model   "$model_config" \
     --base-grpo    "$grpo" \
     --base-reward  "$reward" \
     --base-eval    "$POSTTRAIN_EVAL_CONFIG" \
-    --seed "$SEED" --run_name "$(basename "$out")" --output_dir "$out" "$@"
+    --seed "$SEED" --run_name "$(basename "$out")" --output_dir "$out" "$@" \
+  )
+  launch "${command[@]}"
 }
 
 # Evaluation is post-hoc so MTEB never selects training hyperparameters.

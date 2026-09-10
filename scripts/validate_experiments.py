@@ -80,10 +80,11 @@ grpo_parser = HfArgumentParser((ModelArguments, DataArguments, TrainingArguments
 base_parser = HfArgumentParser((ModelArguments, DataArguments, TrainingArguments,
                                 LoraArguments, BaselineArguments, MTEBEvalArguments))
 
+commands = collect()
 ok = 0
 bad = len(failures)
 seen = set()
-for script, cmd in collect():
+for script, cmd in commands:
     toks = shlex.split(cmd)
     idx = next(i for i, t in enumerate(toks) if t.endswith(".sh"))
     is_rl = toks[idx].endswith("/run.sh")

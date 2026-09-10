@@ -155,7 +155,9 @@ TRANSFER_MODEL_CONFIG=... TRANSFER_MODEL_ID=... \
   bash scripts/experiments/posttrain_transfer.sh
 ```
 
-All use `Qwen/Qwen3-Embedding-0.6B` and seed 42 by default. The standard runners use
+All use `Qwen/Qwen3-Embedding-0.6B` and seed 42 by default. Each model config declares
+its default training recipe with `_default_train_`; the standard runners select it
+automatically. They use
 the original E2Rank listwise data; `posttrain_data_v2.sh` uses the merged `train_v2`
 corpus. Override their settings with `INIT_MODEL_CONFIG`, `INIT_MODEL_ID`,
 `POSTTRAIN_DATASET`, `POSTTRAIN_TRAIN_CONFIG`, `POSTTRAIN_GRPO_CONFIG`, `SEED`,
@@ -189,6 +191,9 @@ deepspeed: ./scripts/zero3.json
 
 Ready-to-use retrieval-training examples are provided in
 `configs/model/bge_m3.yaml` and `configs/model/multilingual_e5_large.yaml`.
+Their `_default_train_` directives select architecture-appropriate batch size,
+learning rate, warmup, and scheduler settings whenever `--base-train` is omitted.
+An explicit `--base-train` or `POSTTRAIN_TRAIN_CONFIG` always takes precedence.
 They can be passed anywhere a model base config is accepted:
 
 ```bash

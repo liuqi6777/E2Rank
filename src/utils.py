@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 BASE_CONFIG_SLOTS = ("train", "dataset", "model", "grpo", "reward", "eval")
 BASELINE_CONFIG_SLOTS = ("train", "dataset", "model", "baseline", "eval")
+MODEL_DEFAULT_TRAIN_KEY = "_default_train_"
 
 
 def load_raw_config_file(config_path: str) -> dict:
@@ -93,6 +94,9 @@ def resolve_config_inheritance_from_dict(
 
     local_config = deepcopy(config)
     base_entries = normalize_base_entries(local_config.pop("_base_", []), config_path)
+    # This is a composition directive, not a dataclass argument. It is consumed by
+    # the slot resolver when no explicit train config was supplied.
+    local_config.pop(MODEL_DEFAULT_TRAIN_KEY, None)
 
     merged_config: dict = {}
     config_dir = os.path.dirname(config_path)
@@ -108,6 +112,55 @@ def resolve_config_inheritance_from_dict(
         merged_config = merge_config_dicts(merged_config, resolved_base_config)
 
     return merge_config_dicts(merged_config, local_config)
+
+
+def resolve_model_default_train_config(model_config_path: str) -> str | None:
+    """Return the train preset declared by a model config, resolved from that file."""
+    model_config_path = os.path.abspath(model_config_path)
+    config = load_raw_config_file(model_config_path)
+    default_train = config.get(MODEL_DEFAULT_TRAIN_KEY)
+    if default_train is None:
+        return None
+    if not isinstance(default_train, str) or not default_train.strip():
+        raise ValueError(
+            f"`{MODEL_DEFAULT_TRAIN_KEY}` must be a non-empty string: {model_config_path}"
+        )
+
+    default_train_path = pathlib.Path(default_train)
+    if not default_train_path.is_absolute():
+        default_train_path = pathlib.Path(model_config_path).parent / default_train_path
+    default_train_path = default_train_path.resolve()
+    if not default_train_path.is_file():
+        raise ValueError(
+            f"Model default train config does not exist: {default_train_path} "
+            f"(declared by {model_config_path})"
+        )
+    return str(default_train_path)
+
+
+def apply_model_default_train_to_root(config_path: str, config: dict) -> dict:
+    """Inject a model's default train base into a top-level `_base_` composition."""
+    updated_config = deepcopy(config)
+    base_entries = normalize_base_entries(updated_config.get("_base_", []), config_path)
+    config_dir = pathlib.Path(config_path).resolve().parent
+
+    slots: dict[str, tuple[int, str]] = {}
+    for index, base_entry in enumerate(base_entries):
+        if not isinstance(base_entry, str):
+            raise ValueError(f"Each `_base_` entry must be a string: {config_path}")
+        base_path = pathlib.Path(base_entry)
+        resolved_path = base_path if base_path.is_absolute() else config_dir / base_path
+        slots[resolved_path.parent.name] = (index, str(resolved_path))
+
+    if "train" in slots or "model" not in slots:
+        return updated_config
+
+    model_index, model_path = slots["model"]
+    default_train = resolve_model_default_train_config(model_path)
+    if default_train:
+        base_entries.insert(model_index, default_train)
+        updated_config["_base_"] = base_entries
+    return updated_config
 
 
 def apply_base_overrides(config_path: str, config: dict, base_overrides: dict[str, str]) -> dict:
@@ -160,6 +213,12 @@ def resolve_config_from_base_overrides(
     base_overrides: dict[str, str],
     base_slots: tuple[str, ...] = BASE_CONFIG_SLOTS,
 ) -> dict:
+    base_overrides = dict(base_overrides)
+    if "train" not in base_overrides and "model" in base_overrides:
+        default_train = resolve_model_default_train_config(base_overrides["model"])
+        if default_train:
+            base_overrides["train"] = default_train
+
     merged_config: dict = {}
     for config_path in resolve_slot_config_paths(base_overrides, base_slots=base_slots):
         resolved_config = resolve_config_inheritance(config_path)
@@ -251,6 +310,7 @@ def parse_config_file(
         config=load_raw_config_file(config_path),
         base_overrides=base_overrides or {},
     )
+    root_config = apply_model_default_train_to_root(config_path, root_config)
     config = resolve_config_inheritance_from_dict(
         config=root_config,
         config_path=config_path,
@@ -343,7 +403,9 @@ def save_model_for_trainer(trainer: HFTrainer, output_dir: str) -> None:
 __all__ = [
     "BASE_CONFIG_SLOTS",
     "BASELINE_CONFIG_SLOTS",
+    "MODEL_DEFAULT_TRAIN_KEY",
     "apply_base_overrides",
+    "apply_model_default_train_to_root",
     "build_auto_run_name",
     "get_deepspeed_zero_stage",
     "load_raw_config_file",
@@ -356,6 +418,7 @@ __all__ = [
     "resolve_config_inheritance",
     "resolve_config_inheritance_from_dict",
     "resolve_gradient_checkpointing_kwargs",
+    "resolve_model_default_train_config",
     "resolve_run_name_and_output_dir",
     "resolve_slot_config_paths",
     "save_model_for_trainer",

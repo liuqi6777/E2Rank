@@ -1,0 +1,4 @@
+_base_:
+  - ./posttrain.yaml
+
+# Default post-training recipe for Qwen3-family embedding checkpoints.

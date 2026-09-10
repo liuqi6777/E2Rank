@@ -1,5 +1,6 @@
 # Multilingual-E5 uses mean pooling and asymmetric query/passage prefixes.
 model_name_or_path: intfloat/multilingual-e5-large
+_default_train_: ../train/posttrain_multilingual_e5_large.yaml
 pooling_method: mean
 padding_side: right
 append_token: none
