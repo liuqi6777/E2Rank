@@ -10,7 +10,6 @@ pending:
   manifest_loader: "src/embedding_data.py: shared immutable train/dev/test manifest not implemented"
   deterministic_dev: "Deterministic ranking dev selection/checkpoint evaluation not implemented"
   frozen_document: "Embedding trainers lack a frozen document branch; exploration=query is not query-only training"
-  lambdaloss: "Embedding LambdaLoss objective not implemented"
   rag_lambdaloss: "RAG LambdaLoss objective not implemented"
   rag_ndcg: "RAG nDCG reward not implemented; source_aware_mrr is not an equivalent substitution"
   rag_candidates: "Shared-candidate objective control must be implemented and validated"
@@ -72,8 +71,8 @@ runs:
   G1-Q-CL: {group: G1, objective: infonce, scope: query_only, requirements: [frozen_document]}
   G1-J-RN: {group: G1, objective: ranknet, scope: joint}
   G1-Q-RN: {group: G1, objective: ranknet, scope: query_only, requirements: [frozen_document]}
-  G1-J-LL: {group: G1, objective: lambdaloss, scope: joint, requirements: [lambdaloss]}
-  G1-Q-LL: {group: G1, objective: lambdaloss, scope: query_only, requirements: [lambdaloss, frozen_document]}
+  G1-J-LL: {group: G1, objective: lambdaloss, scope: joint}
+  G1-Q-LL: {group: G1, objective: lambdaloss, scope: query_only, requirements: [frozen_document]}
   G1-J-RL: {group: G1, objective: rl, scope: joint}
   G1-Q-RL: {group: G1, objective: rl, scope: query_only, requirements: [frozen_document]}
   G1-A-Paired:
@@ -95,7 +94,7 @@ runs:
     control: G1-J-RL
     overrides: {reward_type: mrr_in_batch}
   G2-D-CL: {group: G2, objective: infonce, scope: joint}
-  G2-D-LL: {group: G2, objective: lambdaloss, scope: joint, requirements: [lambdaloss]}
+  G2-D-LL: {group: G2, objective: lambdaloss, scope: joint}
   G2-D-RL: {group: G2, objective: rl, scope: joint}
   G2-W-CL: {group: G2, kind: reuse, reuse: G2-D-CL, scope: joint}
   G2-W-LL:
@@ -103,7 +102,7 @@ runs:
     objective: lambdaloss
     scope: joint
     warmup_from: G2-D-CL
-    requirements: [lambdaloss, continuation]
+    requirements: [continuation]
   G2-W-RL:
     group: G2
     objective: rl

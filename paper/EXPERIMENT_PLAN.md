@@ -123,7 +123,7 @@ G1 不再划分 train/dev，清理后全部用于训练。预处理支持可选�
 |---|---|
 | Single-positive InfoNCE | 对固定抽取正例计算 log-softmax loss；其余有效候选为负例 |
 | RankNet | 仅构造已标注正例高于负例的 pairs，不强制正例之间的 teacher 次序 |
-| LambdaLoss | 使用相同 binary gains、候选与 nDCG@10 cutoff；具体 variant 在运行前冻结 |
+| LambdaLoss | LambdaRank variant：pairwise logistic × 当前排序的 `|ΔnDCG@10|`；使用相同 binary gains 与候选，`gain=2^rel-1`、`sigma=1.0` |
 | Proposed RL | 同标签与候选上的 exact nDCG@10 |
 
 主协议沿用扩展候选池设计：加入其他记录固定抽取的正例作为 in-batch 候选，
@@ -284,8 +284,8 @@ CL/LL/RetRL；动态检索版本作为部署结果单列。如改用共同动态
 - [ ] G2 E2Rank 版本与规模、外部 overlap 审计、唯一 train/dev/test manifest。
 - [ ] 固定 E0、B0、pooling/prompts 和各组评测协议；校验 full FT 与冻结分支。
 - [x] 接入 single-positive CL、binary RankNet 和可变长 RL。
-- [ ] 实现指定 LambdaLoss variant。
-- [ ] 明确 binary/teacher-grade 两套标签及 MRR 阈值，确保 padding 不参与 loss/reward。
+- [x] 实现指定 LambdaLoss variant；G1 使用 binary relevance，G2 使用 teacher grades 3/2/1/0，padding 不参与 loss。
+- [ ] 明确两套标签的 MRR 阈值，确保 padding 不参与 reward。
 - [ ] 修复 split loader；实现固定候选 deterministic dev evaluation 与全 corpus 检索。
 - [ ] 固定各组 LR/目标网格、trial 与主训练预算、tie-break 和 G2 的 T/W。
 - [ ] G3 QA、index、generator manifests 和候选访问控制。

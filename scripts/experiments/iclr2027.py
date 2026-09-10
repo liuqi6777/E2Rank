@@ -148,6 +148,9 @@ def resolve_run(suite, suite_path, run_id, root=ROOT, nproc=1):
             entrypoint = 'src/train_baseline.py'
             config.update(baseline_loss=objective, baseline_temperature=0.03,
                           baseline_use_in_batch_negatives=True)
+            if objective == 'lambdaloss':
+                # Freeze the metric-aware control before any result is observed.
+                config.update(baseline_ndcg_k=10, lambdaloss_sigma=1.0)
     for key in ('model_name_or_path', 'pooling_method', 'append_token', 'padding_side',
                 'query_prompt_template', 'document_prompt_template', 'learning_rate', 'max_steps'):
         if protocol.get(key) is not None:

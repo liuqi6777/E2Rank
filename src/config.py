@@ -27,7 +27,7 @@ SUPPORTED_SAMPLING_LAWS = ("vmf", "gaussian")
 
 SUPPORTED_ROLLOUTS = ("product", "diagonal")
 
-SUPPORTED_BASELINE_LOSSES = ("infonce", "ranknet")
+SUPPORTED_BASELINE_LOSSES = ("infonce", "ranknet", "lambdaloss")
 
 
 def normalize_advantage_norm_mode(mode) -> str:
@@ -272,16 +272,24 @@ class BaselineArguments:
 
     baseline_loss: str = field(
         default="infonce",
-        metadata={"help": "Supervised objective: infonce or ranknet"},
+        metadata={"help": "Supervised objective: infonce, ranknet, or lambdaloss"},
     )
     baseline_temperature: float = field(
         default=0.03,
         metadata={
             "help": (
                 "Temperature applied to cosine scores before the supervised loss. "
-                "Used by both InfoNCE and RankNet."
+                "Used by InfoNCE and RankNet."
             )
         },
+    )
+    baseline_ndcg_k: int = field(
+        default=10,
+        metadata={"help": "nDCG cutoff used by the LambdaRank LambdaLoss variant"},
+    )
+    lambdaloss_sigma: float = field(
+        default=1.0,
+        metadata={"help": "Pairwise logistic scale used by LambdaLoss"},
     )
     baseline_use_in_batch_negatives: bool = field(
         default=False,
@@ -305,6 +313,14 @@ class BaselineArguments:
             raise ValueError(
                 "baseline_temperature must be positive, "
                 f"got {self.baseline_temperature}"
+            )
+        if self.baseline_ndcg_k <= 0:
+            raise ValueError(
+                f"baseline_ndcg_k must be positive, got {self.baseline_ndcg_k}"
+            )
+        if self.lambdaloss_sigma <= 0:
+            raise ValueError(
+                f"lambdaloss_sigma must be positive, got {self.lambdaloss_sigma}"
             )
 
 

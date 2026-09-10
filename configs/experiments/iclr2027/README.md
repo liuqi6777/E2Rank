@@ -48,6 +48,7 @@ python scripts/experiment.py train G1-J-RL --gpus 4
 | 保存 | 每 100 步，保留最近 2 个中间 checkpoint，另存最终模型 |
 | RL group size / kappa | 32 / 755 |
 | CL / RankNet temperature | 0.03 |
+| LambdaLoss | LambdaRank `|ΔnDCG@10|` weighting，sigma 1.0 |
 
 这是一版固定试跑参数，尚未完成正式 GPU 实验；不用 BRIGHT 选模。
 `--gpus` 改变时自动维持 global batch，GPU 数与 microbatch 的乘积须整除 batch。
@@ -75,8 +76,9 @@ JSONL 不存 padding，模型和 loss/reward 均排除 padding。
   W 必须落在保存 schedule 上，不能退回到旧 Stage-1 或最终模型。
 - G3：从 E0 开始，比较 CL、LL、检索 RL、答案 RL；不自动采用其他组的最优 checkpoint。
 
-当前 G1 joint CL / RN / RL 与 RL 消融已接入。
-LL 需要 LambdaLoss；G1 query-only 需要真正冻结 document 分支，仅设置 query action sampling 不够。
+当前 G1 joint CL / RN / LL / RL 与 RL 消融已接入。
+LL 固定为 LambdaRank variant：pairwise logistic 乘当前排序交换产生的 `|ΔnDCG@10|`，
+使用 `gain=2^rel-1` 和 sigma 1.0。G1 query-only 仍需要真正冻结 document 分支，仅设置 query action sampling 不够。
 G2 仍需数据划分加载、确定性 dev 选模和 continuation 状态处理，并补齐 base 模型表示协议与预算。
 G3 仍需候选访问控制、答案 F1 选模；检索 RL 需要 nDCG，不能用 source-aware MRR 代替。
 

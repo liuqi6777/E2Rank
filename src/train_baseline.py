@@ -137,6 +137,112 @@ def compute_ranknet_loss(
     )
 
 
+def compute_lambdaloss_loss(
+    scores: Tensor,
+    relevance_labels: Tensor,
+    k: int = 10,
+    sigma: float = 1.0,
+    candidate_mask: Tensor | None = None,
+) -> Tensor:
+    """LambdaRank's LambdaLoss: pairwise logistic loss weighted by |delta nDCG@k|.
+
+    Positions are recomputed from the current scores on every forward pass. The
+    position-dependent weights are treated as constants by ``argsort``, matching
+    the classic LambdaRank update. Relevance ties, padding, and pairs whose swap
+    cannot affect nDCG@k contribute no loss.
+    """
+    if scores.dim() != 2 or relevance_labels.dim() != 2:
+        raise ValueError(
+            "scores and relevance_labels must both be 2D, "
+            f"got {tuple(scores.shape)} and {tuple(relevance_labels.shape)}"
+        )
+    if scores.shape != relevance_labels.shape:
+        raise ValueError(
+            "scores and relevance_labels must have the same shape, "
+            f"got {tuple(scores.shape)} and {tuple(relevance_labels.shape)}"
+        )
+    if isinstance(k, bool) or not isinstance(k, int) or k <= 0:
+        raise ValueError(f"lambdaloss k must be a positive integer, got {k}")
+    if sigma <= 0:
+        raise ValueError(f"lambdaloss sigma must be positive, got {sigma}")
+    if candidate_mask is None:
+        candidate_mask = torch.ones_like(relevance_labels, dtype=torch.bool)
+    elif candidate_mask.shape != scores.shape or candidate_mask.dtype != torch.bool:
+        raise ValueError(
+            "candidate_mask must be a boolean tensor matching scores, "
+            f"got shape={tuple(candidate_mask.shape)} dtype={candidate_mask.dtype}"
+        )
+
+    labels = relevance_labels.masked_fill(~candidate_mask, 0)
+    ranking = scores.masked_fill(~candidate_mask, float("-inf")).argsort(
+        dim=-1,
+        descending=True,
+        stable=True,
+    )
+    positions = torch.empty_like(ranking)
+    positions.scatter_(
+        dim=1,
+        index=ranking,
+        src=torch.arange(scores.size(1), device=scores.device).expand_as(ranking),
+    )
+
+    cutoff = min(k, scores.size(1))
+    metric_dtype = (
+        torch.float32
+        if scores.dtype in {torch.float16, torch.bfloat16}
+        else scores.dtype
+    )
+    position_discounts = torch.zeros(
+        scores.size(1),
+        device=scores.device,
+        dtype=metric_dtype,
+    )
+    position_discounts[:cutoff] = 1.0 / torch.log2(
+        torch.arange(2, cutoff + 2, device=scores.device, dtype=metric_dtype)
+    )
+    item_discounts = position_discounts[positions].masked_fill(~candidate_mask, 0)
+    metric_labels = labels.to(metric_dtype)
+    gains = torch.pow(2.0, metric_labels) - 1.0
+
+    ideal_labels = metric_labels.masked_fill(~candidate_mask, float("-inf")).topk(
+        k=cutoff,
+        dim=-1,
+    ).values
+    ideal_labels = ideal_labels.masked_fill(~torch.isfinite(ideal_labels), 0)
+    idcg = (
+        (torch.pow(2.0, ideal_labels) - 1.0)
+        * position_discounts[:cutoff].unsqueeze(0)
+    ).sum(dim=-1)
+
+    label_differences = labels.unsqueeze(2) - labels.unsqueeze(1)
+    preferred_pairs = label_differences > 0
+    preferred_pairs = (
+        preferred_pairs
+        & candidate_mask.unsqueeze(2)
+        & candidate_mask.unsqueeze(1)
+    )
+    delta_ndcg = torch.abs(
+        (gains.unsqueeze(2) - gains.unsqueeze(1))
+        * (item_discounts.unsqueeze(2) - item_discounts.unsqueeze(1))
+    )
+    delta_ndcg = torch.where(
+        idcg[:, None, None] > 0,
+        delta_ndcg / idcg.clamp_min(torch.finfo(metric_dtype).eps)[:, None, None],
+        torch.zeros_like(delta_ndcg),
+    )
+    weights = delta_ndcg * preferred_pairs.to(delta_ndcg.dtype)
+
+    score_differences = scores.unsqueeze(2) - scores.unsqueeze(1)
+    pair_losses = F.softplus(-float(sigma) * score_differences)
+    weighted_loss = (pair_losses * weights).sum(dim=(1, 2))
+    weight_sums = weights.sum(dim=(1, 2))
+    return torch.where(
+        weight_sums > 0,
+        weighted_loss / weight_sums.clamp_min(torch.finfo(metric_dtype).eps),
+        torch.zeros_like(weighted_loss),
+    )
+
+
 class BaselineModel(nn.Module):
     def __init__(
         self,
@@ -219,6 +325,14 @@ class BaselineModel(nn.Module):
                 scores=scores,
                 rank_labels=rank_labels if rank_labels is not None else relevance_labels,
                 temperature=self.baseline_args.baseline_temperature,
+                candidate_mask=candidate_mask,
+            )
+        elif self.baseline_args.baseline_loss == "lambdaloss":
+            per_sample_loss = compute_lambdaloss_loss(
+                scores=scores,
+                relevance_labels=relevance_labels,
+                k=self.baseline_args.baseline_ndcg_k,
+                sigma=self.baseline_args.lambdaloss_sigma,
                 candidate_mask=candidate_mask,
             )
         else:  # BaselineArguments validates this; keep the model failure explicit.

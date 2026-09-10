@@ -1,6 +1,6 @@
 # RL Training and Evaluation for Embedding
 
-Embedding RL、InfoNCE / RankNet 与固定索引 RAG。当前实验按 G1 / G2 / G3 组织。
+Embedding RL、InfoNCE / RankNet / LambdaLoss 与固定索引 RAG。当前实验按 G1 / G2 / G3 组织。
 
 ## 环境
 
@@ -26,7 +26,7 @@ python scripts/experiment.py train G1-J-RL --gpus 4
 
 | 组 | 目的 | 当前状态 |
 |---|---|---|
-| G1 | 开源 embedding model → ReasonRank reasoning 训练，BRIGHT 主评测 | Joint CL / RankNet / RL 与 RL 消融已接入；LambdaLoss、固定 document 分支待实现 |
+| G1 | 开源 embedding model → ReasonRank reasoning 训练，BRIGHT 主评测 | Joint CL / RankNet / LambdaLoss / RL 与 RL 消融已接入；固定 document 分支待实现 |
 | G2 | Base LLM 上大规模 CL / RL，以及共同 CL warm-up 后的比较 | 预算、表示协议和部分训练能力待补齐 |
 | G3 | 固定索引 RAG 的检索与答案目标 | 保留现有 RAG 工具；论文实验的候选控制和选模等尚待接入 |
 
