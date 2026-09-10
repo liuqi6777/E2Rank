@@ -1,8 +1,9 @@
 _base_:
   - ../../train/posttrain.yaml
+  - ../../model/qwen3_0.6b.yaml
   - ../../eval/default.yaml
-# Base checkpoint and embedding protocol intentionally have no fallback.
-data_path: data/processed/e2rank/train.jsonl
+# Scratch initialization and representation protocol follow the former posttrain scratch recipe.
+data_path: data/train.jsonl
 per_dataset_max_samples: null
 q_max_len: 512
 d_max_len: 1024

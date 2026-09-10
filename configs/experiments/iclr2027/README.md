@@ -66,20 +66,20 @@ JSONL 不存 padding，模型和 loss/reward 均排除 padding。
 
 ## 实验行与依赖
 
-共 24 个逻辑行：21 个训练执行、2 个 E0 评测、1 个复用。
+共 23 个逻辑行：21 个训练执行、2 个 E0 评测。
 
 - G1：`J` / `Q` 表示 joint / query-only；CL、RN、LL、RL 是四类目标。
   `A-Paired`、`A-Cal`、`A-MRR` 的对照均为 `G1-J-RL`。
-- G2：`D` 从 base LLM 直接训练，`W` 从共同 CL warm-up 继续。
-  `G2-D-CL` 训练到 T，在固定 W 保存 W0；`G2-W-CL` 复用 D-CL 的后半程结果。
-  `G2-W-LL/RL` 从 `G2-D-CL-s42/checkpoint-W` 开始，只训练 T-W 步。
-  W 必须落在保存 schedule 上，不能退回到旧 Stage-1 或最终模型。
-- G3：从 E0 开始，比较 CL、LL、检索 RL、答案 RL；不自动采用其他组的最优 checkpoint。
+- G2：`D` 从初始 LLM 训练；`W` 从 `G2-D-CL-s42/` 最终模型重新训练。
+  D-CL 训练 1200 步，W-CL/LL/RL 各新建 optimizer/scheduler 和数据迭代，再训练 1200 步。
+  W-CL 是独立训练行，不复用 D-CL；只加载模型权重，不恢复 trainer 状态。
+- G3：从 E0 开始，比较 CL、检索 RL、答案 RL；不自动采用其他组的最优 checkpoint。
 
 当前 G1 joint CL / RN / LL / RL 与 RL 消融已接入。
 LL 固定为 LambdaRank variant：pairwise logistic 乘当前排序交换产生的 `|ΔnDCG@10|`，
 使用 `gain=2^rel-1` 和 sigma 1.0。G1 query-only 仍需要真正冻结 document 分支，仅设置 query action sampling 不够。
-G2 仍需数据划分加载、确定性 dev 选模和 continuation 状态处理，并补齐 base 模型表示协议与预算。
+G2 使用预处理生成的固定训练文件，采用固定预算和最终 checkpoint，不要求 manifest loader 或 dev 选模。
+模型协议和预算已填写；第二阶段只需先完成 D-CL 以提供初始化权重。
 G3 仍需候选访问控制、答案 F1 选模；检索 RL 需要 nDCG，不能用 source-aware MRR 代替。
 
 运行时以 `check RUN` 为准。当前入口不要求 model revision 或 dataset manifest/hash 作为启动门槛；
@@ -99,3 +99,21 @@ LambdaLoss 与 RL nDCG 使用 graded。ready 文件分别保存 relevance（已�
 graded_relevance 与 rank_labels。teacher 排序不被强行改为已知正例第一。
 G1-A-Binary 只将 RL nDCG 标签改为已知正例 binary；G1-A-MRR 也使用 binary。
 CL 与排序方法的监督信息不同；LL 与 RL 才是相同 graded 目标下的主要对照。
+
+## G2 第一版 scratch 参数
+
+参照已退役的 `posttrain_ablations.sh scratch`，使用 `Qwen/Qwen3-0.6B`、full FT、
+learning rate 5e-6、AdamW、linear scheduler、warmup ratio 0.03、weight decay 0.01。
+表示协议继承 `configs/model/qwen3_0.6b.yaml`：last pooling、left padding、append pad，
+query 使用 Instruct/Query 模板，document 为原文；query/document 上限 512/1024。
+模型名称沿用旧配方，不据此声称它是纯预训练 checkpoint。
+
+全局 batch 128、每卡 microbatch 8；1/2/4/8 卡 accumulation 为 16/8/4/2。
+每次运行 1200 步，约 153,600 query exposures，每 200 步保存。
+D-CL 最终权重保存在 `checkpoints/iclr2027/G2-D-CL-s42/`。
+W-CL/LL/RL 从此目录初始化，各独立运行 1200 步，不读取 optimizer/scheduler 或数据游标。
+两阶段路线计入 CL 前缀后为 2400 步；直接路线为 1200 步，不作为等总预算比较。
+不沿用旧数据配置的 per-source cap 或自动 dev 划分。
+
+G2 读取 `data/train.jsonl`，全量训练，外部检索任务评测。当前本地尚缺该文件。
+先运行 D-CL，再分别启动 W-CL/LL/RL；入口不会隐式训练依赖。

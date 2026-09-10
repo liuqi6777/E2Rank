@@ -80,8 +80,9 @@ G2 直接训练和 warm-up 后训练可以有各自的网格，但每个对照�
 
 ### 1.3 评测与模型选择
 
-只用独立开发集选择超参数/checkpoint；先按主 dev 指标，再按更早 step、预先固定的
-config 顺序处理并列。各组指标在下文固定。外部最终评测不用于选配置或挑任务。
+G1/G2 提前固定配置与训练预算，报告最终 checkpoint，不使用 dev 选模。
+G3 使用独立 QA dev 选模；并列时按更早 step、预先固定的 config 顺序处理。
+外部最终评测不用于选配置或挑任务。
 
 以确定性均值 embedding 的检索结果为主。采样 reward 上升不能替代确定性质量提升。
 固定评测数据 revision、task list、候选、检索协议与聚合权重，输出逐任务分数。
@@ -190,12 +191,17 @@ sampled/frozen score 分布及冻结候选 top-K 占比。归一化后的 advant
 
 ## 3. G2：从 base LLM 开始的较大规模 embedding 训练
 
+G2 初始运行参数沿用旧 scratch 的 `Qwen/Qwen3-0.6B` 表示协议与 full FT 配方：
+LR 5e-6、global batch 128、microbatch 8、linear schedule、warmup ratio 0.03。
+每次独立运行训练 1200 步，每 200 步保存。第二阶段统一从 G2-D-CL 的最终模型初始化，
+新建 optimizer、scheduler、step counter 和数据迭代，各训练 1200 步。
+
 ### 3.1 数据、表示与标签
 
 使用原始 E2Rank listwise artifact（约 156k，须核实实际版本、规模和候选长度）。
-不默认使用混入 ReasonRank 的 `train_v2`。审计来源和外部评测 overlap 后，按同题簇冻结
-train/dev/test manifest；开发/测试比例默认各 5%，以实际组数为准。
-现有 loader 分别 shuffle 构造 train/dev 的方式不能保证互补，须改成共享 manifest。
+直接读取原始 `data/train.jsonl`，全量用于训练，不另留内部 dev/test。
+不默认使用混入 ReasonRank 的 `train_v2`；审计来源与外部评测 overlap，固定所有方法的训练文件。
+不需要 ReasonRank 预处理或专门的 manifest loader。
 
 固定 B0 的 pooling、retrieval prompts、归一化与 scoring；这些在所有目标间保持相同。
 所有路线均 full FT、joint query/document。B0 直接评测仅作初始化诊断，不假定已有检索能力。
@@ -216,28 +222,24 @@ G1/G2 graded 均采用相同 teacher 排名分段；已知正例身份另行保�
 | G2-D-CL | B0 → CL | 直接 embedding 训练基线 |
 | G2-D-LL | B0 → LambdaLoss | 同 grades 的监督对照 |
 | G2-D-RL | B0 → RL | 检验直接从 base 启动 |
-| G2-W-CL | B0 → 共同 CL warm-up W0 → 继续 CL | 后续训练对照 |
+| G2-W-CL | B0 → CL 最终模型 W0 → 重新训练 CL | 后续训练对照 |
 | G2-W-LL | B0 → 同一个 W0 → LL | 排除切换到 metric-aware 目标本身的收益 |
 | G2-W-RL | B0 → 同一个 W0 → RL | 检验已有初始空间后的 RL 收益 |
 
-W0 只训练一次。预先声明总 example/token budget T 与 warm-up budget W（0<W<T）；
-所有 warm-up 分支使用相同 W0，后续各用 T-W。直接分支各用 T。
-G2-D-CL 在 W 处的 checkpoint 可作为 W0，但必须预先确定配置/预算，不能根据 RL 测试
-结果挑 warm-up。若共同 warm-up 后 CL 的配置不变且训练轨迹完全相同，G2-W-CL 直接
-复用 G2-D-CL 的后半段；如改变 optimizer/schedule，必须额外运行并计入成本。
-明确分支是否重置 optimizer、schedule 和 step counter，并保持 warm-up 后比较一致。
+W0 为 G2-D-CL 完成 1200 步后的最终模型，只训练一次，三条第二阶段分支共享该权重。
+G2-W-CL/LL/RL 均为独立运行：重置 optimizer、scheduler、step counter 和数据迭代，
+各重新训练 1200 步。W-CL 不复用 D-CL 的后半段，入口不恢复 trainer 状态。
 
-默认 **5 个独立训练执行**：D-CL、D-LL、D-RL，以及从已保存 W0 分叉的 W-LL/W-RL；
-W-CL 为 D-CL 后半段复用。六个逻辑结果行不等于六次从头训练。
-直接 vs warm-up 比较报告总预算；后续目标比较同时报告 continuation 预算和共同前缀成本。
-不能让 warm-up 路线额外多读一轮数据后与直接路线称为等预算。
+共 6 个训练执行：3 个直接训练和 3 个从 CL 最终权重初始化的第二阶段训练。
+直接路线预算 1200 步；两阶段路线计入共同前缀后为 2400 步，不能称为等总预算对比。
+第二阶段 CL/LL/RL 的起点、候选、优化设置及新增预算一致，可用于比较后训练目标。
 
 ### 3.3 评测、失败情形与结论
 
 Phase 0 固定一组外部检索任务，可选自 MTEB retrieval；包含任务与 aggregation 必须
 在看到目标间效果差异前冻结。报告逐任务结果、宏平均及随处理样本数/时间的学习曲线。
-选模采用 held-out E2Rank dev teacher-grade nDCG@10；E2Rank test 报告 teacher-target
-nDCG、MRR、pairwise 与 rank-1 accuracy，外部任务检验迁移。BRIGHT 可补充，但不能
+提前固定训练预算并评测最终 checkpoint，不做内部 dev/test 划分或选模，外部任务检验迁移。
+训练集 teacher-target 指标仅作训练诊断，不作为 held-out 测试结果。BRIGHT 可补充，但不能
 替代本组通用检索证据。不得只凭同分布 teacher-target 改善宣称通用能力提高。
 
 与强 embedding 初始化相比，base 可能留出更大改善空间，但不能保证 MTEB 可区分。
@@ -259,7 +261,6 @@ index 和 generator。独立 QA train/dev/test，不能用 ReasonRank listwise �
 |---|---|---|
 | G3-E0 | 无 | 原始检索器 |
 | G3-CL | InfoNCE（多正例按实际标注处理） | 检索监督适配 |
-| G3-LL | LambdaLoss，同检索 relevance/candidate 协议 | 强监督检索对照 |
 | G3-RetRL | Retrieval nDCG reward | 与下游答案 reward 区分 |
 | G3-AnsRL | Generated-answer F1 reward | 直接下游反馈的核心证据 |
 
@@ -284,20 +285,20 @@ CL/LL/RetRL；动态检索版本作为部署结果单列。如改用共同动态
 - [x] G1 空字符串补齐和有效候选 mask 的文本层 helper。
 - [x] G1 候选 mask 接入 collator、有效文档编码、CL/RankNet 和 RL reward/log-prob/KL；CPU 数值检查通过。
 - [ ] G1 最终同题复核。
-- [ ] G2 E2Rank 版本与规模、外部 overlap 审计、唯一 train/dev/test manifest。
+- [ ] G2 E2Rank 版本与规模、外部 overlap 审计、固定全量 train 文件。
 - [ ] 固定 E0、B0、pooling/prompts 和各组评测协议；校验 full FT 与冻结分支。
 - [x] 接入 single-positive CL、teacher-order RankNet 和可变长 RL。
 - [x] 实现指定 LambdaLoss variant；G1/G2 使用 teacher grades 3/2/1/0，padding 不参与 loss。
 - [ ] 明确两套标签的 MRR 阈值，确保 padding 不参与 reward。
-- [ ] 修复 split loader；实现固定候选 deterministic dev evaluation 与全 corpus 检索。
-- [ ] 固定各组 LR/目标网格、trial 与主训练预算、tie-break 和 G2 的 T/W。
+- [ ] 接入最终 checkpoint 的固定候选排序评测与全 corpus 检索。
+- [ ] 固定各组 LR/目标网格、trial 与主训练预算、tie-break 和 G2 两阶段预算。
 - [ ] G3 QA、index、generator manifests 和候选访问控制。
 - [ ] 所有命令 dry-run，检查 resolved configs，再提交 GPU；尚无已完成结果。
 
 ### Phase 1 — 短运行与诊断
 
 G1 各 objective 和两种更新范围跑 smoke；核对 frozen document embeddings/index hash。
-G2 用 B0 短跑 CL/LL/RL，检查 reward/advantage 信号；只基于训练/dev 冻结预算。
+G2 用 B0 短跑 CL/LL/RL，检查 reward/advantage 信号；基于训练数值稳定性和成本诊断提前冻结预算。
 G3 验证固定 generator 的可复现输出和 reward 成本。完成低成本梯度诊断。
 这些短运行不取代正式预算，也不根据最终测试分数决定保留哪条路线。
 
@@ -315,7 +316,7 @@ G3 验证固定 generator 的可复现输出和 reward 成本。完成低成本�
 
 ### Phase 4 — G3 下游反馈
 
-完成四个训练配置、原始 E0 与候选访问控制，优先保证 AnsRL 与公平监督对照。
+完成三个训练配置、原始 E0 与候选访问控制，优先保证 AnsRL 与公平监督对照。
 若 GPU/数据准备允许，组间可以调度重叠；各组内部配置选择和共享 checkpoint 仍有依赖。
 
 ### 核心预算与删减顺序
@@ -323,14 +324,14 @@ G3 验证固定 generator 的可复现输出和 reward 成本。完成低成本�
 | 部分 | 主训练执行数，不含调参 |
 |---|---:|
 | G1：4 objectives × 2 update settings | 8 |
-| G1：Paired、Cal、MRR | 3 |
-| G2：按 D-CL/W0/W-CL 复用方案 | 5 |
-| G3：CL、LL、RetRL、AnsRL | 4 |
-| **合计** | **20** |
+| G1：Paired、Cal、MRR、Binary | 4 |
+| G2：3 个直接训练 + 3 个从 CL 最终模型初始化 | 6 |
+| G3：CL、RetRL、AnsRL | 3 |
+| **合计** | **21** |
 
 另计原始 checkpoint 评测、调参、paired/product 短 matched-time 比较、G3 候选访问
-控制、共享 warm-up 的存储与生成器评测开销。20 是训练执行数量，不是完整 GPU-hour
-报价，也不意味着每项训练耗时相同。若 G2-W-CL 无法轨迹复用，增加一次 continuation。
+控制、共享 warm-up 的存储与生成器评测开销。21 是训练执行数量，不是完整 GPU-hour
+报价，也不意味着每项训练耗时相同。共同 CL 前缀只训练一次，其成本单独报告。
 
 预算不足时先删第二模型/第二 QA 数据集、混合数据扩展、额外 G/分布/奖励混合消融。
 然后缩减各对照一致的调参预算。保留三组核心问题、同标签强监督基线、paired/product
@@ -341,7 +342,7 @@ G3 验证固定 generator 的可复现输出和 reward 成本。完成低成本�
 本版使用 G1/G2/G3 命名以避免复用旧 ID 混淆；旧 C1–C4 是 E2Rank/E0 方案，不能直接
 改名当作 G1 结果；旧 A9/A6/R2 分别对应新的 Paired/Cal/MRR 概念，但需适配新标签与数据。
 旧 A3 query-only exploration 不等于 G1-Q 的 document encoder 冻结。
-旧 RAG RankNet 对照可保留作额外结果，主强监督行计划为 LL。
+G3 监督对照为 CL，不运行 RAG LambdaLoss。
 
 旧 `posttrain_*.sh` 已退役；当前运行入口为 `scripts/experiment.py`，以 `check RUN` 核实实现就绪状态。
 新增 logical IDs 需要显式 config/runner mapping；不要使用旧 `all` 模式代替新核心集合。

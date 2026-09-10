@@ -7,14 +7,10 @@ output_root: checkpoints/iclr2027
 # Pending implementations are explicit, source-audited blockers. Remove a requirement
 # only with its implementation and corresponding validation; there is no bypass flag.
 pending:
-  manifest_loader: "src/embedding_data.py: shared immutable train/dev/test manifest not implemented"
-  deterministic_dev: "Deterministic ranking dev selection/checkpoint evaluation not implemented"
   frozen_document: "Embedding trainers lack a frozen document branch; exploration=query is not query-only training"
-  rag_lambdaloss: "RAG LambdaLoss objective not implemented"
   rag_ndcg: "RAG nDCG reward not implemented; source_aware_mrr is not an equivalent substitution"
   rag_candidates: "Shared-candidate objective control must be implemented and validated"
   rag_selection: "Answer-F1 checkpoint selection needs integration with the training schedule"
-  continuation: "Common-warm-up data cursor, optimizer reset policy and total-budget handling not integrated"
 
 profiles:
   G1:
@@ -36,22 +32,14 @@ profiles:
   G2:
     config: g2.yaml
     dataset_manifest: data/protocols/g2_e2rank.json
-    selection: e2rank_dev_teacher_grade_ndcg_at_10
-    final_evaluation: [external_retrieval, e2rank_test]
-    requirements: [manifest_loader, deterministic_dev]
+    selection: fixed_budget_final_checkpoint
+    final_evaluation: [external_retrieval]
+    requirements: []
     protocol:
       labels: teacher_grades_3_2_1_0
-      model_name_or_path: null  # A genuine base LLM, not the old Qwen3 instruction checkpoint by assumption.
-      pooling_method: null
-      append_token: null
-      padding_side: null
-      query_prompt_template: null
-      document_prompt_template: null
       max_steps: null          # T in optimizer steps; also declare/record actual examples/tokens.
-      warmup_checkpoint_step: null # W < T; unrelated to scheduler warmup_ratio.
       learning_rate: null
       eval_steps: null
-      continuation_optimizer: null
   G3:
     config: g3.yaml
     dataset_manifest: data/protocols/g3_qa.json
@@ -102,22 +90,19 @@ runs:
   G2-D-CL: {group: G2, objective: infonce, scope: joint}
   G2-D-LL: {group: G2, objective: lambdaloss, scope: joint}
   G2-D-RL: {group: G2, objective: rl, scope: joint}
-  G2-W-CL: {group: G2, kind: reuse, reuse: G2-D-CL, scope: joint}
+  G2-W-CL: {group: G2, objective: infonce, scope: joint, init_from: G2-D-CL}
   G2-W-LL:
     group: G2
     objective: lambdaloss
     scope: joint
-    warmup_from: G2-D-CL
-    requirements: [continuation]
+    init_from: G2-D-CL
   G2-W-RL:
     group: G2
     objective: rl
     scope: joint
-    warmup_from: G2-D-CL
-    requirements: [continuation]
+    init_from: G2-D-CL
   G3-E0: {group: G3, kind: evaluation, scope: reference}
   G3-CL: {group: G3, objective: infonce, scope: query_only}
-  G3-LL: {group: G3, objective: lambdaloss, scope: query_only, requirements: [rag_lambdaloss]}
   G3-RetRL:
     group: G3
     objective: rl

@@ -67,7 +67,7 @@ def load_suite(path=DEFAULT_SUITE):
             raise ValueError(f'{run_id}: invalid objective')
         if run.get('scope') not in {'joint', 'query_only', 'reference'}:
             raise ValueError(f'{run_id}: invalid update scope')
-        for key in ('control', 'reuse', 'warmup_from'):
+        for key in ('control', 'reuse', 'init_from'):
             if key in run and (run[key] not in runs or run[key] == run_id):
                 raise ValueError(f'{run_id}: invalid {key} dependency')
         requirements = suite['profiles'][run['group']].get('requirements', []) + run.get('requirements', [])
@@ -77,7 +77,7 @@ def load_suite(path=DEFAULT_SUITE):
     def visit(run_id, stack):
         if run_id in stack:
             raise ValueError(f'Dependency cycle at {run_id}')
-        for key in ('control', 'reuse', 'warmup_from'):
+        for key in ('control', 'reuse', 'init_from'):
             if key in runs[run_id]:
                 visit(runs[run_id][key], (*stack, run_id))
     for run_id in runs:
@@ -95,7 +95,7 @@ def apply_settings(suite, path):
     if settings.get('output_dir'):
         suite['output_root'] = settings['output_dir']
     mapping = dict(model='model_name_or_path', learning_rate='learning_rate',
-                   steps='max_steps', warmup_steps='warmup_checkpoint_step', checkpoint_every='eval_steps',
+                   steps='max_steps', checkpoint_every='eval_steps',
                    batch_size='global_batch_size', micro_batch_size='micro_batch_size')
     for group in ('G1', 'G2', 'G3'):
         values = settings.get(group, {})
@@ -112,7 +112,7 @@ def apply_settings(suite, path):
             elif value is not None:
                 if key == 'learning_rate':
                     value = float(value)
-                if key in {'steps', 'warmup_steps', 'checkpoint_every'} and (isinstance(value, bool) or not isinstance(value, int)):
+                if key in {'steps', 'checkpoint_every'} and (isinstance(value, bool) or not isinstance(value, int)):
                     raise ValueError(f'{group}.{key} must be an integer')
                 profile['protocol'][mapping[key]] = value
     return suite
@@ -172,12 +172,9 @@ def resolve_run(suite, suite_path, run_id, root=ROOT, nproc=1):
     config.update(seed=42, data_seed=42, lora_enabled=False, overwrite_output_dir=False,
                   output_dir=str(output), run_name=run_id)
     dependency = None
-    if run.get('warmup_from'):
-        step = protocol.get('warmup_checkpoint_step')
-        dependency = path_at_root(suite['output_root'], root) / f"{run['warmup_from']}-s42" / f'checkpoint-{step}'
+    if run.get('init_from'):
+        dependency = path_at_root(suite['output_root'], root) / f"{run['init_from']}-s42"
         config['model_name_or_path'] = str(dependency)
-        if isinstance(protocol.get('max_steps'), int) and isinstance(step, int):
-            config['max_steps'] = protocol['max_steps'] - step
     return dict(run_id=run_id, group=group, kind=kind, scope=run['scope'],
                 objective=objective, entrypoint=entrypoint, config=config, protocol=protocol,
                 selection=profile['selection'], final_evaluation=profile['final_evaluation'],
@@ -241,20 +238,17 @@ def blockers(suite, resolved, root=ROOT):
         errors.append('learning_rate must be positive')
     if protocol.get('eval_steps') is not None and (not isinstance(protocol['eval_steps'], int) or protocol['eval_steps'] <= 0):
         errors.append('eval_steps must be a positive integer')
-    if resolved['group'] == 'G2':
-        w, t = protocol.get('warmup_checkpoint_step'), protocol.get('max_steps')
-        if isinstance(w, int) and isinstance(t, int) and not 0 < w < t:
-            errors.append('G2 requires 0 < W < T')
-        if isinstance(w, int) and protocol.get('eval_steps') and w % protocol['eval_steps']:
-            errors.append('W must lie on the saved-checkpoint schedule')
     data_keys = ('rag_corpus_path', 'rag_candidate_manifest', 'rag_index_manifest') if resolved['group'] == 'G3' else ('data_path',)
     for key in data_keys:
         if not cfg.get(key) or not path_at_root(cfg[key], root).is_file():
             errors.append(f'Missing runtime input {key}: {cfg.get(key)}')
     if resolved['dependency']:
         dependency = Path(resolved['dependency'])
-        if not (dependency / 'config.json').is_file() or not (dependency / 'trainer_state.json').is_file():
-            errors.append(f'Missing complete warm-up checkpoint: {dependency}')
+        if not (dependency / 'config.json').is_file() or not any(
+            (dependency / name).is_file() for name in (
+                'model.safetensors', 'model.safetensors.index.json',
+                'pytorch_model.bin', 'pytorch_model.bin.index.json')):
+            errors.append(f'Missing initialization model: {dependency}')
     if Path(cfg['output_dir']).exists():
         errors.append(f'Output already exists; no implicit skip/resume/overwrite: {cfg["output_dir"]}')
     output = Path(cfg['output_dir'])

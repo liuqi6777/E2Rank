@@ -52,7 +52,7 @@ hf download Alibaba-NLP/E2Rank_ranking_datasets train.jsonl --local-dir data --r
 ```
 
 原始格式是 `{query, document, ranking, source}`，`ranking` 为从 1 开始的 teacher permutation。
-G2 配置中的 `data/processed/e2rank/train.jsonl` 是待准备的实验输入；下载原始数据不等于完成 G2 数据协议。
+G2 直接读取 `data/train.jsonl`，全量训练，不另留内部 dev/test；最终评测使用固定的外部检索任务。
 通用 loader 仍支持 BGE-M3 的 `query/pos/neg` 格式。
 
 ## 通用工具

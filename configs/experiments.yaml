@@ -11,11 +11,13 @@ G1:
   micro_batch_size: 8
 
 G2:
-  model: null  # Choose the base LLM before training.
-  learning_rate: null
-  steps: null
-  warmup_steps: null
-  checkpoint_every: null
+  data: data
+  model: Qwen/Qwen3-0.6B
+  learning_rate: 0.000005
+  steps: 1200
+  checkpoint_every: 200
+  batch_size: 128
+  micro_batch_size: 8
 
 G3:
   model: Qwen/Qwen3-Embedding-0.6B
