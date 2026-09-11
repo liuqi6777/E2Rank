@@ -40,18 +40,19 @@ python scripts/experiment.py train G1-J-RL --gpus 8
 | 初始模型 | Qwen/Qwen3-Embedding-0.6B |
 | 更新方式 / seed | full FT / 42 |
 | 数据 | 4,963 train / 0 dev，候选数 2–20 |
-| 训练预算 | 450 optimizer steps，固定最终 checkpoint |
+| 训练预算 | 113 optimizer steps / 14,464 query exposures，固定最终 checkpoint |
 | Learning rate | 5e-6 |
 | Global batch / 每卡 microbatch | 128 / 16 |
 | 1 / 2 / 4 / 8 卡 accumulation | 8 / 4 / 2 / 1 |
 | Optimizer / scheduler | AdamW / linear，warmup ratio 0.03 |
 | Weight decay / max grad norm | 0.01 / 1.0 |
-| 保存 | 每 100 步，保留最近 2 个中间 checkpoint，另存最终模型 |
+| 保存 | 每 25 步，保留最近 2 个中间 checkpoint，另存最终模型 |
 | RL group size / kappa | 32 / 755 |
 | CL / RankNet temperature | 0.03 |
 | LambdaLoss | LambdaRank `|ΔnDCG@10|` weighting，sigma 1.0 |
 
 这是一版面向单机 8×80GB 的固定试跑参数，尚未完成正式 GPU 实验；不用 BRIGHT 选模。
+113 steps 与原 450 steps × global batch 32 的 query exposure 预算近似相同（14,464 vs. 14,400）。
 `--gpus` 改变时自动维持 global batch，GPU 数与 microbatch 的乘积须整除 batch。
 
 `prepare G1` 调用 `scripts/prepare_reasonrank.py`：排除 MSMARCO、隔离 BRIGHT 重叠、清理冲突与重复 query，

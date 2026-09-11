@@ -15,8 +15,8 @@ G1 对外数据接口为 `id/query/positive/negatives/source`。预处理关联�
 仍为 4,963 条全量训练；底层 suite 保留作高级配置。
 
 **G1 初始运行参数已定：** E0、full FT、seed 42、AdamW、LR 5e-6、global batch 128、
-每卡 microbatch 16、450 optimizer steps、linear schedule、warmup 0.03、weight decay 0.01、
-max grad norm 1.0；每 100 步保存，报告最终模型。按 GPU 数自动调整梯度累积。
+每卡 microbatch 16、113 optimizer steps（14,464 query exposures）、linear schedule、warmup 0.03、
+weight decay 0.01、max grad norm 1.0；每 25 步保存，报告最终模型。按 GPU 数自动调整梯度累积。
 RL 使用 group size 32、kappa 755；CL/RankNet temperature 0.03。此版未经 dev 调参。
 G1 不再将模型 revision 和 manifest/hash 校验作为启动条件；保留必需的结构检查。
 
