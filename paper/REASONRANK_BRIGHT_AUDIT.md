@@ -89,8 +89,8 @@ uv run --no-project --with pyarrow --with scikit-learn --with rapidfuzz python s
 
 ## 6. 对新实验设计的影响
 
-1. **Joint 与 query-only 使用同一清理后的 train/dev、初始化、候选列表和 reward。** Query-only 冻结初始 document encoder/cache；joint 更新两侧并用最终 document encoder 重建评测向量。明确两者都允许 full FT，只是可训练分支不同。
-2. Query-only 不要求训练 query 来自 BRIGHT，也不要求 corpus 永久不变；固定的是所比较实验中的文档表示版本。BRIGHT query/qrels 不参与梯度、超参数或 checkpoint 选择。
+1. **G1 主对照使用同一清理后的 train、初始化、候选列表和监督。** CL/RankNet/LambdaLoss/RL 均使用 joint encoder；query-policy-only RL 只移除 document action，不冻结 document encoder。Full-corpus 动态检索另作扩展，不与 fixed-slate 主对照混为同一比较。
+2. 未来的 full-corpus query-only 扩展不要求训练 query 来自 BRIGHT，也不要求 corpus 永久不变；固定的是该实验中的文档表示版本。BRIGHT query/qrels 不参与梯度、超参数或 checkpoint 选择。
 3. 核心结论必须来自同数据、同预算的 RL 与强监督对照，而非只和未经该数据适配的公开模型比较。按 BRIGHT 领域报告效果，并区分训练覆盖/未覆盖领域；BRIGHT 提升不能单独证明模型学会了推理。
 4. RAG 另用含答案的 QA train/dev/test 数据。ReasonRank 排序标签不直接提供 downstream answer-F1 训练监督；它不能替代 RAG 数据集。固定 generator 和索引，隔离 query adaptation 效果。
 5. 在正式训练前完成剩余同题复核、数据转换修改和固定 split manifest。本文档完成的是审计和规模估算，**没有启动训练、改写原始数据、实施最终划分或改动训练代码**。

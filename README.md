@@ -17,7 +17,6 @@ source .venv/bin/activate
 
 ```bash
 python scripts/experiment.py prepare G1
-python scripts/experiment.py encode G1 --gpus 8
 python scripts/experiment.py list
 python scripts/experiment.py show G1-J-RL
 python scripts/experiment.py show G1-J-RL --verbose
@@ -27,9 +26,9 @@ python scripts/experiment.py train G1-J-RL --gpus 8
 
 | 组 | 目的 | 当前状态 |
 |---|---|---|
-| G1 | 开源 embedding model → ReasonRank reasoning 训练，BRIGHT 主评测 | Joint 与冻结 document 的 query-only CL / RankNet / LambdaLoss / RL 均已接入 |
+| G1 | 开源 embedding model → ReasonRank reasoning 训练，BRIGHT 主评测 | Joint CL / RankNet / LambdaLoss / RL 与 query-policy-only RL 消融已接入 |
 | G2 | Base LLM 上大规模 CL / RL，以及共同 CL warm-up 后的比较 | 预算、表示协议和部分训练能力待补齐 |
-| G3 | 固定索引 RAG 的检索与答案目标 | 保留现有 RAG 工具；论文实验的候选控制和选模等尚待接入 |
+| G3 | 固定索引 RAG 的检索与答案目标 | 保留现有 RAG 工具；论文实验的选模和奖励协议尚待接入 |
 
 `list` 展示 READY / BLOCKED / EVAL / REUSE；`check G1` 检查整组，因此包含未实现行时返回非零。
 READY 表示启动前检查通过，不代表已完成 GPU 训练。入口只启动指定的一行，不自动运行依赖或覆盖输出。
@@ -44,10 +43,10 @@ G1 使用 `data/processed/reasonrank_simple/` 中的 4,963 条全量训练数据
 `prepare G1` 每个 query 固定抽一个正例，移除其余已知正例，保留变长负例，生成 `train.ready.jsonl`。
 Loader 直接读 ready 文件；collator 动态补齐和生成 mask。公开文本与审计 sidecar 不参与训练加载。
 已有 ready 文件不会自动重写。
-query-only 训练前运行 `encode G1`。该命令从 `xlangai/BRIGHT` 的 `documents` 配置为每个训练
-domain 建立独立只读 fp16 normalized index，并校验 ReasonRank 的 document ID 与文本确实对应
-官方 corpus；训练 batch 再按 `source` 路由。已有索引只会校验，不会隐式覆盖。
-推荐顺序为 `prepare G1 → encode G1 → check/train G1-Q-*`。
+当前 G1 主对照和 RL 消融均使用 joint encoder，不需要预先运行 `encode G1`。已有
+`encode G1` 能从 `xlangai/BRIGHT` 的 `documents` 配置构建分领域只读索引并校验
+ReasonRank document ID；该能力保留给尚未冻结设计的 G1 full-corpus 动态检索扩展，
+当前没有对应正式 run。
 
 原始数据下载、BRIGHT 重叠审计和预处理各脚本的职责见 [脚本索引](scripts/README.md)。
 
@@ -95,14 +94,10 @@ bash eval_mteb/scripts/run_mteb.sh CHECKPOINT 'MTEB(eng, v2)' configs/model/qwen
 bash eval_mteb/scripts/run_mteb.sh CHECKPOINT BRIGHT configs/model/qwen3_embedding_0.6b.yaml
 ```
 
-G1-Q-* 的 BRIGHT 主结果必须使用 fixed-corpus 模式：checkpoint 只编码 query，E0 只编码
-passage。首次运行会为每个 BRIGHT subset 单独建立不可变 embedding index，后续 checkpoint
-复用同一目录；不能把 12 个 subset 的 corpus 合并搜索。
-
 通过 `python scripts/experiment.py train G1-* --gpus N` 启动时，最终模型保存成功后会自动运行
-BRIGHT：joint run 使用训练后 checkpoint 编码两侧，query-only run 自动使用训练时 E0 的 immutable
-revision 编码 passage，并共享 `data/eval/bright_qwen3_e0/`。结果写入各 run 的
-`mteb_eval/bright/`；训练前和中间 checkpoint 不运行 BRIGHT。
+BRIGHT：当前所有 G1 run 都使用训练后 checkpoint 编码 query 和 passage。结果写入各 run 的
+`mteb_eval/bright/`；训练前和中间 checkpoint 不运行 BRIGHT。下面的 fixed-corpus 命令保留给
+未来的动态检索扩展；不能把 12 个 subset 的 corpus 合并搜索。
 
 ```bash
 bash eval_mteb/scripts/run_mteb.sh CHECKPOINT BRIGHT \

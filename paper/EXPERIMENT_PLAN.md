@@ -29,7 +29,7 @@ BRIGHT 仅作最终评测。G2/G3 的开发集协议暂不改变。
 
 | 组别 | 初始化与数据 | 核心问题 | 主要评测 |
 |---|---|---|---|
-| G1：Reasoning adaptation（主实验） | 现有开放权重 embedding model；清理后的 ReasonRank | 相同数据下，RL 是否优于监督适配？固定文档表示时是否仍有效？ | BRIGHT；MTEB retrieval 作为能力保持检查 |
+| G1：Reasoning adaptation（主实验） | 现有开放权重 embedding model；清理后的 ReasonRank | 相同数据下，RL 是否优于监督适配？document policy/exploration 是否必要？ | BRIGHT；MTEB retrieval 作为能力保持检查 |
 | G2：Base-LLM embedding training | 非 embedding 专用的 base LLM；E2Rank listwise，约 156k，实际规模待审计 | RL 能否直接学习检索表示？共同 warm-up 后是否仍有收益？ | 固定的外部检索任务集、held-out E2Rank 与学习曲线 |
 | G3：RAG optimization | 预先固定的 embedding checkpoint；独立 QA 数据 | 固定索引时，答案反馈能否改善检索和生成质量？ | Answer EM/F1；检索指标辅助 |
 
@@ -39,8 +39,8 @@ G1/G3 属于后训练和任务适配；G2 检验更早的表示学习阶段。�
 本身已在这个规模得到验证。G2 的 RL 阶段必须实际使用并记录较大规模的数据预算。
 
 “约 156k”称为较大规模 listwise 训练，不等同于通用 embedding 预训练规模。
-BRIGHT 提升不单独证明学会推理；固定索引是所有 query-only 对照共享的设置。
-在线适配仍是潜在应用，不作本实验已验证的贡献。
+BRIGHT 提升不单独证明学会推理。G1 full-corpus 动态检索作为独立扩展保留，
+其 reward 与对照协议尚未冻结，不计入当前主实验或 RL 消融。
 
 ## 1. 共同实验约束
 
@@ -60,9 +60,9 @@ BRIGHT 提升不单独证明学会推理；固定索引是所有 query-only 对�
 
 ### 1.2 公平对照与预算
 
-每个直接比较内固定初始化、可训练分支、数据与顺序、候选构造、标签来源、tokenization、
+每个直接比较内固定初始化、数据与顺序、候选构造、标签来源、tokenization、
 长度、microbatch、梯度累积、优化器族、精度和 checkpoint/evaluation schedule。
-Joint 与 query-only 的可训练范围不同，分别作 objective 内部对照，再比较更新约束。
+G1 主对照全部使用 joint encoder；RL action 组成只在预先声明的消融中改变。
 
 主要结果按处理的 query/examples 与输入 token 预算比较；同时报告 steps、GPU-hours、
 wall-clock、峰值显存、采样和 reward 成本。相同硬件才作时间比较。
@@ -136,7 +136,7 @@ E2Rank pilot 支持该设置，ReasonRank 的收益由 binary 消融验证。
 
 记录 microbatch、world size、accumulation；当前 in-batch 池是 device-local，
 梯度累积不扩大候选池。开发集固定候选，不随评测 batch 改变。
-Own-query-only 消融检查扩展候选的作用。Mean-score calibration 只在确有冻结候选时评测。
+Own-candidates-only 消融检查扩展候选的作用。Mean-score calibration 只在确有冻结候选时评测。
 CL 使用已知正例，排序方法使用 teacher 信号，监督信息并不完全一致；LL 与 RL 是同 graded 目标的主要对照，不能仅由 CL 对比归因于估计器。
 
 ### 2.3 主结果表
@@ -146,12 +146,12 @@ CL 使用已知正例，排序方法使用 teacher 信号，监督信息并不�
 | ID | Objective | 更新范围 |
 |---|---|---|
 | G1-E0 | 无训练 | 原始模型，评测复用 |
-| G1-J-CL / G1-Q-CL | Single-positive InfoNCE | Joint / Query-only |
-| G1-J-RN / G1-Q-RN | RankNet | Joint / Query-only |
-| G1-J-LL / G1-Q-LL | LambdaLoss | Joint / Query-only |
-| G1-J-RL / G1-Q-RL | Proposed nDCG RL | Joint / Query-only |
+| G1-J-CL | Single-positive InfoNCE | Joint |
+| G1-J-RN | RankNet | Joint |
+| G1-J-LL | LambdaLoss | Joint |
+| G1-J-RL | Proposed nDCG RL | Joint；query 与 document policy |
 
-共 **8 个训练配置**，加原始 E0 评测。每个更新范围都包含监督对照。
+共 **4 个主训练配置**，加原始 E0 评测。四个 objective 使用相同候选和训练预算。
 G1-J-RL 超过 E0 只证明额外训练有益；超过 CL 但不超过 LL 不能证明优于 metric-aware 监督。
 
 **主结果：** BRIGHT nDCG@10，报告固定官方协议下逐领域与宏平均。
@@ -171,7 +171,7 @@ G1-J-RL 超过 E0 只证明额外训练有益；超过 CL 但不超过 LL 不能
 | G1-A-Paired | 同 G、相同 component samples，使用 paired/diagonal 而非 product rollout | 核心 |
 | G1-A-Cal | 禁用 frozen-candidate mean-score rescaling | 核心 |
 | G1-A-MRR | reward 改为 binary MRR@10，相关阈值为 label=1 | 核心 |
-| G1-A-QExplore | joint encoder 仍训练，只移除 document exploration | 可选；不同于冻结 document encoder 的 G1-Q-RL |
+| G1-A-QPolicy | joint encoder 仍训练，只移除 document policy/exploration | 核心；与 G1-J-RL 直接比较 |
 | G1-A-Own | 不加 in-batch candidates | 次要 |
 | G1-A-G | 改变 G 的质量/成本曲线 | 次要 |
 
@@ -300,15 +300,15 @@ corpus，再由检索或答案 reward 评分。candidate manifest 在 RL 中只�
 
 ### Phase 1 — 短运行与诊断
 
-G1 各 objective 和两种更新范围跑 smoke；核对 frozen document embeddings/index hash。
+G1 四个 objective 与 query-policy-only RL 消融跑 smoke；核对各 action component 的 reward variance 和梯度。
 G2 用 B0 短跑 CL/LL/RL，检查 reward/advantage 信号；基于训练数值稳定性和成本诊断提前冻结预算。
 G3 验证固定 generator 的可复现输出和 reward 成本。完成低成本梯度诊断。
 这些短运行不取代正式预算，也不根据最终测试分数决定保留哪条路线。
 
 ### Phase 2 — G1 主实验与机制
 
-先固定 G1 配置与预算，完成八个训练配置，以最终 checkpoint 做 BRIGHT/保持性评测。
-主要消融 Paired、Cal、MRR 复用 G1-J-RL；额外 QExplore/Own/G 按具体问题安排。
+先固定 G1 配置与预算，完成四个 joint 主对照，以最终 checkpoint 做 BRIGHT/保持性评测。
+核心 RL 消融 QPolicy、Paired、Cal、MRR、Binary 均以 G1-J-RL 为控制；Own/G 按具体问题安排。
 约 5k 数据使用预先声明的统一更新预算，不机械沿用大数据一轮默认值；不进行 dev calibration。
 
 ### Phase 3 — G2 两组对照
@@ -326,14 +326,14 @@ G3 验证固定 generator 的可复现输出和 reward 成本。完成低成本�
 
 | 部分 | 主训练执行数，不含调参 |
 |---|---:|
-| G1：4 objectives × 2 update settings | 8 |
-| G1：Paired、Cal、MRR、Binary | 4 |
+| G1：4 个 joint objective 主对照 | 4 |
+| G1：QPolicy、Paired、Cal、MRR、Binary | 5 |
 | G2：3 个直接训练 + 3 个从 CL 最终模型初始化 | 6 |
 | G3：CL、RetRL、AnsRL | 3 |
-| **合计** | **21** |
+| **合计** | **18** |
 
 另计原始 checkpoint 评测、调参、paired/product 短 matched-time 比较、共享 warm-up
-的存储与生成器评测开销。21 是训练执行数量，不是完整 GPU-hour
+的存储与生成器评测开销。18 是当前已冻结协议的训练执行数量，不是完整 GPU-hour
 报价，也不意味着每项训练耗时相同。共同 CL 前缀只训练一次，其成本单独报告。
 
 预算不足时先删第二模型/第二 QA 数据集、混合数据扩展、额外 G/分布/奖励混合消融。
@@ -344,8 +344,8 @@ G3 验证固定 generator 的可复现输出和 reward 成本。完成低成本�
 
 本版使用 G1/G2/G3 命名以避免复用旧 ID 混淆；旧 C1–C4 是 E2Rank/E0 方案，不能直接
 改名当作 G1 结果；旧 A9/A6/R2 分别对应新的 Paired/Cal/MRR 概念，但需适配新标签与数据。
-旧 A3 query-only exploration 不等于 G1-Q 的 document encoder 冻结；G1-Q 现由 E0 离线索引实现，
-运行顺序为 `prepare G1 → encode G1 → check/train G1-Q-*`。
+旧 A3 query-only exploration 对应现在的 `G1-A-QPolicy`：共享 encoder 继续更新，只移除
+document policy action。G1 full-corpus 动态检索另行设计，当前不映射 logical ID 或训练入口。
 G3 监督对照为 CL，不运行 RAG LambdaLoss。
 
 旧 `posttrain_*.sh` 已退役；当前运行入口为 `scripts/experiment.py`，以 `check RUN` 核实实现就绪状态。
@@ -363,7 +363,7 @@ base 初始化与共同 warm-up、MTEB 辅助/外部评测角色、RAG 答案指
 `scripts/experiments/iclr2027.py list/resolve/check/launch`。详见
 [运行说明](../configs/experiments/iclr2027/README.md)。`resolve` 可无 GPU 展开，
 `check` 明确列出数据、预算及实现缺项；正式运行当前仍未就绪。建立映射不等于完成
-Phase 0 的 trainer 改造，尤其不能把 query exploration 配置当成冻结 document branch。
+尚未冻结协议的 full-corpus 动态检索扩展。
 
 
 ReasonRank 训练仅接受预处理后的 `embedding_candidates_v1` ready 记录；旧单正例 schema

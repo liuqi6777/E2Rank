@@ -6,7 +6,6 @@
 
 ```bash
 python scripts/experiment.py prepare G1
-python scripts/experiment.py encode G1 --gpus 8
 python scripts/experiment.py list
 python scripts/experiment.py show G1-J-RL
 python scripts/experiment.py show G1-J-RL --verbose
@@ -66,37 +65,33 @@ python scripts/experiment.py train G1-J-RL --gpus 8
 已有 public + metadata 时 `prepare` 只编译；已有 ready 时直接提示已准备。
 JSONL 不存 padding，模型和 loss/reward 均排除 padding。
 
-G1-Q-* 在 prepare 后先运行 `encode G1`。它使用同一 E0、document prompt、pooling、append token
-和 document 最大长度，对官方 `xlangai/BRIGHT` `documents` 的各训练 domain 分别生成索引；
-`math-qa → aops`、`math-theorem → theoremqa_theorems`，其余 source 同名路由。构建结束前会按
-document ID 和规范化文本校验全部训练候选。query-only collator 只输出 `candidate_ordinals`、
-`index_route_ids` 和 mask，不 tokenize 文档；训练输出记录全部冻结 artifact 的前后 hash。
-最终 BRIGHT 评测同样保持 document side 为 E0：使用仓库根目录 README 中的 fixed-corpus 命令，
-按 BRIGHT subset 分别建立和复用索引；训练后 checkpoint 仅编码 query。
-实验入口会在每个 G1 最终模型保存后自动运行 BRIGHT；joint run 直接评测最终 checkpoint，
-query-only run 则从冻结训练索引读取 E0 revision，并复用共享的按 subset 评测索引。
+当前 G1 主对照与 RL 消融全部使用 joint encoder；`G1-A-QPolicy` 只移除 document policy action，
+但仍更新共享 encoder，并在最终 BRIGHT 评测前用训练后 checkpoint 编码 query 和 passage。
+因此当前 G1 run 不需要先执行 `encode G1`。现有 `encode G1` 会按官方 BRIGHT domain 构建
+E0 只读索引并校验 ReasonRank document ID，保留给尚未冻结协议的 full-corpus 动态检索扩展，
+当前不对应正式训练行。
 
 ## 实验行与依赖
 
-共 23 个逻辑行：21 个训练执行、2 个 E0 评测。
+共 20 个逻辑行：18 个训练执行、2 个 E0 评测。
 
-- G1：`J` / `Q` 表示 joint / query-only；CL、RN、LL、RL 是四类目标。
-  `A-Paired`、`A-Cal`、`A-MRR` 的对照均为 `G1-J-RL`。
+- G1：四个 `J` run 是 joint 主对照；`A-QPolicy`、`A-Binary`、`A-Paired`、`A-Cal`、
+  `A-MRR` 是以 `G1-J-RL` 为控制的 RL 消融。
 - G2：`D` 从初始 LLM 训练；`W` 从 `G2-D-CL-s42/` 最终模型重新训练。
   D-CL 训练 1200 步，W-CL/LL/RL 各新建 optimizer/scheduler 和数据迭代，再训练 1200 步。
   W-CL 是独立训练行，不复用 D-CL；只加载模型权重，不恢复 trainer 状态。
 - G3：从 E0 开始，比较 CL、检索 RL、答案 RL；不自动采用其他组的最优 checkpoint。
 
-当前 G1 joint 与 query-only CL / RN / LL / RL，以及 joint RL 消融均已接入。
+当前 G1 joint CL / RN / LL / RL 与五个 RL 消融均已接入。
 LL 固定为 LambdaRank variant：pairwise logistic 乘当前排序交换产生的 `|ΔnDCG@10|`，
-使用 `gain=2^rel-1` 和 sigma 1.0。G1 query-only 通过离线冻结索引训练，仅更新 query encoder。
+使用 `gain=2^rel-1` 和 sigma 1.0。`G1-A-QPolicy` 仍使用 joint encoder，只将 RL action
+限制为 query；它不是冻结 document encoder 的 query-only 训练。
 G2 使用预处理生成的固定训练文件，采用固定预算和最终 checkpoint，不要求 manifest loader 或 dev 选模。
 模型协议和预算已填写；第二阶段只需先完成 D-CL 以提供初始化权重。
 G3 的监督 CL 使用离线候选；RL action 动态检索冻结的完整 corpus，不设置共享候选控制。
 当前仍需接入答案 F1 选模；检索 RL 需要 nDCG，不能用 source-aware MRR 代替。
 
-运行时以 `check RUN` 为准。G1 query-only 的 source、corpus、offset、mapping、vector shard hash
-和 embedding protocol 是启动门槛；joint 不加载冻结索引。数据存在、其余实现缺项、必要参数、
+运行时以 `check RUN` 为准。当前 G1 run 不加载冻结索引；数据存在、其余实现缺项、必要参数、
 依赖 checkpoint 和输出目录检查仍生效。
 
 ## 输出

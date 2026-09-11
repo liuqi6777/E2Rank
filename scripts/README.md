@@ -38,7 +38,6 @@ python -m unittest discover -s scripts/tests -v
 python scripts/download_reasonrank_audit.py --include-reasonrank-documents
 uv run --no-project --with pyarrow --with scikit-learn --with rapidfuzz python scripts/audit_reasonrank_bright.py
 python scripts/experiment.py prepare G1
-python scripts/experiment.py encode G1 --gpus 8
 ```
 
 目录内 `reasonrank/` 与 `bright/` 存放原始 parquet，`download_manifest.json` 记录下载来源，
@@ -56,8 +55,7 @@ python scripts/prepare_reasonrank.py --data-dir data/audit_reasonrank_bright --o
 `--dev-size` 和 `--split-seed` 只用于明确要求的非默认划分；`--compile-only` 只编译已有 public + metadata。
 原始数据、隔离清单和最终 ready 文件的职责分开，准备脚本拒绝覆盖已有输出目录。
 `--include-reasonrank-documents` 会额外下载 pinned `liuwenhan/reasonrank_data_13k` 的 `id_doc`
-映射。G1 query-only 编码按训练中的 document ID 提取对应官方完整文本，而不是使用 prompt 中
-可能被截断的文本。`encode G1` 为每个训练 source 构建
-`<G1.data>/reasonrank_frozen_document_indices/<source>/`，并生成 source 路由 manifest；
-索引、corpus、offset、document-ID 映射及 vector shards 均带 SHA256，query-only 运行会复核
-训练前后 hash。
+映射。当前 G1 主对照和 RL 消融均使用 joint encoder，不需要构建冻结索引。`encode G1`
+仍可为每个训练 source 构建 `<G1.data>/reasonrank_frozen_document_indices/<source>/` 和路由
+manifest，索引、corpus、offset、document-ID 映射及 vector shards 均带 SHA256；该入口保留给
+尚未冻结设计的 full-corpus 动态检索扩展，不对应当前正式 run。
