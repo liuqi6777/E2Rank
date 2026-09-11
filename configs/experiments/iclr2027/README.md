@@ -74,8 +74,9 @@ G1 主对照与 RL 消融使用 joint encoder；`G1-A-QPolicy` 只移除 documen
 
 共 21 个逻辑行：19 个训练执行、2 个 E0 评测。
 
-- G1：四个 `J` run 是 joint 主对照；`A-QPolicy`、`A-Binary`、`A-Paired`、`A-Cal`、
-  `A-MRR` 是以 `G1-J-RL` 为控制的 RL 消融；`G1-DR` 是独立的 full-corpus 动态检索行。
+- G1：四个 `J` run 是 joint 主对照；`A-QPolicy`、`A-Binary`、`A-Paired`、`A-Cal`
+  以 `G1-J-RL` 为控制；`A-MRR` 以 `A-Binary` 为直接控制，仅比较 binary nDCG/MRR。
+  `G1-DR` 是独立的 full-corpus 动态检索行。
 - G2：`D` 从初始 LLM 训练；`W` 从 `G2-D-CL-s42/` 最终模型重新训练。
   D-CL 训练 1200 步，W-CL/LL/RL 各新建 optimizer/scheduler 和数据迭代，再训练 1200 步。
   W-CL 是独立训练行，不复用 D-CL；只加载模型权重，不恢复 trainer 状态。
@@ -109,7 +110,12 @@ G3 的监督 CL 使用离线候选；RL action 动态检索冻结的完整 corpu
 LambdaLoss 与 RL nDCG 使用 graded。ready 文件分别保存 relevance（已知正例）、
 graded_relevance 与 rank_labels。teacher 排序不被强行改为已知正例第一。
 G1-A-Binary 只将 RL nDCG 标签改为已知正例 binary；G1-A-MRR 也使用 binary。
+MRR 与 Binary 直接比较指标变化；Binary 与主 RL 比较标签变化。
 CL 与排序方法的监督信息不同；LL 与 RL 才是相同 graded 目标下的主要对照。
+
+本轮决定保留 LL 当前 sigma=1.0 与其余配方先跑。普通固定候选训练继续抽取单正例；
+DR 计划使用删减前、去重后的完整 teacher qrels，保留所有已知正例身份与完整 corpus。
+当前 DR 仍读取删减后的 grades，完整 qrels 的预处理/加载尚待同步；奖励有效性由运行实测确定。
 
 ## G2 第一版 scratch 参数
 
@@ -117,7 +123,8 @@ CL 与排序方法的监督信息不同；LL 与 RL 才是相同 graded 目标�
 learning rate 5e-6、AdamW、linear scheduler、warmup ratio 0.03、weight decay 0.01。
 表示协议继承 `configs/model/qwen3_0.6b.yaml`：last pooling、left padding、append pad，
 query 使用 Instruct/Query 模板，document 为原文；query/document 上限 512/1024。
-模型名称沿用旧配方，不据此声称它是纯预训练 checkpoint。
+G2 定位为从未经 embedding 专项训练的通用 LLM 学习检索表示；允许通用后训练，
+不据此声称它是纯预训练 checkpoint。
 
 全局 batch 128、每卡 microbatch 16；1/2/4/8 卡 accumulation 为 8/4/2/1。
 每次运行 1200 步，约 153,600 query exposures，每 200 步保存。

@@ -85,7 +85,7 @@ runs:
     group: G1
     objective: rl
     scope: joint
-    control: G1-J-RL
+    control: G1-A-Binary
     overrides: {reward_type: mrr_in_batch, relevance_scheme: binary}
   G1-DR:
     group: G1

@@ -4,7 +4,7 @@
 
 本版替代此前以 E2Rank → MTEB 为主、base-LLM 训练仅作可选边界实验的方案。
 采用三组实验：①开放权重 embedding model 的 reasoning retrieval 适配；
-②从 base LLM 开始的较大规模 embedding 训练；③固定索引的 RAG 优化。
+②从未经 embedding 专项训练的通用 LLM 开始的较大规模 embedding 训练；③固定索引的 RAG 优化。
 所有结果均待测；本文档不表示对应实现已就绪。主实验统一 **full fine-tuning、单 seed 42**。
 本次只修订实验计划，论文正文、表格和 runner 尚须按本版同步。
 
@@ -25,12 +25,17 @@ G1 不再将模型 revision 和 manifest/hash 校验作为启动条件；保留�
 报告最终 checkpoint；G1 不执行下文通用的 dev 网格调参或最佳 checkpoint 选择。
 BRIGHT 仅作最终评测。G2/G3 的开发集协议暂不改变。
 
+**本轮评审决定（2026-09-11）：** LL 保留当前 sigma=1.0 与训练配方先跑，暂不追加
+尺度调参；G1-A-MRR 的直接控制改为 G1-A-Binary。普通固定候选训练保留单正例删减，
+G1-DR 则保留完整 corpus 与删减前的已知标注，其奖励有效性由实验确定。
+G3 的无检索 generator 基线和答案/证据变化联合诊断后移，不作为当前 G1/G2 的前置条件。
+
 ## 0. 研究问题与贡献边界
 
 | 组别 | 初始化与数据 | 核心问题 | 主要评测 |
 |---|---|---|---|
 | G1：Reasoning adaptation（主实验） | 现有开放权重 embedding model；清理后的 ReasonRank | 相同数据下，RL 是否优于监督适配？document policy/exploration 是否必要？ | BRIGHT；MTEB retrieval 作为能力保持检查 |
-| G2：Base-LLM embedding training | 非 embedding 专用的 base LLM；E2Rank listwise，约 156k，实际规模待审计 | RL 能否直接学习检索表示？共同 warm-up 后是否仍有收益？ | 固定的外部检索任务集、held-out E2Rank 与学习曲线 |
+| G2：General-LLM embedding training | 未经 embedding 专项训练的通用 LLM；E2Rank listwise，约 156k，实际规模待审计 | RL 能否直接学习检索表示？共同 warm-up 后是否仍有收益？ | 固定的外部检索任务集与学习曲线 |
 | G3：RAG optimization | 预先固定的 embedding checkpoint；独立 QA 数据 | 固定索引时，答案反馈能否改善检索和生成质量？ | Answer EM/F1；检索指标辅助 |
 
 三组共同支持 embedding-space reward optimization，分别覆盖初始化、更新约束和反馈类型。
@@ -48,7 +53,8 @@ BRIGHT 提升不单独证明学会推理。G1 full-corpus 动态检索作为独�
 
 - G1 主模型沿用计划中的 `Qwen/Qwen3-Embedding-0.6B`，记为 E0。
   正式运行前固定 checkpoint revision、tokenizer、pooling、prompt 和最大长度。
-- G2 使用一个明确的 base LLM，记为 B0；具体 checkpoint 在 Phase 0 固定。
+- G2 使用未经 embedding 专项训练的通用 LLM，记为 B0；当前为 `Qwen/Qwen3-0.6B`。
+  允许通用语言模型后训练，不将 B0 描述为纯预训练 checkpoint。
   优先选择规模相近、便于控制架构差异的模型，不能直接把 E0 当作 B0。
   同一组内严格同初始化；不同模型组之间不作只归因于目标函数的比较。
 - G3 默认从原始 E0 开始，不自动继承 G1 或 G2 的最佳模型，避免引入额外训练混杂。
@@ -155,8 +161,12 @@ CL 使用已知正例，排序方法使用 teacher 信号，监督信息并不�
 G1-J-RL 超过 E0 只证明额外训练有益；超过 CL 但不超过 LL 不能证明优于 metric-aware 监督。
 
 `G1-DR` 是单独的动态检索实验：从 E0 初始化并冻结分 source 的完整 document index，
-只更新 query encoder。每个 sampled query action 检索 top-20，以训练记录中已知 teacher grades
-计算 nDCG@10；未出现在已知 qrels 中的文档 gain 为 0。其最近控制为 `G1-A-QPolicy`，但二者
+只更新 query encoder。每个 sampled query action 检索 top-20，以单正例删减前、去重后的
+完整已知候选 teacher order 按 3/2/1/0 构造 grades，计算 nDCG@10；保留所有已知正例身份，
+不因普通训练的单正例抽样而从 corpus 或 qrels 删除其余正例，也不将 binary 正例身份
+强行转换为 teacher 高 grade。未出现在完整已知 qrels 中的文档 gain 为 0。
+当前 ready 数据仅提供删减后的 grades，DR 的完整 qrels 预处理和加载尚须同步。
+其最近控制为 `G1-A-QPolicy`，但二者
 同时改变 candidate access 和 document update scope，因此不解释为单因素因果对照。
 
 **主结果：** BRIGHT nDCG@10，报告固定官方协议下逐领域与宏平均。
@@ -175,7 +185,7 @@ G1-J-RL 超过 E0 只证明额外训练有益；超过 CL 但不超过 LL 不能
 | G1-A-Binary | 相同数据与预算，nDCG 改用已知正例 binary 标签 | 核心 |
 | G1-A-Paired | 同 G、相同 component samples，使用 paired/diagonal 而非 product rollout | 核心 |
 | G1-A-Cal | 禁用 frozen-candidate mean-score rescaling | 核心 |
-| G1-A-MRR | reward 改为 binary MRR@10，相关阈值为 label=1 | 核心 |
+| G1-A-MRR | 以 G1-A-Binary 为直接控制，仅将 binary nDCG@10 改为 binary MRR@10，相关阈值为 label=1 | 核心 |
 | G1-A-QPolicy | joint encoder 仍训练，只移除 document policy/exploration | 核心；与 G1-J-RL 直接比较 |
 | G1-A-Own | 不加 in-batch candidates | 次要 |
 | G1-A-G | 改变 G 的质量/成本曲线 | 次要 |
@@ -194,7 +204,7 @@ sampled/frozen score 分布及冻结候选 top-K 占比。归一化后的 advant
 实践中的 per-component normalization 和 document-role `1/n_valid` 权重不等于未加权联合
 目标的无偏梯度；mean-score calibration 匹配一阶分数矩，不是期望 ranking reward。
 
-## 3. G2：从 base LLM 开始的较大规模 embedding 训练
+## 3. G2：从通用 LLM 开始的较大规模 embedding 训练
 
 G2 初始运行参数沿用旧 scratch 的 `Qwen/Qwen3-0.6B` 表示协议与 full FT 配方：
 LR 5e-6、global batch 128、microbatch 16、linear schedule、warmup ratio 0.03。
@@ -226,7 +236,7 @@ G1/G2 graded 均采用相同 teacher 排名分段；已知正例身份另行保�
 |---|---|---|
 | G2-D-CL | B0 → CL | 直接 embedding 训练基线 |
 | G2-D-LL | B0 → LambdaLoss | 同 grades 的监督对照 |
-| G2-D-RL | B0 → RL | 检验直接从 base 启动 |
+| G2-D-RL | B0 → RL | 检验直接从未经 embedding 专项训练的通用 LLM 启动 |
 | G2-W-CL | B0 → CL 最终模型 W0 → 重新训练 CL | 后续训练对照 |
 | G2-W-LL | B0 → 同一个 W0 → LL | 排除切换到 metric-aware 目标本身的收益 |
 | G2-W-RL | B0 → 同一个 W0 → RL | 检验已有初始空间后的 RL 收益 |
@@ -292,6 +302,7 @@ corpus，再由检索或答案 reward 评分。candidate manifest 在 RL 中只�
 - [x] G1 空字符串补齐和有效候选 mask 的文本层 helper。
 - [x] G1 候选 mask 接入 collator、有效文档编码、CL/RankNet 和 RL reward/log-prob/KL；CPU 数值检查通过。
 - [ ] G1 最终同题复核。
+- [ ] G1-DR 恢复删减前、去重后的完整 teacher qrels 与全部已知正例身份，接入动态检索奖励；普通训练继续使用现有单正例数据。
 - [ ] G2 E2Rank 版本与规模、外部 overlap 审计、固定全量 train 文件。
 - [ ] 固定 E0、B0、pooling/prompts 和各组评测协议；校验 full FT 与冻结分支。
 - [x] 接入 single-positive CL、teacher-order RankNet 和可变长 RL。
@@ -308,12 +319,15 @@ corpus，再由检索或答案 reward 评分。candidate manifest 在 RL 中只�
 G1 四个 objective 与 query-policy-only RL 消融跑 smoke；核对各 action component 的 reward variance 和梯度。
 G2 用 B0 短跑 CL/LL/RL，检查 reward/advantage 信号；基于训练数值稳定性和成本诊断提前冻结预算。
 G3 验证固定 generator 的可复现输出和 reward 成本。完成低成本梯度诊断。
+G1-DR 在运行中记录已知 qrels 的索引覆盖、检索命中及全零/无差异奖励 group 比例，
+以实测判断奖励有效性，不预先据此否定动态检索路线。
 这些短运行不取代正式预算，也不根据最终测试分数决定保留哪条路线。
 
 ### Phase 2 — G1 主实验与机制
 
 先固定 G1 配置与预算，完成四个 joint 主对照，以最终 checkpoint 做 BRIGHT/保持性评测。
-核心 RL 消融 QPolicy、Paired、Cal、MRR、Binary 均以 G1-J-RL 为控制；Own/G 按具体问题安排。
+核心 RL 消融 QPolicy、Paired、Cal、Binary 以 G1-J-RL 为控制；MRR 以 Binary 为直接控制，
+分别隔离标签与指标变化。Own/G 按具体问题安排。
 约 5k 数据使用预先声明的统一更新预算，不机械沿用大数据一轮默认值；不进行 dev calibration。
 
 ### Phase 3 — G2 两组对照
