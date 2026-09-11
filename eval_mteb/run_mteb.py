@@ -95,6 +95,12 @@ class EvalArguments:
     precision: str = field(
         default="fp16", metadata={"help": "amp_fp16,amp_bf16,fp16,bf16,fp32"}
     )
+    fail_on_task_error: bool = field(
+        default=False,
+        metadata={
+            "help": "Exit non-zero if any selected task fails or returns no result"
+        },
+    )
     fixed_corpus_model: Optional[str] = field(
         default=None,
         metadata={"help": "E0 document encoder for fixed-corpus BRIGHT evaluation"},
@@ -308,12 +314,20 @@ def run_bright(task, model, args, **kwargs):
     return [final_result]
 
 
-def run_eval(model, tasks: list, args: EvalArguments, **kwargs):
+def run_eval(
+    model,
+    tasks: list,
+    args: EvalArguments,
+    *,
+    fail_on_task_error: bool = False,
+    **kwargs,
+):
     if not tasks:
         raise RuntimeError("No task selected")
 
     encode_kwargs = args.encode_kwargs or dict()
     all_results = []
+    failed_tasks = []
 
     _num_gpus, _started = torch.cuda.device_count(), False
     if _num_gpus > 1 and not _started and hasattr(model, "start"):
@@ -338,11 +352,17 @@ def run_eval(model, tasks: list, args: EvalArguments, **kwargs):
                 logger.warning(
                     f"meet error when running task: {t.metadata.name}. {str(e)}"
                 )
+                failed_tasks.append((t.metadata.name, str(e)))
                 continue
+            if not results:
+                failed_tasks.append((t.metadata.name, "MTEB returned no result"))
             all_results.extend(results or [])
     finally:
         if model is not None and _started and hasattr(model, "stop"):
             model.stop()
+    if fail_on_task_error and failed_tasks:
+        details = "; ".join(f"{name}: {error}" for name, error in failed_tasks)
+        raise RuntimeError(f"Incomplete MTEB evaluation ({len(failed_tasks)} failed tasks): {details}")
     return all_results
 
 
@@ -430,7 +450,13 @@ def main():
         return
 
     args.encode_kwargs.update(batch_size=args.batch_size)
-    run_eval(model, tasks, args, **args.run_kwargs)
+    run_eval(
+        model,
+        tasks,
+        args,
+        fail_on_task_error=args.fail_on_task_error,
+        **args.run_kwargs,
+    )
     logger.warning(f"Done {len(tasks)} tasks.")
     return
 

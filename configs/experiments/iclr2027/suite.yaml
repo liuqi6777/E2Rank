@@ -32,7 +32,7 @@ profiles:
     config: g2.yaml
     dataset_manifest: data/protocols/g2_e2rank.json
     selection: fixed_budget_final_checkpoint
-    final_evaluation: [external_retrieval]
+    final_evaluation: [mteb_eng_v2]
     requirements: []
     protocol:
       labels: teacher_grades_3_2_1_0

@@ -18,6 +18,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SUITE = ROOT / 'configs/experiments/iclr2027/suite.yaml'
+MTEB_ENG_V2 = 'MTEB(eng, v2)'
 
 
 def merge(left, right):
@@ -339,6 +340,35 @@ def command_for(resolved, runtime_path, nproc):
     return ['torchrun', '--standalone', f'--nproc_per_node={nproc}', resolved['entrypoint'], str(runtime_path)]
 
 
+def post_train_commands_for(resolved, root=ROOT):
+    """Commands that consume the final, fully saved training output.
+
+    These intentionally run outside Trainer callbacks: a full benchmark should run
+    once after the final model and embedding protocol are durable, not at checkpoint-0
+    or every intermediate save.
+    """
+    commands = []
+    for evaluation in resolved['final_evaluation']:
+        if evaluation != 'mteb_eng_v2':
+            continue
+        output_dir = Path(resolved['config']['output_dir'])
+        commands.append([
+            sys.executable,
+            str(root / 'eval_mteb/run_mteb.py'),
+            '--model', str(output_dir),
+            '--precision', 'fp16',
+            '--model_kwargs', json.dumps({
+                'instruction_dict_path': str(root / 'eval_mteb/scripts/task_prompts.json'),
+            }),
+            '--output_dir', str(output_dir / 'mteb_eval' / 'final'),
+            '--batch_size', '16',
+            '--langs', 'eng',
+            '--benchmark', MTEB_ENG_V2,
+            '--fail_on_task_error',
+        ])
+    return commands
+
+
 def launch(suite, resolved, nproc, root=ROOT):
     if resolved['kind'] != 'train':
         raise ValueError('Only training rows can launch; reuse/evaluation never schedules a dependency')
@@ -354,8 +384,11 @@ def launch(suite, resolved, nproc, root=ROOT):
     evidence = copy.deepcopy(resolved)
     evidence['runtime_config_sha256'] = digest(runtime)
     evidence['command'] = command_for(resolved, runtime, nproc)
+    evidence['post_train_commands'] = post_train_commands_for(resolved, root)
     (artifacts / 'launch.json').write_text(json.dumps(evidence, indent=2) + '\n')
     subprocess.run(evidence['command'], cwd=root, check=True)
+    for command in evidence['post_train_commands']:
+        subprocess.run(command, cwd=root, check=True)
 
 
 def main(argv=None):
@@ -386,6 +419,10 @@ def main(argv=None):
                 resolved['launchable'] = not problems and resolved['kind'] == 'train'
                 if resolved['kind'] == 'train':
                     resolved['command_preview'] = shlex.join(command_for(resolved, '<resolved-config.json>', args.nproc))
+                    resolved['post_train_command_previews'] = [
+                        shlex.join(command)
+                        for command in post_train_commands_for(resolved)
+                    ]
                 print(json.dumps(resolved, indent=2, ensure_ascii=False))
             else:
                 status = 'REUSE' if resolved['reuse'] else ('EVAL' if resolved['kind'] == 'evaluation' else ('BLOCKED' if problems else 'READY'))

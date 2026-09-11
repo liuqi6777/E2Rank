@@ -57,6 +57,10 @@ hf download Alibaba-NLP/E2Rank_ranking_datasets train.jsonl --local-dir data --r
 
 原始格式是 `{query, document, ranking, source}`，`ranking` 为从 1 开始的 teacher permutation。
 G2 直接读取 `data/train.jsonl`，全量训练，不另留内部 dev/test；最终评测使用固定的外部检索任务。
+通过 `python scripts/experiment.py train G2-* --gpus N` 启动的 G2 训练在最终模型保存成功后，
+会自动用可见 GPU 跑一次完整的 `MTEB(eng, v2)`；结果写入
+`checkpoints/iclr2027/G2-*-s42/mteb_eval/final/`。任一任务失败会让评测阶段返回非零，
+已经保存的训练模型不受影响；训练前和中间 checkpoint 不跑这项完整评测。
 通用 loader 仍支持 BGE-M3 的 `query/pos/neg` 格式。
 
 ## 通用工具
