@@ -6,14 +6,24 @@ import json
 import os
 from pathlib import Path
 
-from bright import (
-    BRIGHT_CONFIG,
-    BRIGHT_DATASET,
-    BRIGHT_REVISION,
-    BRIGHT_TRAINING_SOURCE_ROUTES,
-)
 from fixed_corpus.encode import normalize_document
 from fixed_corpus.index import sha256_file
+
+
+BRIGHT_DATASET = "xlangai/BRIGHT"
+BRIGHT_CONFIG = "documents"
+BRIGHT_REVISION = "3066d29c9651a576c8aba4832d249807b181ecae"
+BRIGHT_TRAINING_SOURCE_ROUTES = {
+    "biology": "biology",
+    "earth_science": "earth_science",
+    "economics": "economics",
+    "robotics": "robotics",
+    "stackoverflow": "stackoverflow",
+    "sustainable_living": "sustainable_living",
+    "leetcode": "leetcode",
+    "math-qa": "aops",
+    "math-theorem": "theoremqa_theorems",
+}
 
 
 def _training_documents_by_route(training_path: Path) -> tuple[dict[str, dict[str, str]], int]:

@@ -17,7 +17,7 @@ except ImportError:
     from fixed_corpus_model import FixedCorpusMTEBModel
 
 from embedding_protocol import load_embedding_protocol, protocol_to_eval_kwargs
-from bright import BRIGHT_CONFIG, BRIGHT_DATASET, BRIGHT_REVISION
+from fixed_corpus.router import BRIGHT_CONFIG, BRIGHT_DATASET, BRIGHT_REVISION
 from utils import load_raw_config_file
 
 

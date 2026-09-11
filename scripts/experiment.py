@@ -41,8 +41,11 @@ def main():
         if args.gpus < 1:
             parser.error('--gpus must be positive')
         sys.path.insert(0, str(ROOT/'src'))
-        from bright import BRIGHT_CONFIG, BRIGHT_DATASET, BRIGHT_REVISION, BRIGHT_TRAINING_SOURCE_ROUTES
         from fixed_corpus.router import (
+            BRIGHT_CONFIG,
+            BRIGHT_DATASET,
+            BRIGHT_REVISION,
+            BRIGHT_TRAINING_SOURCE_ROUTES,
             validate_training_against_bright_documents,
             write_bright_index_router,
         )
