@@ -18,7 +18,7 @@ max_steps: -1
 save_steps: 100
 save_total_limit: null
 overwrite_output_dir: false
-report_to: none
+report_to: wandb
 lora_enabled: false
 seed: 42
 data_seed: 42
