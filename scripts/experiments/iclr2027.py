@@ -19,6 +19,8 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SUITE = ROOT / 'configs/experiments/iclr2027/suite.yaml'
 MTEB_ENG_V2 = 'MTEB(eng, v2)'
+BRIGHT_BENCHMARK = 'BRIGHT'
+G1_BRIGHT_FIXED_CORPUS_INDEX_DIR = Path('data/eval/bright_qwen3_e0')
 
 
 def merge(left, right):
@@ -374,6 +376,51 @@ def command_for(resolved, runtime_path, nproc):
     return ['torchrun', '--standalone', f'--nproc_per_node={nproc}', resolved['entrypoint'], str(runtime_path)]
 
 
+def _frozen_document_revision(resolved, root=ROOT):
+    """Read the immutable E0 revision from a G1 query-only training index."""
+    manifest_value = resolved['config'].get('frozen_document_index_manifest')
+    if not manifest_value:
+        return None
+    manifest_path = path_at_root(manifest_value, root)
+    if not manifest_path.is_file():
+        return None
+    manifest = read_mapping(manifest_path)
+    manifests = [manifest]
+    if manifest.get('artifact_type') == 'frozen_document_index_router':
+        manifests = []
+        for route in manifest.get('routes', {}).values():
+            child_path = Path(route['manifest'])
+            if not child_path.is_absolute():
+                child_path = manifest_path.parent / child_path
+            manifests.append(read_mapping(child_path))
+    revisions = {
+        item.get('resolved_model_revision')
+        for item in manifests
+        if item.get('resolved_model_revision')
+    }
+    if len(revisions) > 1:
+        raise ValueError(f'G1 frozen document routes use multiple E0 revisions: {sorted(revisions)}')
+    return next(iter(revisions), None)
+
+
+def _post_mteb_command(resolved, benchmark, result_name, root=ROOT):
+    output_dir = Path(resolved['config']['output_dir'])
+    return [
+        sys.executable,
+        str(root / 'eval_mteb/run_mteb.py'),
+        '--model', str(output_dir),
+        '--precision', 'fp16',
+        '--model_kwargs', json.dumps({
+            'instruction_dict_path': str(root / 'eval_mteb/scripts/task_prompts.json'),
+        }),
+        '--output_dir', str(output_dir / 'mteb_eval' / result_name),
+        '--batch_size', '16',
+        '--langs', 'eng',
+        '--benchmark', benchmark,
+        '--fail_on_task_error',
+    ]
+
+
 def post_train_commands_for(resolved, root=ROOT):
     """Commands that consume the final, fully saved training output.
 
@@ -383,23 +430,38 @@ def post_train_commands_for(resolved, root=ROOT):
     """
     commands = []
     for evaluation in resolved['final_evaluation']:
-        if evaluation != 'mteb_eng_v2':
-            continue
-        output_dir = Path(resolved['config']['output_dir'])
-        commands.append([
-            sys.executable,
-            str(root / 'eval_mteb/run_mteb.py'),
-            '--model', str(output_dir),
-            '--precision', 'fp16',
-            '--model_kwargs', json.dumps({
-                'instruction_dict_path': str(root / 'eval_mteb/scripts/task_prompts.json'),
-            }),
-            '--output_dir', str(output_dir / 'mteb_eval' / 'final'),
-            '--batch_size', '16',
-            '--langs', 'eng',
-            '--benchmark', MTEB_ENG_V2,
-            '--fail_on_task_error',
-        ])
+        if evaluation == 'mteb_eng_v2':
+            commands.append(_post_mteb_command(
+                resolved, MTEB_ENG_V2, 'final', root
+            ))
+        elif evaluation == 'bright':
+            command = _post_mteb_command(
+                resolved, BRIGHT_BENCHMARK, 'bright', root
+            )
+            if resolved['scope'] == 'query_only':
+                config = resolved['config']
+                fixed_model_kwargs = {
+                    'max_length': config['embedding_max_length'],
+                    'pooler_type': config['pooling_method'],
+                    'padding_side': config['padding_side'],
+                    'append_token': config['append_token'],
+                    'do_norm': True,
+                    'use_instruction': '{task_description}' in config['query_prompt_template'],
+                    'query_prompt_template': config['query_prompt_template'],
+                    'document_prompt_template': config['document_prompt_template'],
+                    'instruction_dict_path': str(root / 'eval_mteb/scripts/task_prompts.json'),
+                }
+                command.extend([
+                    '--fixed_corpus_model', config['model_name_or_path'],
+                    '--fixed_corpus_model_kwargs', json.dumps(fixed_model_kwargs),
+                    '--fixed_corpus_index_dir', str(
+                        path_at_root(G1_BRIGHT_FIXED_CORPUS_INDEX_DIR, root)
+                    ),
+                ])
+                revision = _frozen_document_revision(resolved, root)
+                if revision:
+                    command.extend(['--fixed_corpus_model_revision', revision])
+            commands.append(command)
     return commands
 
 

@@ -99,6 +99,11 @@ G1-Q-* 的 BRIGHT 主结果必须使用 fixed-corpus 模式：checkpoint 只编�
 passage。首次运行会为每个 BRIGHT subset 单独建立不可变 embedding index，后续 checkpoint
 复用同一目录；不能把 12 个 subset 的 corpus 合并搜索。
 
+通过 `python scripts/experiment.py train G1-* --gpus N` 启动时，最终模型保存成功后会自动运行
+BRIGHT：joint run 使用训练后 checkpoint 编码两侧，query-only run 自动使用训练时 E0 的 immutable
+revision 编码 passage，并共享 `data/eval/bright_qwen3_e0/`。结果写入各 run 的
+`mteb_eval/bright/`；训练前和中间 checkpoint 不运行 BRIGHT。
+
 ```bash
 bash eval_mteb/scripts/run_mteb.sh CHECKPOINT BRIGHT \
   configs/model/qwen3_embedding_0.6b.yaml \

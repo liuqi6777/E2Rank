@@ -73,6 +73,8 @@ document ID 和规范化文本校验全部训练候选。query-only collator 只
 `index_route_ids` 和 mask，不 tokenize 文档；训练输出记录全部冻结 artifact 的前后 hash。
 最终 BRIGHT 评测同样保持 document side 为 E0：使用仓库根目录 README 中的 fixed-corpus 命令，
 按 BRIGHT subset 分别建立和复用索引；训练后 checkpoint 仅编码 query。
+实验入口会在每个 G1 最终模型保存后自动运行 BRIGHT；joint run 直接评测最终 checkpoint，
+query-only run 则从冻结训练索引读取 E0 revision，并复用共享的按 subset 评测索引。
 
 ## 实验行与依赖
 
