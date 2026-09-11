@@ -17,12 +17,12 @@ source .venv/bin/activate
 
 ```bash
 python scripts/experiment.py prepare G1
-python scripts/experiment.py encode G1 --gpus 4
+python scripts/experiment.py encode G1 --gpus 8
 python scripts/experiment.py list
 python scripts/experiment.py show G1-J-RL
 python scripts/experiment.py show G1-J-RL --verbose
 python scripts/experiment.py check G1-J-RL
-python scripts/experiment.py train G1-J-RL --gpus 4
+python scripts/experiment.py train G1-J-RL --gpus 8
 ```
 
 | 组 | 目的 | 当前状态 |
@@ -33,6 +33,7 @@ python scripts/experiment.py train G1-J-RL --gpus 4
 
 `list` 展示 READY / BLOCKED / EVAL / REUSE；`check G1` 检查整组，因此包含未实现行时返回非零。
 READY 表示启动前检查通过，不代表已完成 GPU 训练。入口只启动指定的一行，不自动运行依赖或覆盖输出。
+`experiment.py` 默认使用单机 8 卡；其他规模用 `--gpus N` 显式覆盖。默认 batch 配方按 8×80GB 节点设置。
 
 详细参数、run IDs、预算与输出规则见 [实验配置指南](configs/experiments/iclr2027/README.md)。
 研究设计见 [实验计划](paper/EXPERIMENT_PLAN.md)。

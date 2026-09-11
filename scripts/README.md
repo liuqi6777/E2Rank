@@ -38,7 +38,7 @@ python -m unittest discover -s scripts/tests -v
 python scripts/download_reasonrank_audit.py
 uv run --no-project --with pyarrow --with scikit-learn --with rapidfuzz python scripts/audit_reasonrank_bright.py
 python scripts/experiment.py prepare G1
-python scripts/experiment.py encode G1 --gpus 4
+python scripts/experiment.py encode G1 --gpus 8
 ```
 
 目录内 `reasonrank/` 与 `bright/` 存放原始 parquet，`download_manifest.json` 记录下载来源，

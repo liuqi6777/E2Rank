@@ -4,7 +4,7 @@ set -euo pipefail
 
 export FORCE_TORCHRUN=1
 export NNODES=${NNODES:-1}
-export NPROC_PER_NODE=${NPROC_PER_NODE:-${NODE_RANK:-8}}
+export NPROC_PER_NODE=${NPROC_PER_NODE:-8}
 export WANDB_PROJECT=${WANDB_PROJECT:-E2Rank-RL}
 
 if [ $# -gt 0 ]; then

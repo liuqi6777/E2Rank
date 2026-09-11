@@ -14,8 +14,8 @@ G1 对外数据接口为 `id/query/positive/negatives/source`。预处理关联�
 当前目录为 `data/processed/reasonrank_simple/`，
 仍为 4,963 条全量训练；底层 suite 保留作高级配置。
 
-**G1 初始运行参数已定：** E0、full FT、seed 42、AdamW、LR 5e-6、global batch 32、
-每卡 microbatch 8、450 optimizer steps、linear schedule、warmup 0.03、weight decay 0.01、
+**G1 初始运行参数已定：** E0、full FT、seed 42、AdamW、LR 5e-6、global batch 128、
+每卡 microbatch 16、450 optimizer steps、linear schedule、warmup 0.03、weight decay 0.01、
 max grad norm 1.0；每 100 步保存，报告最终模型。按 GPU 数自动调整梯度累积。
 RL 使用 group size 32、kappa 755；CL/RankNet temperature 0.03。此版未经 dev 调参。
 G1 不再将模型 revision 和 manifest/hash 校验作为启动条件；保留必需的结构检查。
@@ -192,7 +192,7 @@ sampled/frozen score 分布及冻结候选 top-K 占比。归一化后的 advant
 ## 3. G2：从 base LLM 开始的较大规模 embedding 训练
 
 G2 初始运行参数沿用旧 scratch 的 `Qwen/Qwen3-0.6B` 表示协议与 full FT 配方：
-LR 5e-6、global batch 128、microbatch 8、linear schedule、warmup ratio 0.03。
+LR 5e-6、global batch 128、microbatch 16、linear schedule、warmup ratio 0.03。
 每次独立运行训练 1200 步，每 200 步保存。第二阶段统一从 G2-D-CL 的最终模型初始化，
 新建 optimizer、scheduler、step counter 和数据迭代，各训练 1200 步。
 

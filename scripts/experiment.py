@@ -15,7 +15,10 @@ def main():
     parser.add_argument('action', choices=['prepare', 'encode', 'list', 'show', 'check', 'train'])
     parser.add_argument('run', nargs='?')
     parser.add_argument('--config', type=Path, default=ROOT/'configs/experiments.yaml')
-    parser.add_argument('--gpus', type=int, default=1)
+    parser.add_argument(
+        '--gpus', type=int, default=8,
+        help='Single-node GPU process count (default: 8)',
+    )
     parser.add_argument('--verbose', action='store_true', help='Show the full resolved config')
     args = parser.parse_args()
     if args.action == 'prepare':

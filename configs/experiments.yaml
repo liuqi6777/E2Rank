@@ -1,4 +1,6 @@
 # Common settings for the paper experiments. Internal objectives/masks stay in presets.
+# Batch settings target one 8 x 80GB node: microbatch 16 on each worker and no
+# gradient accumulation for the default 8-GPU launch.
 output_dir: checkpoints/iclr2027
 
 G1:
@@ -7,8 +9,8 @@ G1:
   learning_rate: 0.000005
   steps: 450
   checkpoint_every: 100
-  batch_size: 32
-  micro_batch_size: 8
+  batch_size: 128
+  micro_batch_size: 16
 
 G2:
   data: data
@@ -17,10 +19,12 @@ G2:
   steps: 1200
   checkpoint_every: 200
   batch_size: 128
-  micro_batch_size: 8
+  micro_batch_size: 16
 
 G3:
   model: Qwen/Qwen3-Embedding-0.6B
   learning_rate: null
   steps: null
   checkpoint_every: null
+  batch_size: 128
+  micro_batch_size: 16

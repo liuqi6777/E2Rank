@@ -6,15 +6,15 @@
 
 ```bash
 python scripts/experiment.py prepare G1
-python scripts/experiment.py encode G1 --gpus 4
+python scripts/experiment.py encode G1 --gpus 8
 python scripts/experiment.py list
 python scripts/experiment.py show G1-J-RL
 python scripts/experiment.py show G1-J-RL --verbose
 python scripts/experiment.py check G1-J-RL
-python scripts/experiment.py train G1-J-RL --gpus 4
+python scripts/experiment.py train G1-J-RL --gpus 8
 ```
 
-`--config PATH` 选择另一份公共配置；`--gpus` 控制单机进程数。
+`--config PATH` 选择另一份公共配置；`--gpus` 控制单机进程数，默认为 8。
 `list G1` / `check G1` 可按组查看；`check` 遇到尚未就绪的训练行返回 2。
 `show` 和 `check` 不写文件、不下载模型。没有 train-all，也不会自动训练依赖。
 
@@ -42,8 +42,8 @@ python scripts/experiment.py train G1-J-RL --gpus 4
 | 数据 | 4,963 train / 0 dev，候选数 2–20 |
 | 训练预算 | 450 optimizer steps，固定最终 checkpoint |
 | Learning rate | 5e-6 |
-| Global batch / 每卡 microbatch | 32 / 8 |
-| 1 / 2 / 4 卡 accumulation | 4 / 2 / 1 |
+| Global batch / 每卡 microbatch | 128 / 16 |
+| 1 / 2 / 4 / 8 卡 accumulation | 8 / 4 / 2 / 1 |
 | Optimizer / scheduler | AdamW / linear，warmup ratio 0.03 |
 | Weight decay / max grad norm | 0.01 / 1.0 |
 | 保存 | 每 100 步，保留最近 2 个中间 checkpoint，另存最终模型 |
@@ -51,7 +51,7 @@ python scripts/experiment.py train G1-J-RL --gpus 4
 | CL / RankNet temperature | 0.03 |
 | LambdaLoss | LambdaRank `|ΔnDCG@10|` weighting，sigma 1.0 |
 
-这是一版固定试跑参数，尚未完成正式 GPU 实验；不用 BRIGHT 选模。
+这是一版面向单机 8×80GB 的固定试跑参数，尚未完成正式 GPU 实验；不用 BRIGHT 选模。
 `--gpus` 改变时自动维持 global batch，GPU 数与 microbatch 的乘积须整除 batch。
 
 `prepare G1` 调用 `scripts/prepare_reasonrank.py`：排除 MSMARCO、隔离 BRIGHT 重叠、清理冲突与重复 query，
@@ -114,7 +114,7 @@ learning rate 5e-6、AdamW、linear scheduler、warmup ratio 0.03、weight decay
 query 使用 Instruct/Query 模板，document 为原文；query/document 上限 512/1024。
 模型名称沿用旧配方，不据此声称它是纯预训练 checkpoint。
 
-全局 batch 128、每卡 microbatch 8；1/2/4/8 卡 accumulation 为 16/8/4/2。
+全局 batch 128、每卡 microbatch 16；1/2/4/8 卡 accumulation 为 8/4/2/1。
 每次运行 1200 步，约 153,600 query exposures，每 200 步保存。
 D-CL 最终权重保存在 `checkpoints/iclr2027/G2-D-CL-s42/`。
 W-CL/LL/RL 从此目录初始化，各独立运行 1200 步，不读取 optimizer/scheduler 或数据游标。
