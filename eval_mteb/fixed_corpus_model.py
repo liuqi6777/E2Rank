@@ -15,7 +15,7 @@ import torch
 from mteb.encoder_interface import PromptType
 
 
-INDEX_FORMAT_VERSION = 1
+INDEX_FORMAT_VERSION = 2
 _SAFE_SUBSET = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 
@@ -96,10 +96,12 @@ class PerSubsetCorpusIndex:
         *,
         task_name: str,
         encoder_identity: dict[str, object],
+        corpus_identity: dict[str, object] | None = None,
     ) -> None:
         self.root = Path(root).resolve()
         self.task_name = task_name
         self.encoder_identity = copy.deepcopy(encoder_identity)
+        self.corpus_identity = copy.deepcopy(corpus_identity or {})
         self.subset: str | None = None
         self.subset_dir: Path | None = None
         self.manifest_path: Path | None = None
@@ -122,6 +124,7 @@ class PerSubsetCorpusIndex:
                 "task_name": self.task_name,
                 "subset": subset,
                 "encoder": self.encoder_identity,
+                "corpus": self.corpus_identity,
             }
             actual = {key: manifest.get(key) for key in expected}
             if actual != expected:
@@ -141,6 +144,7 @@ class PerSubsetCorpusIndex:
                 "task_name": self.task_name,
                 "subset": subset,
                 "encoder": self.encoder_identity,
+                "corpus": self.corpus_identity,
                 "complete": False,
                 "count": 0,
                 "dimension": None,
@@ -300,6 +304,7 @@ class FixedCorpusMTEBModel:
         index_dir: str | os.PathLike[str],
         corpus_model_name_or_path: str,
         task_name: str,
+        corpus_identity: dict[str, object] | None = None,
     ) -> None:
         self.query_model = query_model
         self.corpus_model = corpus_model
@@ -330,10 +335,16 @@ class FixedCorpusMTEBModel:
             encoder_identity=corpus_encoder_identity(
                 corpus_model_name_or_path, corpus_model
             ),
+            corpus_identity=corpus_identity,
         )
         self.mteb_model_meta = copy.copy(query_model.mteb_model_meta)
         identity_hash = hashlib.sha256(
-            _json_bytes(self.index.encoder_identity)
+            _json_bytes(
+                {
+                    "encoder": self.index.encoder_identity,
+                    "corpus": self.index.corpus_identity,
+                }
+            )
         ).hexdigest()[:12]
         self.mteb_model_meta.name = (
             f"{self.mteb_model_meta.name}__fixed-corpus-{identity_hash}"

@@ -17,6 +17,13 @@ SOURCES = {
                    'psychology', 'robotics', 'stackoverflow', 'sustainable_living',
                    'theoremqa_questions', 'theoremqa_theorems')]),
 }
+BRIGHT_DOCUMENT_PATHS = [
+    f'documents/{domain}-00000-of-00001.parquet' for domain in (
+        'aops', 'biology', 'earth_science', 'economics', 'leetcode', 'pony',
+        'psychology', 'robotics', 'stackoverflow', 'sustainable_living',
+        'theoremqa_questions', 'theoremqa_theorems',
+    )
+]
 
 
 def digest(path):
@@ -27,13 +34,17 @@ def digest(path):
     return result.hexdigest()
 
 
-def download(data_dir):
+def download(data_dir, include_bright_documents=False):
     data_dir = Path(data_dir)
     manifest_path = data_dir / 'download_manifest.json'
     previous = json.loads(manifest_path.read_text()) if manifest_path.exists() else {'files': []}
     recorded = {(f['repo'], f['revision'], f['source_path']): f for f in previous['files']}
     files = []
-    for prefix, (repo, revision, paths) in SOURCES.items():
+    sources = dict(SOURCES)
+    if include_bright_documents:
+        repo, revision, paths = sources['bright']
+        sources['bright'] = (repo, revision, [*paths, *BRIGHT_DOCUMENT_PATHS])
+    for prefix, (repo, revision, paths) in sources.items():
         for source in paths:
             path = data_dir / prefix / source
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -60,7 +71,7 @@ def download(data_dir):
                               bytes=path.stat().st_size, sha256=digest(path)))
             # Save progress so an interrupted download can resume.
             recorded[(repo, revision, source)] = files[-1]
-            manifest = dict(repositories={r: rev for r, rev, _ in SOURCES.values()},
+            manifest = dict(repositories={r: rev for r, rev, _ in sources.values()},
                             files=list(recorded.values()))
             temporary_manifest = manifest_path.with_suffix('.json.tmp')
             temporary_manifest.write_text(json.dumps(manifest, indent=2) + '\n')
@@ -72,8 +83,13 @@ def download(data_dir):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--data-dir', type=Path, default=ROOT / 'data/audit_reasonrank_bright')
+    parser.add_argument(
+        '--include-bright-documents',
+        action='store_true',
+        help='Also download the official BRIGHT documents configuration used by G1 indexes',
+    )
     args = parser.parse_args()
-    download(args.data_dir)
+    download(args.data_dir, include_bright_documents=args.include_bright_documents)
 
 
 if __name__ == '__main__':

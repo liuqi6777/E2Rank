@@ -2,7 +2,9 @@
 
 from .index import (
     FrozenCorpusIndex,
+    FrozenCorpusIndexRouter,
     FrozenDistributedIndex,
+    load_frozen_index,
     load_index_manifest,
     sha256_file,
     validate_frozen_protocol,
@@ -12,7 +14,9 @@ __all__ = [
     "FixedCorpusGRPOModel",
     "FrozenCandidateScorer",
     "FrozenCorpusIndex",
+    "FrozenCorpusIndexRouter",
     "FrozenDistributedIndex",
+    "load_frozen_index",
     "QueryOnlyRLWrapper",
     "QueryOnlySupervisedModel",
     "QueryPolicyHead",

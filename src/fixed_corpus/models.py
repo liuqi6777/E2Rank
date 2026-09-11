@@ -11,7 +11,9 @@ from torch import Tensor, nn
 from transformers.file_utils import ModelOutput
 
 from embedding_protocol import pool_embeddings
-from fixed_corpus.index import FrozenCorpusIndex
+from fixed_corpus.index import FrozenCorpusIndex, FrozenCorpusIndexRouter
+
+FrozenIndex = FrozenCorpusIndex | FrozenCorpusIndexRouter
 
 
 @dataclass
@@ -23,7 +25,7 @@ class CandidateScoreOutput:
 class FrozenCandidateScorer(nn.Module):
     """Cosine scorer backed by ordinal lookup from a read-only fp16 corpus."""
 
-    def __init__(self, index: FrozenCorpusIndex):
+    def __init__(self, index: FrozenIndex):
         super().__init__()
         self.index = index
 
@@ -32,6 +34,7 @@ class FrozenCandidateScorer(nn.Module):
         query_embeddings: Tensor,
         candidate_ordinals: Tensor,
         candidate_mask: Tensor | None = None,
+        index_route_ids: Tensor | None = None,
     ) -> CandidateScoreOutput:
         if candidate_ordinals.dim() != 2:
             raise ValueError("candidate_ordinals must have shape [batch, candidates]")
@@ -44,7 +47,7 @@ class FrozenCandidateScorer(nn.Module):
         if not candidate_mask.any(dim=-1).all():
             raise ValueError("Every query must retain at least one candidate")
         safe_ordinals = candidate_ordinals.masked_fill(~candidate_mask, 0)
-        documents = self.index.lookup_embeddings(safe_ordinals).detach()
+        documents = self.index.lookup_embeddings(safe_ordinals, index_route_ids).detach()
         documents = F.normalize(documents.float(), dim=-1)
         queries = F.normalize(query_embeddings.float(), dim=-1)
         scores = torch.einsum("bd,bkd->bk", queries, documents)
@@ -59,6 +62,7 @@ class FrozenCandidateScorer(nn.Module):
         base: CandidateScoreOutput,
         batch_candidate_ordinals: Tensor,
         cross_candidate_mask: Tensor,
+        index_route_ids: Tensor | None = None,
     ) -> CandidateScoreOutput:
         """Append a batch-wide candidate grid with caller-defined duplicate filtering."""
         if batch_candidate_ordinals.dim() != 2:
@@ -71,7 +75,16 @@ class FrozenCandidateScorer(nn.Module):
         flat_ordinals = batch_candidate_ordinals.reshape(1, -1).expand(batch, -1)
         flat_mask = cross_candidate_mask.reshape(batch, -1).bool()
         safe = flat_ordinals.masked_fill(~flat_mask, 0)
-        documents = self.index.lookup_embeddings(safe).detach()
+        flat_routes = None
+        if index_route_ids is not None:
+            if index_route_ids.shape != (batch,):
+                raise ValueError("index_route_ids must have shape [batch]")
+            candidate_routes = index_route_ids.reshape(1, batch, 1).expand(batch, batch, width)
+            flat_routes = candidate_routes.reshape(batch, -1)
+            query_routes = index_route_ids.reshape(batch, 1)
+            flat_mask &= flat_routes == query_routes
+            safe = flat_ordinals.masked_fill(~flat_mask, 0)
+        documents = self.index.lookup_embeddings(safe, flat_routes).detach()
         scores = torch.einsum(
             "bd,bkd->bk",
             F.normalize(query_embeddings.float(), dim=-1),
@@ -191,7 +204,7 @@ class QueryOnlySupervisedModel(QueryEncoderMixin, nn.Module):
     def __init__(
         self,
         model: nn.Module,
-        index: FrozenCorpusIndex,
+        index: FrozenIndex,
         objective: str,
         temperature: float = 0.03,
         pooling_method: str = "last",
@@ -224,6 +237,7 @@ class QueryOnlySupervisedModel(QueryEncoderMixin, nn.Module):
         in_batch_positive_mask: Tensor | None = None,
         candidate_passage_ids: Tensor | None = None,
         training_positive_mask: Tensor | None = None,
+        index_route_ids: Tensor | None = None,
         **_: Any,
     ) -> QueryOnlyModelOutput:
         # RAG's old batch field names are accepted at this adapter boundary.
@@ -232,7 +246,7 @@ class QueryOnlySupervisedModel(QueryEncoderMixin, nn.Module):
             raise ValueError("candidate_ordinals are required")
         mask = ordinals >= 0 if candidate_mask is None else candidate_mask.bool()
         queries = self.encode_query(query)
-        scored = self.scorer(queries, ordinals, mask)
+        scored = self.scorer(queries, ordinals, mask, index_route_ids)
         if positive_mask is None:
             positive_mask = training_positive_mask
         if positive_mask is None and relevance_labels is not None:
@@ -249,7 +263,13 @@ class QueryOnlySupervisedModel(QueryEncoderMixin, nn.Module):
             if cross is None:
                 cross = ~torch.eye(batch, device=ordinals.device, dtype=torch.bool)
             cross = cross.reshape(batch, batch, 1)
-            scored = self.scorer.append_in_batch(queries, scored, ordinals[:, :1], cross)
+            scored = self.scorer.append_in_batch(
+                queries,
+                scored,
+                ordinals[:, :1],
+                cross,
+                index_route_ids,
+            )
             zeros = relevance_labels.new_zeros((batch, batch)) if relevance_labels is not None else None
             if relevance_labels is not None:
                 relevance_labels = torch.cat((relevance_labels, zeros), dim=-1)
@@ -283,7 +303,7 @@ class QueryOnlySupervisedModel(QueryEncoderMixin, nn.Module):
 class FixedCorpusGRPOModel(QueryEncoderMixin, nn.Module):
     """G1 reward semantics with query actions and immutable document candidates."""
 
-    def __init__(self, model: nn.Module, index: FrozenCorpusIndex, rl_args, pooling_method: str = "last"):
+    def __init__(self, model: nn.Module, index: FrozenIndex, rl_args, pooling_method: str = "last"):
         super().__init__()
         from grpo import GRPO
 
@@ -328,6 +348,7 @@ class FixedCorpusGRPOModel(QueryEncoderMixin, nn.Module):
         candidate_mask: Tensor | None = None,
         in_batch_positive_mask: Tensor | None = None,
         in_batch_candidate_mask: Tensor | None = None,
+        index_route_ids: Tensor | None = None,
         **_: Any,
     ):
         from grpo import GRPOModelOutput
@@ -336,7 +357,7 @@ class FixedCorpusGRPOModel(QueryEncoderMixin, nn.Module):
         policy_queries = self.encode_query(query)
         rollout_queries = policy_queries.detach()
         safe = candidate_ordinals.masked_fill(~mask, 0)
-        documents = self.scorer.index.lookup_embeddings(safe).detach().float()
+        documents = self.scorer.index.lookup_embeddings(safe, index_route_ids).detach().float()
         documents = F.normalize(documents, dim=-1).masked_fill(~mask.unsqueeze(-1), 0)
         reference_queries = None
         if self.grpo.kl_coef > 0:

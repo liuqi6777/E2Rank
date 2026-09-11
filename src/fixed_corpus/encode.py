@@ -34,13 +34,19 @@ def _distributed_context() -> tuple[int, int, torch.device]:
     return rank, world_size, device
 
 
-def build_corpus(source_path: Path, output_dir: Path) -> int:
-    """Deduplicate in first-seen order and reject key/text inconsistencies."""
-    corpus_path = output_dir / "corpus.jsonl"
-    offsets: list[int] = []
-    key_to_ordinal: dict[str, int] = {}
-    normalized_by_key: dict[str, str] = {}
-    with source_path.open(encoding="utf-8") as source, corpus_path.open("wb") as corpus:
+def _iter_source_documents(source_path: Path, input_format: str):
+    if input_format == "bright_documents":
+        import pyarrow.parquet as pq
+
+        parquet = pq.ParquetFile(source_path)
+        if not {"id", "content"}.issubset(parquet.schema.names):
+            raise ValueError(f"BRIGHT documents parquet requires id/content columns: {source_path}")
+        for batch in parquet.iter_batches(columns=["id", "content"], batch_size=4096):
+            for record in batch.to_pylist():
+                yield str(record["id"]), record["content"], None
+        return
+
+    with source_path.open(encoding="utf-8") as source:
         for line_number, line in enumerate(source, 1):
             if not line.strip():
                 continue
@@ -53,23 +59,39 @@ def build_corpus(source_path: Path, output_dir: Path) -> int:
             if not isinstance(documents, list) or not isinstance(keys, list) or len(documents) != len(keys):
                 raise ValueError(f"Candidate text/key mismatch at {source_path}:{line_number}")
             for text, key in zip(documents, keys):
-                if not isinstance(text, str) or not isinstance(key, str):
-                    raise ValueError(f"Non-string document/key at {source_path}:{line_number}")
-                normalized = normalize_document(text)
-                if key in normalized_by_key:
-                    if normalized_by_key[key] != normalized:
-                        raise ValueError(f"Conflicting normalized text for document_key={key}")
-                    continue
-                ordinal = len(key_to_ordinal)
-                key_to_ordinal[key] = ordinal
-                normalized_by_key[key] = normalized
-                offsets.append(corpus.tell())
-                payload = json.dumps(
-                    {"document_key": key, "contents": text},
-                    ensure_ascii=False,
-                    separators=(",", ":"),
-                ).encode("utf-8") + b"\n"
-                corpus.write(payload)
+                yield key, text, line_number
+
+
+def build_corpus(
+    source_path: Path,
+    output_dir: Path,
+    input_format: str = "training_candidates",
+) -> int:
+    """Build an ID-addressable corpus and reject key/text inconsistencies."""
+    corpus_path = output_dir / "corpus.jsonl"
+    offsets: list[int] = []
+    key_to_ordinal: dict[str, int] = {}
+    normalized_by_key: dict[str, str] = {}
+    with corpus_path.open("wb") as corpus:
+        for key, text, line_number in _iter_source_documents(source_path, input_format):
+            location = f"{source_path}:{line_number}" if line_number else str(source_path)
+            if not isinstance(text, str) or not text.strip() or not isinstance(key, str) or not key:
+                raise ValueError(f"Non-empty string document/key required at {location}")
+            normalized = normalize_document(text)
+            if key in normalized_by_key:
+                if normalized_by_key[key] != normalized:
+                    raise ValueError(f"Conflicting normalized text for document_key={key}")
+                continue
+            ordinal = len(key_to_ordinal)
+            key_to_ordinal[key] = ordinal
+            normalized_by_key[key] = normalized
+            offsets.append(corpus.tell())
+            payload = json.dumps(
+                {"document_key": key, "contents": text},
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ).encode("utf-8") + b"\n"
+            corpus.write(payload)
         corpus.flush()
         os.fsync(corpus.fileno())
     if not key_to_ordinal:
@@ -109,13 +131,30 @@ def _validate_existing(args, manifest_path: Path) -> None:
         embedding_max_length=args.embedding_max_length,
     )
     if index.manifest.get("source_data_sha256") != sha256_file(args.input):
-        raise ValueError("Existing frozen index was built from different training data")
+        raise ValueError("Existing frozen index was built from different source data")
+    for key, expected in (
+        ("source_name", args.source_name),
+        ("source_dataset", args.source_dataset),
+        ("source_config", args.source_config),
+        ("source_revision", args.source_revision),
+    ):
+        if index.manifest.get(key) != expected:
+            raise ValueError(f"Existing frozen index uses a different {key}")
     index.close()
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", required=True)
+    parser.add_argument(
+        "--input-format",
+        choices=["training_candidates", "bright_documents"],
+        default="training_candidates",
+    )
+    parser.add_argument("--source-name", default=None)
+    parser.add_argument("--source-dataset", default=None)
+    parser.add_argument("--source-config", default=None)
+    parser.add_argument("--source-revision", default=None)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--model", required=True)
     parser.add_argument("--revision", default=None)
@@ -154,7 +193,7 @@ def main() -> None:
         if building.exists():
             raise FileExistsError(f"Remove or inspect stale build directory: {building}")
         building.mkdir()
-        count = build_corpus(source_path, building)
+        count = build_corpus(source_path, building, args.input_format)
         (building / "build_state.json").write_text(json.dumps({"count": count}) + "\n")
     if dist.is_initialized():
         dist.barrier()
@@ -253,6 +292,10 @@ def main() -> None:
             "artifact_type": "frozen_document_index",
             "source_data_path": os.path.relpath(source_path, building),
             "source_data_sha256": sha256_file(source_path),
+            "source_name": args.source_name,
+            "source_dataset": args.source_dataset,
+            "source_config": args.source_config,
+            "source_revision": args.source_revision,
             "corpus_path": corpus_path.name,
             "corpus_offsets_path": offsets_path.name,
             "document_key_to_ordinal_path": mapping_path.name,

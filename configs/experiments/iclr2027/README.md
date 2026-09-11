@@ -67,8 +67,10 @@ python scripts/experiment.py train G1-J-RL --gpus 8
 JSONL 不存 padding，模型和 loss/reward 均排除 padding。
 
 G1-Q-* 在 prepare 后先运行 `encode G1`。它使用同一 E0、document prompt、pooling、append token
-和 document 最大长度，按 `document_key` 首次出现顺序生成冻结 ordinal。query-only collator 只输出
-`candidate_ordinals` 和 mask，不 tokenize 文档；训练输出记录全部冻结 artifact 的前后 hash。
+和 document 最大长度，对官方 `xlangai/BRIGHT` `documents` 的各训练 domain 分别生成索引；
+`math-qa → aops`、`math-theorem → theoremqa_theorems`，其余 source 同名路由。构建结束前会按
+document ID 和规范化文本校验全部训练候选。query-only collator 只输出 `candidate_ordinals`、
+`index_route_ids` 和 mask，不 tokenize 文档；训练输出记录全部冻结 artifact 的前后 hash。
 最终 BRIGHT 评测同样保持 document side 为 E0：使用仓库根目录 README 中的 fixed-corpus 命令，
 按 BRIGHT subset 分别建立和复用索引；训练后 checkpoint 仅编码 query。
 

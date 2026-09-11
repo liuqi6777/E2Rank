@@ -157,7 +157,7 @@ def resolve_run(suite, suite_path, run_id, root=ROOT, nproc=1):
             if run['scope'] == 'query_only':
                 data_parent = Path(config['data_path']).parent
                 config['frozen_document_index_manifest'] = str(
-                    data_parent / 'frozen_document_index' / 'index_manifest.json'
+                    data_parent / 'bright_frozen_document_indices' / 'index_router_manifest.json'
                 )
                 config['frozen_document_verify_hashes'] = True
     for key in ('model_name_or_path', 'pooling_method', 'append_token', 'padding_side',
@@ -279,58 +279,92 @@ def check_frozen_document_index(config, root=ROOT):
     errors = []
     try:
         manifest = read_mapping(path)
-        required = {
-            'format_version', 'dimension', 'count', 'shards', 'corpus_path',
-            'corpus_offsets_path', 'document_key_to_ordinal_path',
-        }
-        missing = sorted(required - manifest.keys())
-        if manifest.get('format_version') != 1 or missing:
-            errors.append(f'Invalid frozen document index manifest; missing={missing}')
-            return errors
-        expected = {
-            'model_name_or_path': config.get('model_name_or_path'),
-            'pooling_method': config.get('pooling_method'),
-            'padding_side': config.get('padding_side'),
-            'append_token': config.get('append_token'),
-            'document_prompt_template': config.get('document_prompt_template'),
-            'document_max_length': min(config.get('d_max_len'), config.get('embedding_max_length')),
-            'query_prompt_template': config.get('query_prompt_template'),
-            'embedding_max_length': config.get('embedding_max_length'),
-        }
-        for key, actual in expected.items():
-            if manifest.get(key) != actual:
-                errors.append(
-                    f'Frozen document protocol mismatch for {key}: '
-                    f'{manifest.get(key)!r} != {actual!r}'
-                )
         source_path = path_at_root(config['data_path'], root)
-        if manifest.get('source_data_sha256') != digest(source_path):
-            errors.append(f'Frozen document source hash mismatch: {source_path}')
-        artifacts = [
-            (manifest['corpus_path'], manifest.get('corpus_sha256')),
-            (manifest['corpus_offsets_path'], manifest.get('corpus_offsets_sha256')),
-            (manifest['document_key_to_ordinal_path'], manifest.get('document_key_to_ordinal_sha256')),
-        ]
-        artifacts.extend((item['path'], item.get('sha256')) for item in manifest['shards'])
-        for artifact_path, expected_hash in artifacts:
-            target = Path(artifact_path)
-            if not target.is_absolute():
-                target = path.parent / target
-            if not target.is_file():
-                errors.append(f'Missing frozen document artifact: {target}')
-            elif not expected_hash:
-                errors.append(f'Missing SHA256 for frozen document artifact: {target}')
-            elif digest(target) != expected_hash:
-                errors.append(f'Frozen document artifact hash mismatch: {target}')
-        mapping_path = Path(manifest['document_key_to_ordinal_path'])
-        if not mapping_path.is_absolute():
-            mapping_path = path.parent / mapping_path
-        if mapping_path.is_file():
-            mapping = read_mapping(mapping_path)
-            if len(mapping) != int(manifest['count']) or sorted(mapping.values()) != list(range(int(manifest['count']))):
-                errors.append('Frozen document key mapping is not a complete ordinal permutation')
+        if manifest.get('artifact_type') == 'frozen_document_index_router':
+            if manifest.get('source_dataset') != 'xlangai/BRIGHT' or manifest.get('source_config') != 'documents':
+                errors.append('G1 routed index must use xlangai/BRIGHT configuration documents')
+            if manifest.get('training_data_sha256') != digest(source_path):
+                errors.append(f'Routed frozen-index training hash mismatch: {source_path}')
+            routes = manifest.get('routes')
+            if not isinstance(routes, dict) or not routes:
+                errors.append('Routed frozen-index manifest has no routes')
+                return errors
+            for route, item in routes.items():
+                child = Path(item.get('manifest', ''))
+                if not child.is_absolute():
+                    child = path.parent / child
+                if not child.is_file():
+                    errors.append(f'Missing frozen route index: {child}')
+                    continue
+                if not item.get('sha256') or digest(child) != item['sha256']:
+                    errors.append(f'Frozen route manifest hash mismatch: {child}')
+                    continue
+                errors.extend(_check_single_frozen_document_index(
+                    child, read_mapping(child), config, expected_source=route
+                ))
+        else:
+            errors.extend(_check_single_frozen_document_index(
+                path, manifest, config, expected_training_source=source_path
+            ))
     except (ValueError, KeyError, TypeError, OSError) as exc:
         errors.append(f'Invalid frozen document index: {exc}')
+    return errors
+
+
+def _check_single_frozen_document_index(
+    path, manifest, config, expected_source=None, expected_training_source=None
+):
+    errors = []
+    required = {
+        'format_version', 'dimension', 'count', 'shards', 'corpus_path',
+        'corpus_offsets_path', 'document_key_to_ordinal_path',
+    }
+    missing = sorted(required - manifest.keys())
+    if manifest.get('format_version') != 1 or missing:
+        return [f'Invalid frozen document index manifest {path}; missing={missing}']
+    expected = {
+        'model_name_or_path': config.get('model_name_or_path'),
+        'pooling_method': config.get('pooling_method'),
+        'padding_side': config.get('padding_side'),
+        'append_token': config.get('append_token'),
+        'document_prompt_template': config.get('document_prompt_template'),
+        'document_max_length': min(config.get('d_max_len'), config.get('embedding_max_length')),
+        'query_prompt_template': config.get('query_prompt_template'),
+        'embedding_max_length': config.get('embedding_max_length'),
+    }
+    for key, actual in expected.items():
+        if manifest.get(key) != actual:
+            errors.append(
+                f'Frozen document protocol mismatch for {key} in {path}: '
+                f'{manifest.get(key)!r} != {actual!r}'
+            )
+    if expected_source and manifest.get('source_name') != expected_source:
+        errors.append(f'Frozen route {expected_source!r} points to source {manifest.get("source_name")!r}')
+    if expected_training_source and manifest.get('source_data_sha256') != digest(expected_training_source):
+        errors.append(f'Frozen document source hash mismatch: {expected_training_source}')
+    artifacts = [
+        (manifest['corpus_path'], manifest.get('corpus_sha256')),
+        (manifest['corpus_offsets_path'], manifest.get('corpus_offsets_sha256')),
+        (manifest['document_key_to_ordinal_path'], manifest.get('document_key_to_ordinal_sha256')),
+    ]
+    artifacts.extend((item['path'], item.get('sha256')) for item in manifest['shards'])
+    for artifact_path, expected_hash in artifacts:
+        target = Path(artifact_path)
+        if not target.is_absolute():
+            target = path.parent / target
+        if not target.is_file():
+            errors.append(f'Missing frozen document artifact: {target}')
+        elif not expected_hash:
+            errors.append(f'Missing SHA256 for frozen document artifact: {target}')
+        elif digest(target) != expected_hash:
+            errors.append(f'Frozen document artifact hash mismatch: {target}')
+    mapping_path = Path(manifest['document_key_to_ordinal_path'])
+    if not mapping_path.is_absolute():
+        mapping_path = path.parent / mapping_path
+    if mapping_path.is_file():
+        mapping = read_mapping(mapping_path)
+        if len(mapping) != int(manifest['count']) or sorted(mapping.values()) != list(range(int(manifest['count']))):
+            errors.append(f'Frozen document key mapping is not a complete ordinal permutation: {mapping_path}')
     return errors
 
 

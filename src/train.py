@@ -33,6 +33,8 @@ from rewards import warn_on_inert_cutoffs
 from embedding_data import EmbeddingDataCollator, EmbeddingDataset
 from fixed_corpus.index import (
     FrozenCorpusIndex,
+    FrozenCorpusIndexRouter,
+    load_frozen_index,
     sha256_file,
     write_frozen_training_audit,
 )
@@ -214,7 +216,7 @@ def build_embedding_data(
     training_args: HFTrainingArguments,
     tokenizer,
     model_args: ModelArguments | None = None,
-    frozen_index: FrozenCorpusIndex | None = None,
+    frozen_index: FrozenCorpusIndex | FrozenCorpusIndexRouter | None = None,
 ):
     """Train dataset, optional held-out dev dataset, and the shared collator."""
     train_dataset = EmbeddingDataset(
@@ -248,7 +250,19 @@ def build_embedding_data(
         ),
         append_token=model_args.append_token if model_args else "pad",
         document_key_to_ordinal=(
-            frozen_index.document_key_to_ordinal if frozen_index is not None else None
+            frozen_index.document_key_to_ordinal
+            if isinstance(frozen_index, FrozenCorpusIndex)
+            else None
+        ),
+        document_id_to_ordinal_by_source=(
+            frozen_index.document_key_to_ordinal_by_source
+            if isinstance(frozen_index, FrozenCorpusIndexRouter)
+            else None
+        ),
+        source_to_index_route_id=(
+            frozen_index.source_to_route_id
+            if isinstance(frozen_index, FrozenCorpusIndexRouter)
+            else None
         ),
     )
     return train_dataset, eval_dataset, data_collator
@@ -259,10 +273,10 @@ def load_frozen_document_index(
     backbone,
     data_args: DataArguments,
     device: torch.device,
-) -> FrozenCorpusIndex | None:
+) -> FrozenCorpusIndex | FrozenCorpusIndexRouter | None:
     if model_args.document_encoder_mode == "joint":
         return None
-    index = FrozenCorpusIndex(
+    index = load_frozen_index(
         model_args.frozen_document_index_manifest,
         backend="lookup",
         device=device,
@@ -279,9 +293,16 @@ def load_frozen_document_index(
         query_prompt_template=model_args.query_prompt_template,
         embedding_max_length=model_args.embedding_max_length,
     )
-    expected_source_hash = index.manifest.get("source_data_sha256")
-    if expected_source_hash and sha256_file(data_args.data_path) != expected_source_hash:
-        raise ValueError("Training data hash differs from the frozen document index source")
+    if isinstance(index, FrozenCorpusIndexRouter):
+        expected_training_hash = index.manifest.get("training_data_sha256")
+        if not expected_training_hash:
+            raise ValueError("Routed frozen index does not record its validated training data hash")
+        if sha256_file(data_args.data_path) != expected_training_hash:
+            raise ValueError("Training data hash differs from the routed frozen-index validation")
+    else:
+        expected_source_hash = index.manifest.get("source_data_sha256")
+        if expected_source_hash and sha256_file(data_args.data_path) != expected_source_hash:
+            raise ValueError("Training data hash differs from the frozen document index source")
     return index
 
 

@@ -40,32 +40,70 @@ def main():
             parser.error('Frozen document encoding is currently implemented for G1 only')
         if args.gpus < 1:
             parser.error('--gpus must be positive')
+        sys.path.insert(0, str(ROOT/'src'))
+        from bright import BRIGHT_CONFIG, BRIGHT_DATASET, BRIGHT_REVISION, BRIGHT_TRAINING_SOURCE_ROUTES
+        from fixed_corpus.router import (
+            validate_training_against_bright_documents,
+            write_bright_index_router,
+        )
+        bright_training_routes = sorted(set(BRIGHT_TRAINING_SOURCE_ROUTES.values()))
         suite = iclr2027.apply_settings(iclr2027.load_suite(), args.config)
         resolved = iclr2027.resolve_run(
             suite, iclr2027.DEFAULT_SUITE, 'G1-J-CL', nproc=args.gpus
         )
         config = resolved['config']
         data_path = Path(config['data_path'])
-        output_dir = data_path.parent / 'frozen_document_index'
+        documents_dir = ROOT/'data/audit_reasonrank_bright/bright/documents'
+        missing_documents = [
+            route for route in bright_training_routes
+            if not (documents_dir/f'{route}-00000-of-00001.parquet').is_file()
+        ]
+        if missing_documents:
+            parser.error(
+                'Missing official xlangai/BRIGHT documents for: '
+                + ', '.join(missing_documents)
+                + '. Run `python scripts/download_reasonrank_audit.py --include-bright-documents`.'
+            )
+        validation = validate_training_against_bright_documents(
+            ROOT/data_path,
+            documents_dir,
+        )
+        print(f'Validated G1 candidates against official BRIGHT documents: {validation}')
+        output_dir = data_path.parent / 'bright_frozen_document_indices'
         launcher = (
             [sys.executable]
             if args.gpus == 1
             else ['torchrun', '--standalone', f'--nproc_per_node={args.gpus}']
         )
-        command = [
-            *launcher, str(ROOT/'src/encode_frozen_documents.py'),
-            '--input', str(ROOT/data_path),
-            '--output-dir', str(ROOT/output_dir),
-            '--model', str(config['model_name_or_path']),
-            '--max-length', str(min(config['d_max_len'], config['embedding_max_length'])),
-            '--pooling-method', str(config['pooling_method']),
-            '--padding-side', str(config['padding_side']),
-            '--append-token', str(config['append_token']),
-            '--document-prompt-template', str(config['document_prompt_template']),
-            '--query-prompt-template', str(config['query_prompt_template']),
-            '--embedding-max-length', str(config['embedding_max_length']),
-        ]
-        return subprocess.call(command, cwd=ROOT)
+        for route in bright_training_routes:
+            command = [
+                *launcher, str(ROOT/'src/encode_frozen_documents.py'),
+                '--input', str(documents_dir/f'{route}-00000-of-00001.parquet'),
+                '--input-format', 'bright_documents',
+                '--output-dir', str(output_dir/route),
+                '--source-name', route,
+                '--source-dataset', BRIGHT_DATASET,
+                '--source-config', BRIGHT_CONFIG,
+                '--source-revision', BRIGHT_REVISION,
+                '--model', str(config['model_name_or_path']),
+                '--max-length', str(min(config['d_max_len'], config['embedding_max_length'])),
+                '--pooling-method', str(config['pooling_method']),
+                '--padding-side', str(config['padding_side']),
+                '--append-token', str(config['append_token']),
+                '--document-prompt-template', str(config['document_prompt_template']),
+                '--query-prompt-template', str(config['query_prompt_template']),
+                '--embedding-max-length', str(config['embedding_max_length']),
+            ]
+            status = subprocess.call(command, cwd=ROOT)
+            if status:
+                return status
+        manifest = write_bright_index_router(
+            output_dir,
+            ROOT/data_path,
+            revision=BRIGHT_REVISION,
+        )
+        print(f'Validated routed BRIGHT index: {manifest}')
+        return 0
     if args.action == 'show' and not args.verbose:
         suite = iclr2027.apply_settings(iclr2027.load_suite(), args.config)
         if args.run not in suite['runs']:

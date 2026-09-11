@@ -17,6 +17,7 @@ except ImportError:
     from fixed_corpus_model import FixedCorpusMTEBModel
 
 from embedding_protocol import load_embedding_protocol, protocol_to_eval_kwargs
+from bright import BRIGHT_CONFIG, BRIGHT_DATASET, BRIGHT_REVISION
 from utils import load_raw_config_file
 
 
@@ -30,6 +31,9 @@ logger = logging.getLogger("run_mteb.py")
 
 BRIGHT_TASK_NAME = "BrightRetrieval"
 BRIGHT_SPLIT = "standard"
+BRIGHT_DATASET_PATH = BRIGHT_DATASET
+BRIGHT_DATASET_CONFIG = BRIGHT_CONFIG
+BRIGHT_DATASET_REVISION = BRIGHT_REVISION
 BRIGHT_INSTRUCTIONS = {
     "biology": "Given a biology post, retrieve relevant passages that help answer the post.",
     "earth_science": "Given an earth science post, retrieve relevant passages that help answer the post.",
@@ -120,6 +124,14 @@ class EvalArguments:
     fixed_corpus_model_kwargs: Optional[str] = field(
         default=None,
         metadata={"help": "JSON kwargs for the E0 document encoder"},
+    )
+    bright_dataset_revision: str = field(
+        default=BRIGHT_DATASET_REVISION,
+        metadata={"help": "Immutable xlangai/BRIGHT revision used for documents/examples"},
+    )
+    bright_cache_dir: Optional[str] = field(
+        default=None,
+        metadata={"help": "Optional Hugging Face cache directory for official BRIGHT data"},
     )
 
     def __post_init__(self):
@@ -233,6 +245,30 @@ def _bright_result_subsets(result) -> set[str]:
     }
 
 
+def load_official_bright(task, subsets: list[str], args: EvalArguments) -> None:
+    """Bypass MTEB's older pin and explicitly load BRIGHT's official documents config."""
+    identity = {
+        "path": BRIGHT_DATASET_PATH,
+        "config": BRIGHT_DATASET_CONFIG,
+        "revision": args.bright_dataset_revision,
+        "subsets": sorted(subsets),
+    }
+    if getattr(task, "_e2rank_bright_identity", None) == identity:
+        return
+    corpus, queries, relevant_docs = task.load_bright_data(
+        path=BRIGHT_DATASET_PATH,
+        domains=subsets,
+        eval_splits=[BRIGHT_SPLIT],
+        cache_dir=args.bright_cache_dir,
+        revision=args.bright_dataset_revision,
+    )
+    task.corpus = corpus
+    task.queries = queries
+    task.relevant_docs = relevant_docs
+    task.data_loaded = True
+    task._e2rank_bright_identity = identity
+
+
 def run_bright(task, model, args, **kwargs):
     """Evaluate BRIGHT through MTEB, applying its instruction per domain.
 
@@ -269,6 +305,8 @@ def run_bright(task, model, args, **kwargs):
         )
     if not requested_subsets:
         raise ValueError("No BRIGHT subset selected")
+
+    load_official_bright(task, requested_subsets, args)
 
     requested_splits = run_kwargs.pop("eval_splits", None) or [BRIGHT_SPLIT]
     if isinstance(requested_splits, str):
@@ -417,7 +455,10 @@ def main():
         for t in tasks:
             logger.warning(f"Loading {t}")
             try:
-                t.load_data()
+                if t.metadata.name == BRIGHT_TASK_NAME:
+                    load_official_bright(t, list(t.metadata.eval_langs), args)
+                else:
+                    t.load_data()
             except Exception as e:
                 logger.warning(
                     f"meet error when loading task: {t.metadata.name}. {str(e)}"
@@ -445,6 +486,11 @@ def main():
             index_dir=args.fixed_corpus_index_dir,
             corpus_model_name_or_path=args.fixed_corpus_model,
             task_name=BRIGHT_TASK_NAME,
+            corpus_identity={
+                "path": BRIGHT_DATASET_PATH,
+                "config": BRIGHT_DATASET_CONFIG,
+                "revision": args.bright_dataset_revision,
+            },
         )
     if args.only_load:
         return

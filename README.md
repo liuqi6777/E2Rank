@@ -44,8 +44,10 @@ G1 使用 `data/processed/reasonrank_simple/` 中的 4,963 条全量训练数据
 `prepare G1` 每个 query 固定抽一个正例，移除其余已知正例，保留变长负例，生成 `train.ready.jsonl`。
 Loader 直接读 ready 文件；collator 动态补齐和生成 mask。公开文本与审计 sidecar 不参与训练加载。
 已有 ready 文件不会自动重写。
-query-only 训练前运行 `encode G1`，按 `document_key` 稳定去重并生成只读 fp16 normalized shards；
-已有索引只会校验，不会隐式覆盖。推荐顺序为 `prepare G1 → encode G1 → check/train G1-Q-*`。
+query-only 训练前运行 `encode G1`。该命令从 `xlangai/BRIGHT` 的 `documents` 配置为每个训练
+domain 建立独立只读 fp16 normalized index，并校验 ReasonRank 的 document ID 与文本确实对应
+官方 corpus；训练 batch 再按 `source` 路由。已有索引只会校验，不会隐式覆盖。
+推荐顺序为 `prepare G1 → encode G1 → check/train G1-Q-*`。
 
 原始数据下载、BRIGHT 重叠审计和预处理各脚本的职责见 [脚本索引](scripts/README.md)。
 
@@ -110,8 +112,9 @@ bash eval_mteb/scripts/run_mteb.sh CHECKPOINT BRIGHT \
 和独立 shards；已完成索引的语料、顺序、分块或 E0 表示协议不匹配时会停止而不是重建。
 普通 joint-eval 与 fixed-corpus eval 使用不同结果标识，不会互相复用已有结果。
 
-BRIGHT 通过 MTEB 的 `BrightRetrieval` 任务运行，复用其官方数据加载、exact retrieval、
-nDCG@10 和结果格式；评测器会按 12 个领域分别应用 query instruction。已有同路径结果默认复用，
+BRIGHT 通过 MTEB 的 `BrightRetrieval` 任务运行，但显式从 `xlangai/BRIGHT` 的 `documents`
+配置和仓库固定 revision 加载 corpus，复用 MTEB 的 exact retrieval、nDCG@10 和结果格式；
+评测器会按 12 个领域分别应用 query instruction。已有同路径结果默认复用，
 需要重跑时在上述命令末尾添加 `--run_kwargs '{"overwrite_results":true}'`。
 逐领域 nDCG@10 和宏平均可用同一汇总器读取：
 

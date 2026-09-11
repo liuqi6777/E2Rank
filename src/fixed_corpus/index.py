@@ -345,8 +345,14 @@ class FrozenCorpusIndex:
             self._shard_starts = [int(shard["start"]) for shard in self.shards]
         return self._all_memmaps
 
-    def lookup_embeddings(self, ordinals: torch.Tensor) -> torch.Tensor:
+    def lookup_embeddings(
+        self,
+        ordinals: torch.Tensor,
+        route_ids: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         """Fetch immutable vectors by corpus ordinal from CPU shards."""
+        if route_ids is not None:
+            raise ValueError("A single frozen index does not accept route_ids")
         memmaps = self._ensure_memmaps()
         flat = ordinals.detach().cpu().reshape(-1).tolist()
         rows = []
@@ -443,13 +449,171 @@ class FrozenCorpusIndex:
             pass
 
 
+class FrozenCorpusIndexRouter:
+    """Route each training row to one immutable per-domain corpus index."""
+
+    def __init__(
+        self,
+        manifest_path: str,
+        backend: str = "lookup",
+        device: str | torch.device = "cuda",
+        verify_hashes: bool = True,
+        search_batch_size: int = 1024,
+    ) -> None:
+        if backend != "lookup":
+            raise ValueError("Routed training indexes currently support backend=lookup only")
+        self.manifest_path = str(Path(manifest_path).resolve())
+        self.root = Path(self.manifest_path).parent
+        with open(self.manifest_path, encoding="utf-8") as handle:
+            self.manifest = json.load(handle)
+        if self.manifest.get("format_version") != 1:
+            raise ValueError("Unsupported routed frozen-index manifest version")
+        if self.manifest.get("artifact_type") != "frozen_document_index_router":
+            raise ValueError("Manifest is not a frozen document index router")
+        routes = self.manifest.get("routes")
+        if not isinstance(routes, dict) or not routes:
+            raise ValueError("Routed frozen-index manifest requires a non-empty routes mapping")
+        aliases = self.manifest.get("aliases", {})
+        if not isinstance(aliases, dict):
+            raise ValueError("Routed frozen-index aliases must be a mapping")
+
+        self.route_names = sorted(routes)
+        self.route_name_to_id = {name: index for index, name in enumerate(self.route_names)}
+        self.source_to_route_name = {name: name for name in self.route_names}
+        for source, route in aliases.items():
+            if route not in routes:
+                raise ValueError(f"Alias {source!r} targets unknown route {route!r}")
+            self.source_to_route_name[str(source)] = str(route)
+        self.source_to_route_id = {
+            source: self.route_name_to_id[route]
+            for source, route in self.source_to_route_name.items()
+        }
+
+        self.indices: dict[str, FrozenCorpusIndex] = {}
+        for route in self.route_names:
+            item = routes[route]
+            if not isinstance(item, dict) or not item.get("manifest"):
+                raise ValueError(f"Route {route!r} requires a manifest path")
+            child_path = Path(item["manifest"])
+            if not child_path.is_absolute():
+                child_path = self.root / child_path
+            expected_hash = item.get("sha256")
+            if verify_hashes and expected_hash and sha256_file(child_path) != expected_hash:
+                raise ValueError(f"Frozen route manifest hash mismatch: {child_path}")
+            child = FrozenCorpusIndex(
+                str(child_path),
+                backend=backend,
+                device=device,
+                verify_hashes=verify_hashes,
+                search_batch_size=search_batch_size,
+            )
+            if child.manifest.get("source_name") not in {None, route}:
+                raise ValueError(
+                    f"Route {route!r} points to source {child.manifest.get('source_name')!r}"
+                )
+            self.indices[route] = child
+        dimensions = {index.dimension for index in self.indices.values()}
+        if len(dimensions) != 1:
+            raise ValueError(f"Routed frozen indexes have inconsistent dimensions: {dimensions}")
+        self.dimension = dimensions.pop()
+        self.device = torch.device(device)
+
+    def route_name(self, source: str) -> str:
+        try:
+            return self.source_to_route_name[source]
+        except KeyError as exc:
+            raise KeyError(
+                f"No frozen index route for source {source!r}; "
+                f"known sources: {sorted(self.source_to_route_name)}"
+            ) from exc
+
+    @property
+    def document_key_to_ordinal_by_source(self) -> dict[str, dict[str, int]]:
+        mappings: dict[str, dict[str, int]] = {}
+        for source, route in self.source_to_route_name.items():
+            # Aliases intentionally share one mapping instead of copying million-row
+            # BRIGHT ID dictionaries into every DataLoader worker.
+            mappings[source] = self.indices[route]._ensure_key_mapping()
+        return mappings
+
+    def lookup_embeddings(
+        self,
+        ordinals: torch.Tensor,
+        route_ids: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        if route_ids is None:
+            raise ValueError("Routed frozen-index lookup requires route_ids")
+        if route_ids.dim() == 1:
+            if route_ids.size(0) != ordinals.size(0):
+                raise ValueError("route_ids and ordinals must share their first dimension")
+            expanded_routes = route_ids.reshape(-1, *([1] * (ordinals.dim() - 1))).expand_as(ordinals)
+        elif route_ids.shape == ordinals.shape:
+            expanded_routes = route_ids
+        else:
+            raise ValueError("route_ids must have shape [batch] or match ordinals")
+        result = torch.empty(
+            (*ordinals.shape, self.dimension),
+            device=self.device,
+            dtype=torch.float32,
+        )
+        for route_id, route in enumerate(self.route_names):
+            selected = expanded_routes == route_id
+            if selected.any():
+                result[selected] = self.indices[route].lookup_embeddings(ordinals[selected])
+        unknown = (expanded_routes < 0) | (expanded_routes >= len(self.route_names))
+        if unknown.any():
+            values = sorted(set(expanded_routes[unknown].detach().cpu().tolist()))
+            raise ValueError(f"Unknown frozen index route id(s): {values}")
+        return result
+
+    def validate_protocol(self, **kwargs) -> None:
+        for route, index in self.indices.items():
+            try:
+                index.validate_protocol(**kwargs)
+            except ValueError as exc:
+                raise ValueError(f"Frozen index route {route!r}: {exc}") from exc
+
+    def verify(self) -> None:
+        for index in self.indices.values():
+            index.verify()
+
+    def artifact_hashes(self) -> dict[str, str]:
+        hashes = {"index_router_manifest": sha256_file(self.manifest_path)}
+        for route, index in self.indices.items():
+            for name, value in index.artifact_hashes().items():
+                hashes[f"{route}:{name}"] = value
+        return hashes
+
+    def close(self) -> None:
+        for index in self.indices.values():
+            index.close()
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass
+
+
+def load_frozen_index(
+    manifest_path: str,
+    **kwargs,
+) -> FrozenCorpusIndex | FrozenCorpusIndexRouter:
+    """Load either a legacy single index or a routed index manifest."""
+    with open(manifest_path, encoding="utf-8") as handle:
+        manifest = json.load(handle)
+    if manifest.get("artifact_type") == "frozen_document_index_router":
+        return FrozenCorpusIndexRouter(manifest_path, **kwargs)
+    return FrozenCorpusIndex(manifest_path, **kwargs)
+
+
 # Historical name retained for callers that used it outside ``rag``.
 FrozenDistributedIndex = FrozenCorpusIndex
 
 
 def write_frozen_training_audit(
     output_dir: str | os.PathLike[str],
-    index: FrozenCorpusIndex,
+    index: FrozenCorpusIndex | FrozenCorpusIndexRouter,
     hashes_before: dict[str, str],
 ) -> Path:
     """Verify immutability and persist the query-only run's artifact evidence."""
@@ -463,6 +627,7 @@ def write_frozen_training_audit(
         "format_version": 1,
         "document_encoder_mode": "frozen_index",
         "index_manifest": index.manifest_path,
+        "index_routes": getattr(index, "source_to_route_name", None),
         "artifact_hashes_before": hashes_before,
         "artifact_hashes_after": hashes_after,
         "document_reencoding_count": 0,

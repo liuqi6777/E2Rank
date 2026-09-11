@@ -508,6 +508,7 @@ class EmbeddingDataset(Dataset):
             return None
         raw_source = record.get("source") or self._files[file_id]["source"]
         source = _source_name_from_dir(str(raw_source))
+        converted["source"] = source
         converted["query"] = self._format_query(source, converted["query"])
         return converted
 
@@ -674,6 +675,8 @@ class EmbeddingDataCollator:
         document_prompt_template: str = "{document}",
         append_token: str = "pad",
         document_key_to_ordinal: dict[str, int] | None = None,
+        document_id_to_ordinal_by_source: dict[str, dict[str, int]] | None = None,
+        source_to_index_route_id: dict[str, int] | None = None,
         **_: Any,
     ):
         if relevance_scheme not in {"binary", "graded"}:
@@ -685,6 +688,14 @@ class EmbeddingDataCollator:
         self.document_prompt_template = document_prompt_template
         self.append_token = append_token
         self.document_key_to_ordinal = document_key_to_ordinal
+        self.document_id_to_ordinal_by_source = document_id_to_ordinal_by_source
+        self.source_to_index_route_id = source_to_index_route_id
+        if (document_id_to_ordinal_by_source is None) != (source_to_index_route_id is None):
+            raise ValueError(
+                "Routed frozen collation requires both document ID mappings and source routes"
+            )
+        if document_key_to_ordinal is not None and document_id_to_ordinal_by_source is not None:
+            raise ValueError("Choose either a single frozen index or routed frozen indexes")
         if not self.tokenizer.pad_token:
             if getattr(self.tokenizer, "eot_token", None):
                 self.tokenizer.pad_token = self.tokenizer.eot_token
@@ -788,6 +799,26 @@ class EmbeddingDataCollator:
             "in_batch_positive_mask": cross_masks[0][..., 0],
             "in_batch_candidate_mask": cross_masks[1],
         }
+        if self.document_id_to_ordinal_by_source is not None:
+            ordinals = []
+            route_ids = []
+            for instance, row_ids in zip(instances, ordered_ids):
+                source = str(instance.get("source", ""))
+                if source not in self.document_id_to_ordinal_by_source:
+                    raise KeyError(f"No frozen corpus mapping for training source {source!r}")
+                mapping = self.document_id_to_ordinal_by_source[source]
+                missing = [key for key in row_ids if key is not None and key not in mapping]
+                if missing:
+                    raise KeyError(
+                        f"Unknown document ID(s) in frozen corpus route {source!r}: "
+                        f"{', '.join(missing[:3])}"
+                    )
+                ordinals.append([mapping[key] if key is not None else -1 for key in row_ids])
+                route_ids.append(self.source_to_index_route_id[source])
+            result["candidate_ordinals"] = torch.tensor(ordinals, dtype=torch.long)
+            result["index_route_ids"] = torch.tensor(route_ids, dtype=torch.long)
+            return result
+
         if self.document_key_to_ordinal is not None:
             ordinals = []
             for row_keys in ordered_keys:
