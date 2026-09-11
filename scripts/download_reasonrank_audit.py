@@ -17,6 +17,14 @@ SOURCES = {
                    'psychology', 'robotics', 'stackoverflow', 'sustainable_living',
                    'theoremqa_questions', 'theoremqa_theorems')]),
 }
+REASONRANK_DOCUMENT_SOURCE = (
+    'liuwenhan/reasonrank_data_13k',
+    '09c3ac0f8dee374207592e118866d9bf943e74cc',
+    [f'id_doc/{source}.json' for source in (
+        'biology', 'earth_science', 'economics', 'leetcode', 'math-qa',
+        'math-theorem', 'robotics', 'stackoverflow', 'sustainable_living',
+    )],
+)
 BRIGHT_DOCUMENT_PATHS = [
     f'documents/{domain}-00000-of-00001.parquet' for domain in (
         'aops', 'biology', 'earth_science', 'economics', 'leetcode', 'pony',
@@ -34,7 +42,7 @@ def digest(path):
     return result.hexdigest()
 
 
-def download(data_dir, include_bright_documents=False):
+def download(data_dir, include_bright_documents=False, include_reasonrank_documents=False):
     data_dir = Path(data_dir)
     manifest_path = data_dir / 'download_manifest.json'
     previous = json.loads(manifest_path.read_text()) if manifest_path.exists() else {'files': []}
@@ -44,6 +52,8 @@ def download(data_dir, include_bright_documents=False):
     if include_bright_documents:
         repo, revision, paths = sources['bright']
         sources['bright'] = (repo, revision, [*paths, *BRIGHT_DOCUMENT_PATHS])
+    if include_reasonrank_documents:
+        sources['reasonrank_documents'] = REASONRANK_DOCUMENT_SOURCE
     for prefix, (repo, revision, paths) in sources.items():
         for source in paths:
             path = data_dir / prefix / source
@@ -86,10 +96,19 @@ def main():
     parser.add_argument(
         '--include-bright-documents',
         action='store_true',
-        help='Also download the official BRIGHT documents configuration used by G1 indexes',
+        help='Also download the official BRIGHT documents configuration',
+    )
+    parser.add_argument(
+        '--include-reasonrank-documents',
+        action='store_true',
+        help='Also download the canonical ReasonRank id_doc mappings used by G1 indexes',
     )
     args = parser.parse_args()
-    download(args.data_dir, include_bright_documents=args.include_bright_documents)
+    download(
+        args.data_dir,
+        include_bright_documents=args.include_bright_documents,
+        include_reasonrank_documents=args.include_reasonrank_documents,
+    )
 
 
 if __name__ == '__main__':

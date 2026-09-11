@@ -35,7 +35,7 @@ python -m unittest discover -s scripts/tests -v
 三个步骤分别负责下载、审计和转换，共用 `--data-dir`（默认 `data/audit_reasonrank_bright`）：
 
 ```bash
-python scripts/download_reasonrank_audit.py --include-bright-documents
+python scripts/download_reasonrank_audit.py --include-reasonrank-documents
 uv run --no-project --with pyarrow --with scikit-learn --with rapidfuzz python scripts/audit_reasonrank_bright.py
 python scripts/experiment.py prepare G1
 python scripts/experiment.py encode G1 --gpus 8
@@ -55,8 +55,9 @@ python scripts/prepare_reasonrank.py --data-dir data/audit_reasonrank_bright --o
 默认全量 train、seed 42、排除 MSMARCO，不读取用于 dev 分组的 internal matches。
 `--dev-size` 和 `--split-seed` 只用于明确要求的非默认划分；`--compile-only` 只编译已有 public + metadata。
 原始数据、隔离清单和最终 ready 文件的职责分开，准备脚本拒绝覆盖已有输出目录。
-`--include-bright-documents` 会额外下载官方 `xlangai/BRIGHT` 的 `documents` 配置；审计本身只需
-examples，但 G1 query-only 编码需要完整 documents。`encode G1` 为训练涉及的每个 BRIGHT
-subset 构建 `<G1.data>/bright_frozen_document_indices/<subset>/`，并生成 source 路由 manifest；
+`--include-reasonrank-documents` 会额外下载 pinned `liuwenhan/reasonrank_data_13k` 的 `id_doc`
+映射。G1 query-only 编码按训练中的 document ID 提取对应官方完整文本，而不是使用 prompt 中
+可能被截断的文本。`encode G1` 为每个训练 source 构建
+`<G1.data>/reasonrank_frozen_document_indices/<source>/`，并生成 source 路由 manifest；
 索引、corpus、offset、document-ID 映射及 vector shards 均带 SHA256，query-only 运行会复核
 训练前后 hash。

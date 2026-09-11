@@ -46,6 +46,15 @@ def _iter_source_documents(source_path: Path, input_format: str):
                 yield str(record["id"]), record["content"], None
         return
 
+    if input_format == "document_jsonl":
+        with source_path.open(encoding="utf-8") as source:
+            for line_number, line in enumerate(source, 1):
+                if not line.strip():
+                    continue
+                record = json.loads(line)
+                yield str(record["id"]), record["content"], line_number
+        return
+
     with source_path.open(encoding="utf-8") as source:
         for line_number, line in enumerate(source, 1):
             if not line.strip():
@@ -148,7 +157,7 @@ def main() -> None:
     parser.add_argument("--input", required=True)
     parser.add_argument(
         "--input-format",
-        choices=["training_candidates", "bright_documents"],
+        choices=["training_candidates", "bright_documents", "document_jsonl"],
         default="training_candidates",
     )
     parser.add_argument("--source-name", default=None)

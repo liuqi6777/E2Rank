@@ -42,52 +42,55 @@ def main():
             parser.error('--gpus must be positive')
         sys.path.insert(0, str(ROOT/'src'))
         from fixed_corpus.router import (
-            BRIGHT_CONFIG,
-            BRIGHT_DATASET,
-            BRIGHT_REVISION,
-            BRIGHT_TRAINING_SOURCE_ROUTES,
-            validate_training_against_bright_documents,
-            write_bright_index_router,
+            REASONRANK_CONFIG,
+            REASONRANK_DATASET,
+            REASONRANK_REVISION,
+            REASONRANK_TRAINING_SOURCES,
+            materialize_reasonrank_documents,
+            write_reasonrank_index_router,
         )
-        bright_training_routes = sorted(set(BRIGHT_TRAINING_SOURCE_ROUTES.values()))
+        training_sources = sorted(REASONRANK_TRAINING_SOURCES)
         suite = iclr2027.apply_settings(iclr2027.load_suite(), args.config)
         resolved = iclr2027.resolve_run(
             suite, iclr2027.DEFAULT_SUITE, 'G1-J-CL', nproc=args.gpus
         )
         config = resolved['config']
         data_path = Path(config['data_path'])
-        documents_dir = ROOT/'data/audit_reasonrank_bright/bright/documents'
+        documents_dir = ROOT/'data/audit_reasonrank_bright/reasonrank_documents/id_doc'
         missing_documents = [
-            route for route in bright_training_routes
-            if not (documents_dir/f'{route}-00000-of-00001.parquet').is_file()
+            source for source in training_sources
+            if not (documents_dir/f'{source}.json').is_file()
         ]
         if missing_documents:
             parser.error(
-                'Missing official xlangai/BRIGHT documents for: '
+                'Missing canonical ReasonRank documents for: '
                 + ', '.join(missing_documents)
-                + '. Run `python scripts/download_reasonrank_audit.py --include-bright-documents`.'
+                + '. Run `python scripts/download_reasonrank_audit.py '
+                  '--include-reasonrank-documents`.'
             )
-        validation = validate_training_against_bright_documents(
+        canonical_dir = data_path.parent / 'reasonrank_canonical_documents'
+        validation = materialize_reasonrank_documents(
             ROOT/data_path,
             documents_dir,
+            canonical_dir,
         )
-        print(f'Validated G1 candidates against official BRIGHT documents: {validation}')
-        output_dir = data_path.parent / 'bright_frozen_document_indices'
+        print(f'Validated G1 candidates against canonical ReasonRank documents: {validation}')
+        output_dir = data_path.parent / 'reasonrank_frozen_document_indices'
         launcher = (
             [sys.executable]
             if args.gpus == 1
             else ['torchrun', '--standalone', f'--nproc_per_node={args.gpus}']
         )
-        for route in bright_training_routes:
+        for route in training_sources:
             command = [
                 *launcher, str(ROOT/'src/encode_frozen_documents.py'),
-                '--input', str(documents_dir/f'{route}-00000-of-00001.parquet'),
-                '--input-format', 'bright_documents',
+                '--input', str(canonical_dir/f'{route}.jsonl'),
+                '--input-format', 'document_jsonl',
                 '--output-dir', str(output_dir/route),
                 '--source-name', route,
-                '--source-dataset', BRIGHT_DATASET,
-                '--source-config', BRIGHT_CONFIG,
-                '--source-revision', BRIGHT_REVISION,
+                '--source-dataset', REASONRANK_DATASET,
+                '--source-config', REASONRANK_CONFIG,
+                '--source-revision', REASONRANK_REVISION,
                 '--model', str(config['model_name_or_path']),
                 '--max-length', str(min(config['d_max_len'], config['embedding_max_length'])),
                 '--pooling-method', str(config['pooling_method']),
@@ -100,12 +103,12 @@ def main():
             status = subprocess.call(command, cwd=ROOT)
             if status:
                 return status
-        manifest = write_bright_index_router(
+        manifest = write_reasonrank_index_router(
             output_dir,
             ROOT/data_path,
-            revision=BRIGHT_REVISION,
+            revision=REASONRANK_REVISION,
         )
-        print(f'Validated routed BRIGHT index: {manifest}')
+        print(f'Validated routed ReasonRank index: {manifest}')
         return 0
     if args.action == 'show' and not args.verbose:
         suite = iclr2027.apply_settings(iclr2027.load_suite(), args.config)

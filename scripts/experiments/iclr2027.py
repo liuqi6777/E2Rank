@@ -159,7 +159,7 @@ def resolve_run(suite, suite_path, run_id, root=ROOT, nproc=1):
             if run['scope'] == 'query_only':
                 data_parent = Path(config['data_path']).parent
                 config['frozen_document_index_manifest'] = str(
-                    data_parent / 'bright_frozen_document_indices' / 'index_router_manifest.json'
+                    data_parent / 'reasonrank_frozen_document_indices' / 'index_router_manifest.json'
                 )
                 config['frozen_document_verify_hashes'] = True
     for key in ('model_name_or_path', 'pooling_method', 'append_token', 'padding_side',
@@ -283,8 +283,9 @@ def check_frozen_document_index(config, root=ROOT):
         manifest = read_mapping(path)
         source_path = path_at_root(config['data_path'], root)
         if manifest.get('artifact_type') == 'frozen_document_index_router':
-            if manifest.get('source_dataset') != 'xlangai/BRIGHT' or manifest.get('source_config') != 'documents':
-                errors.append('G1 routed index must use xlangai/BRIGHT configuration documents')
+            if (manifest.get('source_dataset') != 'liuwenhan/reasonrank_data_13k'
+                    or manifest.get('source_config') != 'id_doc'):
+                errors.append('G1 routed index must use canonical ReasonRank id_doc documents')
             if manifest.get('training_data_sha256') != digest(source_path):
                 errors.append(f'Routed frozen-index training hash mismatch: {source_path}')
             routes = manifest.get('routes')
