@@ -269,10 +269,12 @@ index 和 generator。独立 QA train/dev/test，不能用 ReasonRank listwise �
 所有行使用同一套答案评测，不能把 answer-containing passage MRR 当作生成答案 F1。
 报告训练 GPU-hours、index searches、generator calls/tokens、cache reuse 与实际 group sizes。
 
-**候选访问公平性须先解决。** 当前监督训练使用离线候选、RL 动态检索，不能直接把差异
-归因于目标函数。默认增加 shared-candidate 控制：同一冻结候选 manifest 下比较
-CL/LL/RetRL；动态检索版本作为部署结果单列。如改用共同动态 mining，必须在训练前
-冻结规则并统一候选刷新预算。额外控制运行单独计费，不隐藏在四个主训练配置中。
+监督训练使用离线候选；RL 不使用 CL 意义上的正负候选，action 直接动态检索冻结的完整
+corpus，再由检索或答案 reward 评分。candidate manifest 在 RL 中只承载 query、答案和证据
+元数据，不限制 action 的检索空间。因此主实验比较的是完整学习范式，不把方法差异仅归因于
+目标函数，也不要求 shared-candidate 控制。若额外运行 fixed-slate RL，它只作为 reranking
+诊断，不作为 G3 主实验的前置条件。各行仍需统一 E0、corpus/index、数据划分和最终评测，
+并分别报告 query exposures、index searches、generator calls/tokens 与 GPU-hours。
 
 若 AnsRL 未完成，只能声称改善 RAG 检索，不能声称已验证直接答案优化。
 固定索引无需重编码的优势属于本组所有适配方法，不是 RL 独有。
@@ -292,7 +294,8 @@ CL/LL/RetRL；动态检索版本作为部署结果单列。如改用共同动态
 - [ ] 明确两套标签的 MRR 阈值，确保 padding 不参与 reward。
 - [ ] 接入最终 checkpoint 的固定候选排序评测与全 corpus 检索。
 - [ ] 固定各组 LR/目标网格、trial 与主训练预算、tie-break 和 G2 两阶段预算。
-- [ ] G3 QA、index、generator manifests 和候选访问控制。
+- [ ] G3 QA、index、generator manifests；验证 RL action 动态检索完整冻结 corpus，且训练
+      不消费离线 candidate IDs。
 - [ ] 所有命令 dry-run，检查 resolved configs，再提交 GPU；尚无已完成结果。
 
 ### Phase 1 — 短运行与诊断
@@ -316,7 +319,7 @@ G3 验证固定 generator 的可复现输出和 reward 成本。完成低成本�
 
 ### Phase 4 — G3 下游反馈
 
-完成三个训练配置、原始 E0 与候选访问控制，优先保证 AnsRL 与公平监督对照。
+完成三个训练配置与原始 E0，优先保证 AnsRL、监督 CL 对照和统一的最终评测协议。
 若 GPU/数据准备允许，组间可以调度重叠；各组内部配置选择和共享 checkpoint 仍有依赖。
 
 ### 核心预算与删减顺序
@@ -329,8 +332,8 @@ G3 验证固定 generator 的可复现输出和 reward 成本。完成低成本�
 | G3：CL、RetRL、AnsRL | 3 |
 | **合计** | **21** |
 
-另计原始 checkpoint 评测、调参、paired/product 短 matched-time 比较、G3 候选访问
-控制、共享 warm-up 的存储与生成器评测开销。21 是训练执行数量，不是完整 GPU-hour
+另计原始 checkpoint 评测、调参、paired/product 短 matched-time 比较、共享 warm-up
+的存储与生成器评测开销。21 是训练执行数量，不是完整 GPU-hour
 报价，也不意味着每项训练耗时相同。共同 CL 前缀只训练一次，其成本单独报告。
 
 预算不足时先删第二模型/第二 QA 数据集、混合数据扩展、额外 G/分布/奖励混合消融。

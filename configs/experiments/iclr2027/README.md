@@ -92,7 +92,8 @@ LL 固定为 LambdaRank variant：pairwise logistic 乘当前排序交换产生�
 使用 `gain=2^rel-1` 和 sigma 1.0。G1 query-only 通过离线冻结索引训练，仅更新 query encoder。
 G2 使用预处理生成的固定训练文件，采用固定预算和最终 checkpoint，不要求 manifest loader 或 dev 选模。
 模型协议和预算已填写；第二阶段只需先完成 D-CL 以提供初始化权重。
-G3 仍需候选访问控制、答案 F1 选模；检索 RL 需要 nDCG，不能用 source-aware MRR 代替。
+G3 的监督 CL 使用离线候选；RL action 动态检索冻结的完整 corpus，不设置共享候选控制。
+当前仍需接入答案 F1 选模；检索 RL 需要 nDCG，不能用 source-aware MRR 代替。
 
 运行时以 `check RUN` 为准。G1 query-only 的 source、corpus、offset、mapping、vector shard hash
 和 embedding protocol 是启动门槛；joint 不加载冻结索引。数据存在、其余实现缺项、必要参数、

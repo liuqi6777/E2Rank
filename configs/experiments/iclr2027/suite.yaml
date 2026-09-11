@@ -8,7 +8,6 @@ output_root: checkpoints/iclr2027
 # only with its implementation and corresponding validation; there is no bypass flag.
 pending:
   rag_ndcg: "RAG nDCG reward not implemented; source_aware_mrr is not an equivalent substitution"
-  rag_candidates: "Shared-candidate objective control must be implemented and validated"
   rag_selection: "Answer-F1 checkpoint selection needs integration with the training schedule"
 
 profiles:
@@ -44,10 +43,10 @@ profiles:
     dataset_manifest: data/protocols/g3_qa.json
     selection: qa_dev_answer_f1
     final_evaluation: [qa_test_answer_f1, qa_test_retrieval]
-    requirements: [rag_candidates, rag_selection]
+    requirements: [rag_selection]
     protocol:
       labels: qa_retrieval_relevance
-      candidate_access: shared_candidate_control_plus_dynamic_deployment
+      candidate_access: supervised_offline_candidates_rl_dynamic_full_corpus
       max_steps: null
       learning_rate: null
       eval_steps: null
