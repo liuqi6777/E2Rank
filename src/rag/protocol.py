@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from frozen_corpus import validate_frozen_protocol
+from fixed_corpus.index import validate_frozen_protocol
 
 
 def validate_query_index_protocol(

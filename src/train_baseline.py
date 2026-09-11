@@ -35,8 +35,8 @@ from train import (
     setup_logging,
     shutdown_distributed,
 )
-from frozen_corpus import write_frozen_training_audit
-from query_only import QueryOnlySupervisedModel
+from fixed_corpus.index import write_frozen_training_audit
+from fixed_corpus.models import QueryOnlySupervisedModel
 from utils import BASELINE_CONFIG_SLOTS
 
 

@@ -1,4 +1,4 @@
-"""Shared query-only models over immutable document embeddings."""
+"""Shared query-only scorers, objectives and model wrappers."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from torch import Tensor, nn
 from transformers.file_utils import ModelOutput
 
 from embedding_protocol import pool_embeddings
-from frozen_corpus import FrozenCorpusIndex
+from fixed_corpus.index import FrozenCorpusIndex
 
 
 @dataclass

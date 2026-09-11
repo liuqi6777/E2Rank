@@ -1,3 +1,5 @@
+"""Immutable corpus storage, lookup, search, verification and run auditing."""
+
 from __future__ import annotations
 
 import hashlib

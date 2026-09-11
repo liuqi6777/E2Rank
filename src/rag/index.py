@@ -1,6 +1,6 @@
 """Backward-compatible imports for the shared frozen-corpus store."""
 
-from frozen_corpus import (
+from fixed_corpus.index import (
     FrozenCorpusIndex,
     FrozenDistributedIndex,
     load_index_manifest,

@@ -31,9 +31,12 @@ from grpo_trainer import GRPOTrainer, restore_grpo_state
 from mteb_eval_callback import MTEBEvalCallback
 from rewards import warn_on_inert_cutoffs
 from embedding_data import EmbeddingDataCollator, EmbeddingDataset
-from frozen_corpus import FrozenCorpusIndex, sha256_file
-from frozen_corpus import write_frozen_training_audit
-from query_only import FixedCorpusGRPOModel
+from fixed_corpus.index import (
+    FrozenCorpusIndex,
+    sha256_file,
+    write_frozen_training_audit,
+)
+from fixed_corpus.models import FixedCorpusGRPOModel
 from embedding_protocol import save_embedding_protocol
 from utils import (
     BASE_CONFIG_SLOTS,

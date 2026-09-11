@@ -14,9 +14,9 @@ from transformers.file_utils import ModelOutput
 from rag.generator import FrozenGeneratorClient
 from rag.index import FrozenDistributedIndex
 from rag.metrics import max_token_f1, passage_contains_answer
-from query_policy import QueryOnlyRLWrapper
+from fixed_corpus.policy import QueryOnlyRLWrapper
 from rag.rewards import RetrievalRewardProvider
-from query_only import (
+from fixed_corpus.models import (
     QueryOnlySupervisedModel,
     multi_positive_infonce_loss as shared_multi_positive_infonce_loss,
     teacher_ranknet_loss,

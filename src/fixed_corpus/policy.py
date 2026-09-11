@@ -1,3 +1,5 @@
+"""Provider-injected query-only score-function policy."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
