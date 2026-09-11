@@ -17,6 +17,7 @@ source .venv/bin/activate
 
 ```bash
 python scripts/experiment.py prepare G1
+python scripts/experiment.py encode G1 --gpus 4
 python scripts/experiment.py list
 python scripts/experiment.py show G1-J-RL
 python scripts/experiment.py show G1-J-RL --verbose
@@ -26,7 +27,7 @@ python scripts/experiment.py train G1-J-RL --gpus 4
 
 | 组 | 目的 | 当前状态 |
 |---|---|---|
-| G1 | 开源 embedding model → ReasonRank reasoning 训练，BRIGHT 主评测 | Joint CL / RankNet / LambdaLoss / RL 与 RL 消融已接入；固定 document 分支待实现 |
+| G1 | 开源 embedding model → ReasonRank reasoning 训练，BRIGHT 主评测 | Joint 与冻结 document 的 query-only CL / RankNet / LambdaLoss / RL 均已接入 |
 | G2 | Base LLM 上大规模 CL / RL，以及共同 CL warm-up 后的比较 | 预算、表示协议和部分训练能力待补齐 |
 | G3 | 固定索引 RAG 的检索与答案目标 | 保留现有 RAG 工具；论文实验的候选控制和选模等尚待接入 |
 
@@ -42,6 +43,8 @@ G1 使用 `data/processed/reasonrank_simple/` 中的 4,963 条全量训练数据
 `prepare G1` 每个 query 固定抽一个正例，移除其余已知正例，保留变长负例，生成 `train.ready.jsonl`。
 Loader 直接读 ready 文件；collator 动态补齐和生成 mask。公开文本与审计 sidecar 不参与训练加载。
 已有 ready 文件不会自动重写。
+query-only 训练前运行 `encode G1`，按 `document_key` 稳定去重并生成只读 fp16 normalized shards；
+已有索引只会校验，不会隐式覆盖。推荐顺序为 `prepare G1 → encode G1 → check/train G1-Q-*`。
 
 原始数据下载、BRIGHT 重叠审计和预处理各脚本的职责见 [脚本索引](scripts/README.md)。
 

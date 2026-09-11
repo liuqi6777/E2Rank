@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One entry point: prepare data, list experiments, inspect a plan, check or train."""
+"""One entry point: prepare/encode data, inspect experiments, check or train."""
 import argparse
 import json
 from pathlib import Path
@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['prepare', 'list', 'show', 'check', 'train'])
+    parser.add_argument('action', choices=['prepare', 'encode', 'list', 'show', 'check', 'train'])
     parser.add_argument('run', nargs='?')
     parser.add_argument('--config', type=Path, default=ROOT/'configs/experiments.yaml')
     parser.add_argument('--gpus', type=int, default=1)
@@ -31,6 +31,37 @@ def main():
             return 0
         if (ROOT/data/'train.jsonl').exists():
             command.append('--compile-only')
+        return subprocess.call(command, cwd=ROOT)
+    if args.action == 'encode':
+        if args.run not in (None, 'G1'):
+            parser.error('Frozen document encoding is currently implemented for G1 only')
+        if args.gpus < 1:
+            parser.error('--gpus must be positive')
+        suite = iclr2027.apply_settings(iclr2027.load_suite(), args.config)
+        resolved = iclr2027.resolve_run(
+            suite, iclr2027.DEFAULT_SUITE, 'G1-J-CL', nproc=args.gpus
+        )
+        config = resolved['config']
+        data_path = Path(config['data_path'])
+        output_dir = data_path.parent / 'frozen_document_index'
+        launcher = (
+            [sys.executable]
+            if args.gpus == 1
+            else ['torchrun', '--standalone', f'--nproc_per_node={args.gpus}']
+        )
+        command = [
+            *launcher, str(ROOT/'src/encode_frozen_documents.py'),
+            '--input', str(ROOT/data_path),
+            '--output-dir', str(ROOT/output_dir),
+            '--model', str(config['model_name_or_path']),
+            '--max-length', str(min(config['d_max_len'], config['embedding_max_length'])),
+            '--pooling-method', str(config['pooling_method']),
+            '--padding-side', str(config['padding_side']),
+            '--append-token', str(config['append_token']),
+            '--document-prompt-template', str(config['document_prompt_template']),
+            '--query-prompt-template', str(config['query_prompt_template']),
+            '--embedding-max-length', str(config['embedding_max_length']),
+        ]
         return subprocess.call(command, cwd=ROOT)
     if args.action == 'show' and not args.verbose:
         suite = iclr2027.apply_settings(iclr2027.load_suite(), args.config)

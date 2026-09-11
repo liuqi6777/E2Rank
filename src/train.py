@@ -31,6 +31,9 @@ from grpo_trainer import GRPOTrainer, restore_grpo_state
 from mteb_eval_callback import MTEBEvalCallback
 from rewards import warn_on_inert_cutoffs
 from embedding_data import EmbeddingDataCollator, EmbeddingDataset
+from frozen_corpus import FrozenCorpusIndex, sha256_file
+from frozen_corpus import write_frozen_training_audit
+from query_only import FixedCorpusGRPOModel
 from embedding_protocol import save_embedding_protocol
 from utils import (
     BASE_CONFIG_SLOTS,
@@ -208,6 +211,7 @@ def build_embedding_data(
     training_args: HFTrainingArguments,
     tokenizer,
     model_args: ModelArguments | None = None,
+    frozen_index: FrozenCorpusIndex | None = None,
 ):
     """Train dataset, optional held-out dev dataset, and the shared collator."""
     train_dataset = EmbeddingDataset(
@@ -240,8 +244,42 @@ def build_embedding_data(
             model_args.document_prompt_template if model_args else "{document}"
         ),
         append_token=model_args.append_token if model_args else "pad",
+        document_key_to_ordinal=(
+            frozen_index.document_key_to_ordinal if frozen_index is not None else None
+        ),
     )
     return train_dataset, eval_dataset, data_collator
+
+
+def load_frozen_document_index(
+    model_args: ModelArguments,
+    backbone,
+    data_args: DataArguments,
+    device: torch.device,
+) -> FrozenCorpusIndex | None:
+    if model_args.document_encoder_mode == "joint":
+        return None
+    index = FrozenCorpusIndex(
+        model_args.frozen_document_index_manifest,
+        backend="lookup",
+        device=device,
+        verify_hashes=model_args.frozen_document_verify_hashes,
+    )
+    index.validate_protocol(
+        model_name_or_path=model_args.model_name_or_path,
+        resolved_model_revision=getattr(backbone.config, "_commit_hash", None),
+        pooling_method=model_args.pooling_method,
+        padding_side=model_args.padding_side,
+        append_token=model_args.append_token,
+        document_prompt_template=model_args.document_prompt_template,
+        document_max_length=min(data_args.d_max_len, model_args.embedding_max_length),
+        query_prompt_template=model_args.query_prompt_template,
+        embedding_max_length=model_args.embedding_max_length,
+    )
+    expected_source_hash = index.manifest.get("source_data_sha256")
+    if expected_source_hash and sha256_file(data_args.data_path) != expected_source_hash:
+        raise ValueError("Training data hash differs from the frozen document index source")
+    return index
 
 
 def save_run_artifacts(trainer, training_args: HFTrainingArguments, tokenizer, **argument_objects) -> None:
@@ -282,8 +320,14 @@ def main() -> None:
     set_seed(training_args.seed)
 
     backbone, tokenizer = load_backbone_and_tokenizer(model_args, lora_args)
-    model = GRPOModel(
+    frozen_index = load_frozen_document_index(
+        model_args, backbone, data_args, training_args.device
+    )
+    frozen_hashes = frozen_index.artifact_hashes() if frozen_index is not None else None
+    model_class = FixedCorpusGRPOModel if frozen_index is not None else GRPOModel
+    model = model_class(
         model=backbone,
+        **({"index": frozen_index} if frozen_index is not None else {}),
         rl_args=rl_args,
         pooling_method=model_args.pooling_method,
     )
@@ -303,6 +347,7 @@ def main() -> None:
         training_args,
         tokenizer,
         model_args,
+        frozen_index=frozen_index,
     )
 
     # Both halves of this check live in different config slots -- the cutoff in reward/, the
@@ -330,6 +375,12 @@ def main() -> None:
     trainer.train(resume_from_checkpoint=True if resume_checkpoint else None)
 
     save_run_artifacts(trainer, training_args, tokenizer, model_args=model_args, rl_args=rl_args)
+    if trainer.is_world_process_zero() and frozen_index is not None:
+        write_frozen_training_audit(
+            training_args.output_dir, frozen_index, frozen_hashes
+        )
+    if frozen_index is not None:
+        frozen_index.close()
 
 
 if __name__ == "__main__":

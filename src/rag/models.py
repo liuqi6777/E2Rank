@@ -11,27 +11,22 @@ from torch import Tensor
 from transformers import PreTrainedModel
 from transformers.file_utils import ModelOutput
 
-from embedding_protocol import pool_embeddings
 from rag.generator import FrozenGeneratorClient
 from rag.index import FrozenDistributedIndex
 from rag.metrics import max_token_f1, passage_contains_answer
-from rag.policy import QueryPolicyHead
+from query_policy import QueryOnlyRLWrapper
 from rag.rewards import RetrievalRewardProvider
+from query_only import (
+    QueryOnlySupervisedModel,
+    multi_positive_infonce_loss as shared_multi_positive_infonce_loss,
+    teacher_ranknet_loss,
+)
 
 
 def multi_positive_infonce_loss(
     scores: Tensor, positive_mask: Tensor, temperature: float = 0.03
 ) -> Tensor:
-    if scores.shape != positive_mask.shape:
-        raise ValueError("scores and positive_mask must have equal shapes")
-    if temperature <= 0:
-        raise ValueError("temperature must be positive")
-    if not positive_mask.any(dim=-1).all():
-        raise ValueError("Every query must have at least one positive")
-    scaled = scores.float() / temperature
-    numerator = torch.logsumexp(scaled.masked_fill(~positive_mask, float("-inf")), dim=-1)
-    denominator = torch.logsumexp(scaled, dim=-1)
-    return denominator - numerator
+    return shared_multi_positive_infonce_loss(scores, positive_mask, temperature)
 
 
 def positive_negative_ranknet_loss(
@@ -42,16 +37,7 @@ def positive_negative_ranknet_loss(
         raise ValueError("scores and positive_mask must have equal shapes")
     if temperature <= 0:
         raise ValueError("temperature must be positive")
-    losses = []
-    for row_scores, row_mask in zip(scores.float(), positive_mask):
-        positives = row_scores[row_mask]
-        negatives = row_scores[~row_mask]
-        if positives.numel() == 0 or negatives.numel() == 0:
-            losses.append(row_scores.new_zeros(()))
-            continue
-        differences = (positives[:, None] - negatives[None, :]) / temperature
-        losses.append(F.softplus(-differences).mean())
-    return torch.stack(losses)
+    return teacher_ranknet_loss(scores, positive_mask.float(), temperature)
 
 
 @dataclass
@@ -62,27 +48,7 @@ class RAGModelOutput(ModelOutput):
     degenerate_fraction: Optional[Tensor] = None
 
 
-class QueryEncoderMixin:
-    model: PreTrainedModel
-    pooling_method: str
-
-    def encode_query(self, inputs: dict[str, Tensor]) -> Tensor:
-        return pool_embeddings(
-            self.model(**inputs).last_hidden_state,
-            inputs["attention_mask"],
-            pooling_method=self.pooling_method,
-            normalize=True,
-        )
-
-    def gradient_checkpointing_enable(self, *args, **kwargs):
-        self.model.gradient_checkpointing_enable(*args, **kwargs)
-
-    def enable_input_require_grads(self):
-        if hasattr(self.model, "enable_input_require_grads"):
-            self.model.enable_input_require_grads()
-
-
-class RAGSupervisedModel(QueryEncoderMixin, nn.Module):
+class RAGSupervisedModel(QueryOnlySupervisedModel):
     def __init__(
         self,
         model: PreTrainedModel,
@@ -91,15 +57,15 @@ class RAGSupervisedModel(QueryEncoderMixin, nn.Module):
         temperature: float = 0.03,
         pooling_method: str = "last",
     ):
-        super().__init__()
+        super().__init__(
+            model=model,
+            index=index,
+            objective=objective,
+            temperature=temperature,
+            pooling_method=pooling_method,
+        )
         if objective not in {"infonce", "ranknet"}:
             raise ValueError("Supervised RAG objective must be infonce or ranknet")
-        self.model = model
-        self.config = model.config
-        self.index = index
-        self.objective = objective
-        self.temperature = temperature
-        self.pooling_method = pooling_method
 
     def forward(
         self,
@@ -108,19 +74,16 @@ class RAGSupervisedModel(QueryEncoderMixin, nn.Module):
         training_positive_mask: Tensor,
         **_: Any,
     ) -> RAGModelOutput:
-        query_embeddings = self.encode_query(query)
-        document_embeddings = self.index.lookup_embeddings(candidate_passage_ids).detach()
-        document_embeddings = F.normalize(document_embeddings.float(), dim=-1)
-        scores = torch.einsum("bd,bkd->bk", query_embeddings.float(), document_embeddings)
-        positive_mask = training_positive_mask.to(scores.device).bool()
-        if self.objective == "infonce":
-            losses = multi_positive_infonce_loss(scores, positive_mask, self.temperature)
-        else:
-            losses = positive_negative_ranknet_loss(scores, positive_mask, self.temperature)
-        return RAGModelOutput(loss=losses.mean())
+        output = super().forward(
+            query=query,
+            candidate_ordinals=candidate_passage_ids,
+            positive_mask=training_positive_mask,
+            relevance_labels=training_positive_mask.float(),
+        )
+        return RAGModelOutput(loss=output.loss)
 
 
-class RAGRLModel(QueryEncoderMixin, nn.Module):
+class RAGRLModel(QueryOnlyRLWrapper):
     def __init__(
         self,
         model: PreTrainedModel,
@@ -134,11 +97,16 @@ class RAGRLModel(QueryEncoderMixin, nn.Module):
         generator_top_k: int = 5,
         normalize_advantages: bool = True,
     ):
-        super().__init__()
         if reward_type not in {"source_aware_mrr", "answer_mrr", "answer_f1"}:
             raise ValueError(f"Unsupported reward_type={reward_type}")
-        self.model = model
-        self.config = model.config
+        super().__init__(
+            model,
+            self._reward_actions,
+            group_size=group_size,
+            kappa=kappa,
+            pooling_method=pooling_method,
+            normalize_advantages=normalize_advantages,
+        )
         self.index = index
         self.reward_type = reward_type
         self.retrieval_k = retrieval_k
@@ -146,12 +114,6 @@ class RAGRLModel(QueryEncoderMixin, nn.Module):
             RetrievalRewardProvider(reward_type, retrieval_k)
             if reward_type in {"source_aware_mrr", "answer_mrr"}
             else None
-        )
-        self.pooling_method = pooling_method
-        self.policy = QueryPolicyHead(
-            group_size=group_size,
-            kappa=kappa,
-            normalize_advantages=normalize_advantages,
         )
         self.generator = generator
         self.generator_top_k = generator_top_k
@@ -245,18 +207,16 @@ class RAGRLModel(QueryEncoderMixin, nn.Module):
             ]
         return torch.tensor(scores, device=result_ids.device, dtype=torch.float32).reshape(batch, group)
 
-    def forward(
+    def _reward_actions(
         self,
-        query: dict[str, Tensor],
+        actions: Tensor,
         query_ids: Sequence[str],
         sources: Sequence[str],
         questions: Sequence[str],
         golden_answers: Sequence[Sequence[str]],
         evidence_passage_groups: Sequence[Sequence[Sequence[int]]],
         **_: Any,
-    ) -> RAGModelOutput:
-        means = self.encode_query(query)
-        actions = self.policy.sample(means)
+    ) -> Tensor:
         _, result_ids = self.index.search(actions, self.retrieval_k)
         if self.reward_type == "answer_f1":
             rewards = self._distributed_generate(
@@ -272,10 +232,13 @@ class RAGRLModel(QueryEncoderMixin, nn.Module):
                 evidence_ids,
                 [len(groups) for groups in evidence_passage_groups],
             )
-        output = self.policy.loss(means, actions, rewards)
+        return rewards
+
+    def forward(self, query: dict[str, Tensor], **reward_inputs: Any) -> RAGModelOutput:
+        output = self.policy_step(query, **reward_inputs)
         return RAGModelOutput(
             loss=output.loss,
-            reward_mean=rewards.mean().detach(),
-            reward_std=rewards.std(unbiased=False).detach(),
+            reward_mean=output.rewards.mean().detach(),
+            reward_std=output.rewards.std(unbiased=False).detach(),
             degenerate_fraction=output.degenerate_fraction.detach(),
         )

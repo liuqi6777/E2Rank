@@ -4,7 +4,7 @@
 
 | 脚本 | 职责 |
 |---|---|
-| `experiment.py` | G1/G2/G3 的 prepare、list、show、check、train |
+| `experiment.py` | G1/G2/G3 的 prepare、encode、list、show、check、train |
 | `experiments/iclr2027.py` | 实验定义解析、预算与依赖检查、实际启动；由公共入口调用 |
 | `download_reasonrank_audit.py` | 下载审计使用的 ReasonRank / BRIGHT 原始数据 |
 | `audit_reasonrank_bright.py` | 检查数据来源、标签和 BRIGHT 重叠，产出审计记录 |
@@ -38,6 +38,7 @@ python -m unittest discover -s scripts/tests -v
 python scripts/download_reasonrank_audit.py
 uv run --no-project --with pyarrow --with scikit-learn --with rapidfuzz python scripts/audit_reasonrank_bright.py
 python scripts/experiment.py prepare G1
+python scripts/experiment.py encode G1 --gpus 4
 ```
 
 目录内 `reasonrank/` 与 `bright/` 存放原始 parquet，`download_manifest.json` 记录下载来源，
@@ -54,3 +55,5 @@ python scripts/prepare_reasonrank.py --data-dir data/audit_reasonrank_bright --o
 默认全量 train、seed 42、排除 MSMARCO，不读取用于 dev 分组的 internal matches。
 `--dev-size` 和 `--split-seed` 只用于明确要求的非默认划分；`--compile-only` 只编译已有 public + metadata。
 原始数据、隔离清单和最终 ready 文件的职责分开，准备脚本拒绝覆盖已有输出目录。
+`encode G1` 从 ready 文件构建 `<G1.data>/frozen_document_index/`；索引、corpus、offset、
+document-key 映射及 vector shards 均带 SHA256，query-only 运行会复核训练前后 hash。

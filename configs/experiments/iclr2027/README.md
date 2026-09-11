@@ -6,6 +6,7 @@
 
 ```bash
 python scripts/experiment.py prepare G1
+python scripts/experiment.py encode G1 --gpus 4
 python scripts/experiment.py list
 python scripts/experiment.py show G1-J-RL
 python scripts/experiment.py show G1-J-RL --verbose
@@ -60,9 +61,13 @@ python scripts/experiment.py train G1-J-RL --gpus 4
 - `train.metadata.jsonl`：文档 ID、teacher 排序与审计信息。
 - `train.ready.jsonl`：训练唯一使用的文件，包含候选、标签、去重标识和已知正例 ID。
 
-预处理一次完成静态转换。Loader 不关联 sidecar，collator 只做 tokenization、动态 padding/mask 与当前 batch 过滤。
+预处理一次完成静态转换。Joint loader 不关联 sidecar，collator 做 tokenization、动态 padding/mask 与当前 batch 过滤。
 已有 public + metadata 时 `prepare` 只编译；已有 ready 时直接提示已准备。
 JSONL 不存 padding，模型和 loss/reward 均排除 padding。
+
+G1-Q-* 在 prepare 后先运行 `encode G1`。它使用同一 E0、document prompt、pooling、append token
+和 document 最大长度，按 `document_key` 首次出现顺序生成冻结 ordinal。query-only collator 只输出
+`candidate_ordinals` 和 mask，不 tokenize 文档；训练输出记录全部冻结 artifact 的前后 hash。
 
 ## 实验行与依赖
 
@@ -75,15 +80,16 @@ JSONL 不存 padding，模型和 loss/reward 均排除 padding。
   W-CL 是独立训练行，不复用 D-CL；只加载模型权重，不恢复 trainer 状态。
 - G3：从 E0 开始，比较 CL、检索 RL、答案 RL；不自动采用其他组的最优 checkpoint。
 
-当前 G1 joint CL / RN / LL / RL 与 RL 消融已接入。
+当前 G1 joint 与 query-only CL / RN / LL / RL，以及 joint RL 消融均已接入。
 LL 固定为 LambdaRank variant：pairwise logistic 乘当前排序交换产生的 `|ΔnDCG@10|`，
-使用 `gain=2^rel-1` 和 sigma 1.0。G1 query-only 仍需要真正冻结 document 分支，仅设置 query action sampling 不够。
+使用 `gain=2^rel-1` 和 sigma 1.0。G1 query-only 通过离线冻结索引训练，仅更新 query encoder。
 G2 使用预处理生成的固定训练文件，采用固定预算和最终 checkpoint，不要求 manifest loader 或 dev 选模。
 模型协议和预算已填写；第二阶段只需先完成 D-CL 以提供初始化权重。
 G3 仍需候选访问控制、答案 F1 选模；检索 RL 需要 nDCG，不能用 source-aware MRR 代替。
 
-运行时以 `check RUN` 为准。当前入口不要求 model revision 或 dataset manifest/hash 作为启动门槛；
-审计记录保留供复现。数据存在、实现缺项、必要参数、依赖 checkpoint 和输出目录检查仍生效。
+运行时以 `check RUN` 为准。G1 query-only 的 source、corpus、offset、mapping、vector shard hash
+和 embedding protocol 是启动门槛；joint 不加载冻结索引。数据存在、其余实现缺项、必要参数、
+依赖 checkpoint 和输出目录检查仍生效。
 
 ## 输出
 

@@ -3,6 +3,8 @@ _base_:
   - ../../model/qwen3_embedding_0.6b.yaml
   - ../../eval/default.yaml
 # Shared G1 data and training settings; public numeric settings live in experiments.yaml.
+document_encoder_mode: joint # Runner resolves G1-Q-* to frozen_index with a manifest.
+frozen_document_verify_hashes: true
 data_path: data/processed/reasonrank_simple/train.ready.jsonl
 per_dataset_max_samples: null
 q_max_len: 512

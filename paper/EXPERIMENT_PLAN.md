@@ -341,7 +341,8 @@ G3 验证固定 generator 的可复现输出和 reward 成本。完成低成本�
 
 本版使用 G1/G2/G3 命名以避免复用旧 ID 混淆；旧 C1–C4 是 E2Rank/E0 方案，不能直接
 改名当作 G1 结果；旧 A9/A6/R2 分别对应新的 Paired/Cal/MRR 概念，但需适配新标签与数据。
-旧 A3 query-only exploration 不等于 G1-Q 的 document encoder 冻结。
+旧 A3 query-only exploration 不等于 G1-Q 的 document encoder 冻结；G1-Q 现由 E0 离线索引实现，
+运行顺序为 `prepare G1 → encode G1 → check/train G1-Q-*`。
 G3 监督对照为 CL，不运行 RAG LambdaLoss。
 
 旧 `posttrain_*.sh` 已退役；当前运行入口为 `scripts/experiment.py`，以 `check RUN` 核实实现就绪状态。

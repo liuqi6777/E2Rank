@@ -5,6 +5,9 @@ append_token: pad
 query_prompt_template: "Instruct: {task_description}\nQuery:{query}"
 document_prompt_template: "{document}"
 embedding_max_length: 8192
+document_encoder_mode: frozen_index
+frozen_document_index_manifest: data/rag/qwen3_e0_index/index_manifest.json
+frozen_document_verify_hashes: true
 
 # RAG updates the complete query encoder while the corpus encoder, document
 # vectors, ANN index, and generator remain frozen.

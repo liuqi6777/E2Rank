@@ -6,12 +6,13 @@ from .config import (
     RAGIndexArguments,
     RAGRewardArguments,
 )
-from .index import FrozenDistributedIndex
+from .index import FrozenCorpusIndex, FrozenDistributedIndex
 from .policy import QueryPolicyHead
 from .rewards import RetrievalRewardProvider
 
 __all__ = [
     "FrozenDistributedIndex",
+    "FrozenCorpusIndex",
     "QueryPolicyHead",
     "RetrievalRewardProvider",
     "RAGDatasetArguments",

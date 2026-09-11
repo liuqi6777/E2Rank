@@ -29,7 +29,9 @@ def restore_grpo_state(model, checkpoint_dir: str | None) -> None:
 
     Call before the trainer is built, i.e. before DeepSpeed partitions the parameter.
     """
-    if not checkpoint_dir or not model.grpo.sigma_learnable:
+    if not checkpoint_dir or (
+        not model.grpo.sigma_learnable and model.grpo.advantage_baseline != "ema"
+    ):
         return
     state_path = os.path.join(checkpoint_dir, GRPO_STATE_FILENAME)
     if not os.path.exists(state_path):
@@ -37,10 +39,18 @@ def restore_grpo_state(model, checkpoint_dir: str | None) -> None:
         return
 
     with open(state_path, "r", encoding="utf-8") as fp:
-        sigma = float(json.load(fp)["sigma"])
+        state = json.load(fp)
     with torch.no_grad():
-        model.grpo.log_sigma.fill_(math.log(sigma))
-    logger.info("Restored learnable sigma=%s from %s", sigma, state_path)
+        if model.grpo.sigma_learnable and state.get("sigma") is not None:
+            sigma = float(state["sigma"])
+            model.grpo.log_sigma.fill_(math.log(sigma))
+            logger.info("Restored learnable sigma=%s from %s", sigma, state_path)
+        if model.grpo.advantage_baseline == "ema" and "reward_baseline" in state:
+            model.grpo.reward_baseline.fill_(float(state["reward_baseline"]))
+            model.grpo.reward_baseline_initialized.fill_(
+                bool(state.get("reward_baseline_initialized", True))
+            )
+            logger.info("Restored EMA reward baseline from %s", state_path)
 
 
 def build_single_source_sampler(trainer: HFTrainer, train_dataset):
@@ -274,7 +284,18 @@ class GRPOTrainer(EmbeddingTrainerMixin, HFTrainer):
 
         # The backbone save above only covers `model.*`; the learnable exploration scale
         # lives on the GRPO head and would otherwise silently reset to its init on resume.
-        if self.model.grpo.sigma_learnable and self._last_sigma is not None and self.is_world_process_zero():
+        if self.is_world_process_zero() and (
+            (self.model.grpo.sigma_learnable and self._last_sigma is not None)
+            or self.model.grpo.advantage_baseline == "ema"
+        ):
+            state = {}
+            if self.model.grpo.sigma_learnable and self._last_sigma is not None:
+                state["sigma"] = self._last_sigma
+            if self.model.grpo.advantage_baseline == "ema":
+                state["reward_baseline"] = float(self.model.grpo.reward_baseline)
+                state["reward_baseline_initialized"] = bool(
+                    self.model.grpo.reward_baseline_initialized
+                )
             with open(os.path.join(output_dir, GRPO_STATE_FILENAME), "w", encoding="utf-8") as fp:
-                json.dump({"sigma": self._last_sigma}, fp)
+                json.dump(state, fp)
         return output_dir

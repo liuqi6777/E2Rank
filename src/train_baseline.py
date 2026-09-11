@@ -29,11 +29,14 @@ from train import (
     build_embedding_data,
     guard_output_dir,
     load_backbone_and_tokenizer,
+    load_frozen_document_index,
     parse_arguments,
     save_run_artifacts,
     setup_logging,
     shutdown_distributed,
 )
+from frozen_corpus import write_frozen_training_audit
+from query_only import QueryOnlySupervisedModel
 from utils import BASELINE_CONFIG_SLOTS
 
 
@@ -388,11 +391,27 @@ def main() -> None:
     set_seed(training_args.seed)
 
     backbone, tokenizer = load_backbone_and_tokenizer(model_args, lora_args)
-    model = BaselineModel(
-        model=backbone,
-        baseline_args=baseline_args,
-        pooling_method=model_args.pooling_method,
+    frozen_index = load_frozen_document_index(
+        model_args, backbone, data_args, training_args.device
     )
+    frozen_hashes = frozen_index.artifact_hashes() if frozen_index is not None else None
+    if frozen_index is None:
+        model = BaselineModel(
+            model=backbone,
+            baseline_args=baseline_args,
+            pooling_method=model_args.pooling_method,
+        )
+    else:
+        model = QueryOnlySupervisedModel(
+            model=backbone,
+            index=frozen_index,
+            objective=baseline_args.baseline_loss,
+            temperature=baseline_args.baseline_temperature,
+            pooling_method=model_args.pooling_method,
+            ndcg_k=baseline_args.baseline_ndcg_k,
+            lambdaloss_sigma=baseline_args.lambdaloss_sigma,
+            use_in_batch_candidates=baseline_args.baseline_use_in_batch_negatives,
+        )
     model.train()
 
     apply_gradient_checkpointing(model, training_args, lora_args)
@@ -402,6 +421,7 @@ def main() -> None:
         training_args,
         tokenizer,
         model_args,
+        frozen_index=frozen_index,
     )
 
     trainer = BaselineTrainer(
@@ -430,6 +450,12 @@ def main() -> None:
         model_args=model_args,
         baseline_args=baseline_args,
     )
+    if trainer.is_world_process_zero() and frozen_index is not None:
+        write_frozen_training_audit(
+            training_args.output_dir, frozen_index, frozen_hashes
+        )
+    if frozen_index is not None:
+        frozen_index.close()
 
 
 if __name__ == "__main__":

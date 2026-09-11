@@ -673,6 +673,7 @@ class EmbeddingDataCollator:
         relevance_scheme: str = "binary",
         document_prompt_template: str = "{document}",
         append_token: str = "pad",
+        document_key_to_ordinal: dict[str, int] | None = None,
         **_: Any,
     ):
         if relevance_scheme not in {"binary", "graded"}:
@@ -683,6 +684,7 @@ class EmbeddingDataCollator:
         self.relevance_scheme = relevance_scheme
         self.document_prompt_template = document_prompt_template
         self.append_token = append_token
+        self.document_key_to_ordinal = document_key_to_ordinal
         if not self.tokenizer.pad_token:
             if getattr(self.tokenizer, "eot_token", None):
                 self.tokenizer.pad_token = self.tokenizer.eot_token
@@ -777,6 +779,28 @@ class EmbeddingDataCollator:
                             seen.add(key)
             cross_masks.append(cross)
 
+        batch_size = len(instances)
+        result = {
+            "query": query_inputs,
+            "relevance_labels": torch.stack(relevance_labels),
+            "rank_labels": torch.stack(rank_labels),
+            "candidate_mask": torch.tensor(masks, dtype=torch.bool),
+            "in_batch_positive_mask": cross_masks[0][..., 0],
+            "in_batch_candidate_mask": cross_masks[1],
+        }
+        if self.document_key_to_ordinal is not None:
+            ordinals = []
+            for row_keys in ordered_keys:
+                missing = [key for key in row_keys if key is not None and key not in self.document_key_to_ordinal]
+                if missing:
+                    raise KeyError(f"Unknown document_key(s) in frozen corpus: {', '.join(missing[:3])}")
+                ordinals.append([
+                    self.document_key_to_ordinal[key] if key is not None else -1
+                    for key in row_keys
+                ])
+            result["candidate_ordinals"] = torch.tensor(ordinals, dtype=torch.long)
+            return result
+
         documents = [
             format_embedding_text(self.document_prompt_template, document)
             for document in [*positive_documents, *negative_documents]
@@ -789,21 +813,21 @@ class EmbeddingDataCollator:
             max_length=self.doc_max_length,
             return_tensors="pt",
         )
-
-        batch_size = len(instances)
-        return {
-            "query": query_inputs,
-            "positive_document": {
-                key: value[:batch_size]
-                for key, value in document_inputs.items()
-            },
-            "negative_document": {
-                key: value[batch_size:]
-                for key, value in document_inputs.items()
-            },
-            "relevance_labels": torch.stack(relevance_labels),
-            "rank_labels": torch.stack(rank_labels),
-            "candidate_mask": torch.tensor(masks, dtype=torch.bool),
-            "in_batch_positive_mask": cross_masks[0][..., 0],
-            "in_batch_candidate_mask": cross_masks[1],
+        result["positive_document"] = {
+            key: value[:batch_size] for key, value in document_inputs.items()
         }
+        result["negative_document"] = {
+            key: value[batch_size:] for key, value in document_inputs.items()
+        }
+        return result
+
+
+class FrozenDocumentDataCollator(EmbeddingDataCollator):
+    """Named query-only collator; document text is never tokenized."""
+
+    def __init__(self, *args, document_key_to_ordinal: dict[str, int], **kwargs):
+        super().__init__(
+            *args,
+            document_key_to_ordinal=document_key_to_ordinal,
+            **kwargs,
+        )

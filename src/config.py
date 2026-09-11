@@ -148,11 +148,30 @@ class ModelArguments:
             )
         },
     )
+    document_encoder_mode: str = field(
+        default="joint",
+        metadata={"help": "Document encoder mode: joint or frozen_index"},
+    )
+    frozen_document_index_manifest: Optional[str] = field(
+        default=None,
+        metadata={"help": "Immutable index manifest required by frozen_index mode"},
+    )
+    frozen_document_verify_hashes: bool = field(
+        default=True,
+        metadata={"help": "Verify every frozen corpus artifact before training"},
+    )
 
     def __post_init__(self) -> None:
         self.pooling_method = self.pooling_method.strip().lower()
         self.padding_side = self.padding_side.strip().lower()
         self.append_token = self.append_token.strip().lower()
+        self.document_encoder_mode = self.document_encoder_mode.strip().lower()
+        if self.document_encoder_mode not in {"joint", "frozen_index"}:
+            raise ValueError("document_encoder_mode must be joint or frozen_index")
+        if self.document_encoder_mode == "frozen_index" and not self.frozen_document_index_manifest:
+            raise ValueError(
+                "frozen_document_index_manifest is required when document_encoder_mode=frozen_index"
+            )
         if self.embedding_max_length <= 0:
             raise ValueError(
                 f"embedding_max_length must be positive, got {self.embedding_max_length}"

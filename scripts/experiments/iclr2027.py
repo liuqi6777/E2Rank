@@ -141,8 +141,6 @@ def resolve_run(suite, suite_path, run_id, root=ROOT, nproc=1):
             config.update(reward_type='ndcg_in_batch', reward_ndcg_k=10,
                           ndcg_in_batch_include_negatives=False)
             if run['scope'] == 'query_only':
-                # Exploration config alone DOES NOT freeze the document encoder.
-                # frozen_document remains a required implementation blocker.
                 config['action_components'] = [['query']]
         else:
             entrypoint = 'src/train_baseline.py'
@@ -151,6 +149,16 @@ def resolve_run(suite, suite_path, run_id, root=ROOT, nproc=1):
             if objective == 'lambdaloss':
                 # Freeze the metric-aware control before any result is observed.
                 config.update(baseline_ndcg_k=10, lambdaloss_sigma=1.0)
+        if group == 'G1':
+            config['document_encoder_mode'] = (
+                'frozen_index' if run['scope'] == 'query_only' else 'joint'
+            )
+            if run['scope'] == 'query_only':
+                data_parent = Path(config['data_path']).parent
+                config['frozen_document_index_manifest'] = str(
+                    data_parent / 'frozen_document_index' / 'index_manifest.json'
+                )
+                config['frozen_document_verify_hashes'] = True
     for key in ('model_name_or_path', 'pooling_method', 'append_token', 'padding_side',
                 'query_prompt_template', 'document_prompt_template', 'learning_rate', 'max_steps'):
         if protocol.get(key) is not None:
@@ -242,6 +250,8 @@ def blockers(suite, resolved, root=ROOT):
     for key in data_keys:
         if not cfg.get(key) or not path_at_root(cfg[key], root).is_file():
             errors.append(f'Missing runtime input {key}: {cfg.get(key)}')
+    if resolved['group'] == 'G1' and resolved['scope'] == 'query_only':
+        errors.extend(check_frozen_document_index(cfg, root))
     if resolved['dependency']:
         dependency = Path(resolved['dependency'])
         if not (dependency / 'config.json').is_file() or not any(
@@ -254,6 +264,72 @@ def blockers(suite, resolved, root=ROOT):
     output = Path(cfg['output_dir'])
     if (output.parent / '.launches' / output.name).exists():
         errors.append('Launch receipt already exists; explicit recovery is required')
+    return errors
+
+
+def check_frozen_document_index(config, root=ROOT):
+    """Lightweight runner preflight without importing torch/model code."""
+    value = config.get('frozen_document_index_manifest')
+    if not value:
+        return ['Missing frozen_document_index_manifest for query-only training']
+    path = path_at_root(value, root)
+    if not path.is_file():
+        return [f'Missing frozen document index: {path}; run `python scripts/experiment.py encode G1 --gpus N`']
+    errors = []
+    try:
+        manifest = read_mapping(path)
+        required = {
+            'format_version', 'dimension', 'count', 'shards', 'corpus_path',
+            'corpus_offsets_path', 'document_key_to_ordinal_path',
+        }
+        missing = sorted(required - manifest.keys())
+        if manifest.get('format_version') != 1 or missing:
+            errors.append(f'Invalid frozen document index manifest; missing={missing}')
+            return errors
+        expected = {
+            'model_name_or_path': config.get('model_name_or_path'),
+            'pooling_method': config.get('pooling_method'),
+            'padding_side': config.get('padding_side'),
+            'append_token': config.get('append_token'),
+            'document_prompt_template': config.get('document_prompt_template'),
+            'document_max_length': min(config.get('d_max_len'), config.get('embedding_max_length')),
+            'query_prompt_template': config.get('query_prompt_template'),
+            'embedding_max_length': config.get('embedding_max_length'),
+        }
+        for key, actual in expected.items():
+            if manifest.get(key) != actual:
+                errors.append(
+                    f'Frozen document protocol mismatch for {key}: '
+                    f'{manifest.get(key)!r} != {actual!r}'
+                )
+        source_path = path_at_root(config['data_path'], root)
+        if manifest.get('source_data_sha256') != digest(source_path):
+            errors.append(f'Frozen document source hash mismatch: {source_path}')
+        artifacts = [
+            (manifest['corpus_path'], manifest.get('corpus_sha256')),
+            (manifest['corpus_offsets_path'], manifest.get('corpus_offsets_sha256')),
+            (manifest['document_key_to_ordinal_path'], manifest.get('document_key_to_ordinal_sha256')),
+        ]
+        artifacts.extend((item['path'], item.get('sha256')) for item in manifest['shards'])
+        for artifact_path, expected_hash in artifacts:
+            target = Path(artifact_path)
+            if not target.is_absolute():
+                target = path.parent / target
+            if not target.is_file():
+                errors.append(f'Missing frozen document artifact: {target}')
+            elif not expected_hash:
+                errors.append(f'Missing SHA256 for frozen document artifact: {target}')
+            elif digest(target) != expected_hash:
+                errors.append(f'Frozen document artifact hash mismatch: {target}')
+        mapping_path = Path(manifest['document_key_to_ordinal_path'])
+        if not mapping_path.is_absolute():
+            mapping_path = path.parent / mapping_path
+        if mapping_path.is_file():
+            mapping = read_mapping(mapping_path)
+            if len(mapping) != int(manifest['count']) or sorted(mapping.values()) != list(range(int(manifest['count']))):
+                errors.append('Frozen document key mapping is not a complete ordinal permutation')
+    except (ValueError, KeyError, TypeError, OSError) as exc:
+        errors.append(f'Invalid frozen document index: {exc}')
     return errors
 
 

@@ -7,7 +7,6 @@ output_root: checkpoints/iclr2027
 # Pending implementations are explicit, source-audited blockers. Remove a requirement
 # only with its implementation and corresponding validation; there is no bypass flag.
 pending:
-  frozen_document: "Embedding trainers lack a frozen document branch; exploration=query is not query-only training"
   rag_ndcg: "RAG nDCG reward not implemented; source_aware_mrr is not an equivalent substitution"
   rag_candidates: "Shared-candidate objective control must be implemented and validated"
   rag_selection: "Answer-F1 checkpoint selection needs integration with the training schedule"
@@ -56,13 +55,13 @@ profiles:
 runs:
   G1-E0: {group: G1, kind: evaluation, scope: reference}
   G1-J-CL: {group: G1, objective: infonce, scope: joint}
-  G1-Q-CL: {group: G1, objective: infonce, scope: query_only, requirements: [frozen_document]}
+  G1-Q-CL: {group: G1, objective: infonce, scope: query_only}
   G1-J-RN: {group: G1, objective: ranknet, scope: joint}
-  G1-Q-RN: {group: G1, objective: ranknet, scope: query_only, requirements: [frozen_document]}
+  G1-Q-RN: {group: G1, objective: ranknet, scope: query_only}
   G1-J-LL: {group: G1, objective: lambdaloss, scope: joint}
-  G1-Q-LL: {group: G1, objective: lambdaloss, scope: query_only, requirements: [frozen_document]}
+  G1-Q-LL: {group: G1, objective: lambdaloss, scope: query_only}
   G1-J-RL: {group: G1, objective: rl, scope: joint}
-  G1-Q-RL: {group: G1, objective: rl, scope: query_only, requirements: [frozen_document]}
+  G1-Q-RL: {group: G1, objective: rl, scope: query_only}
   G1-A-Binary:
     group: G1
     objective: rl
