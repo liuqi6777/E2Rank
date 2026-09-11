@@ -63,6 +63,18 @@ runs:
     scope: joint
     control: G1-J-RL
     overrides: {action_components: [[query]]}
+  G1-A-DPolicy:
+    group: G1
+    objective: rl
+    scope: joint
+    control: G1-J-RL
+    overrides: {action_components: [[positive, negative]]}
+  G1-A-Gaussion:
+    group: G1
+    objective: rl
+    scope: joint
+    control: G1-J-RL
+    overrides: {sampling_law: gaussian}
   G1-A-Binary:
     group: G1
     objective: rl

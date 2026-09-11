@@ -190,11 +190,19 @@ IDCG 使用完整已知 qrels 而非仅本次检索结果计算。
 | G1-A-Cal | 禁用 frozen-candidate mean-score rescaling | 核心 |
 | G1-A-MRR | 以 G1-A-Binary 为直接控制，仅将 binary nDCG@10 改为 binary MRR@10，相关阈值为 label=1 | 核心 |
 | G1-A-QPolicy | joint encoder 仍训练，只移除 document policy/exploration | 核心；与 G1-J-RL 直接比较 |
+| G1-A-DPolicy | joint encoder 仍训练，只移除 query policy/exploration | 核心；与 G1-J-RL 直接比较 |
+| G1-A-Gaussion | 将 vMF policy 替换为 projected-Gaussian policy，保持其余 RL 配置不变 | 核心；与 G1-J-RL 直接比较 |
 | G1-A-Own | 不加 in-batch candidates | 次要 |
 | G1-A-G | 改变 G 的质量/成本曲线 | 次要 |
 
 Paired 的 G 次 reward 与 product 的 G² 次存在成本差异；报告 example-matched 结果，
 另做短 matched-time 比较或质量/成本曲线。G² 个组合相关，不是 G² 独立 joint samples。
+
+`G1-A-DPolicy` 与 `G1-A-QPolicy` 分别隔离 document 和 query action 的贡献；二者都保留
+joint encoder 更新，因此与 `G1-J-RL` 的差异只在被采样和施加 score-function 梯度的 policy role。
+`G1-A-Gaussion` 使用 `sampling_law=gaussian` 的归一化高斯采样；当前实现仍以 vMF
+log-density 计算 surrogate，故该行检验的是 vMF 采样一致性，而非完整重推导的 Gaussian
+policy-gradient estimator。正式报告须明确这一点。
 
 固定 checkpoint/minibatches 重复采样，测 paired/product 梯度估计的噪声、相对高采样
 参考的偏差及 per-role norms，并记录是否启用 advantage normalization。
@@ -319,7 +327,8 @@ corpus，再由检索或答案 reward 评分。candidate manifest 在 RL 中只�
 
 ### Phase 1 — 短运行与诊断
 
-G1 四个 objective 与 query-policy-only RL 消融跑 smoke；核对各 action component 的 reward variance 和梯度。
+G1 四个 objective 与 query-policy-only、document-policy-only、Gaussian-policy RL 消融跑 smoke；
+核对各 action component 的 reward variance 和梯度。
 G2 用 B0 短跑 CL/LL/RL，检查 reward/advantage 信号；基于训练数值稳定性和成本诊断提前冻结预算。
 G3 验证固定 generator 的可复现输出和 reward 成本。完成低成本梯度诊断。
 G1-DR 在运行中记录已知 qrels 的索引覆盖、检索命中及全零/无差异奖励 group 比例，
@@ -329,8 +338,8 @@ G1-DR 在运行中记录已知 qrels 的索引覆盖、检索命中及全零/无
 ### Phase 2 — G1 主实验与机制
 
 先固定 G1 配置与预算，完成四个 joint 主对照，以最终 checkpoint 做 BRIGHT/保持性评测。
-核心 RL 消融 QPolicy、Paired、Cal、Binary 以 G1-J-RL 为控制；MRR 以 Binary 为直接控制，
-分别隔离标签与指标变化。Own/G 按具体问题安排。
+核心 RL 消融 QPolicy、DPolicy、Gaussion、Paired、Cal、Binary 以 G1-J-RL 为控制；MRR 以
+Binary 为直接控制，分别隔离 action role、采样分布、标签与指标变化。Own/G 按具体问题安排。
 约 5k 数据使用预先声明的统一更新预算，不机械沿用大数据一轮默认值；不进行 dev calibration。
 
 ### Phase 3 — G2 两组对照
@@ -349,14 +358,14 @@ G1-DR 在运行中记录已知 qrels 的索引覆盖、检索命中及全零/无
 | 部分 | 主训练执行数，不含调参 |
 |---|---:|
 | G1：4 个 joint objective 主对照 | 4 |
-| G1：QPolicy、Paired、Cal、MRR、Binary | 5 |
+| G1：QPolicy、DPolicy、Gaussion、Paired、Cal、MRR、Binary | 7 |
 | G1：full-corpus 动态检索 | 1 |
 | G2：3 个直接训练 + 3 个从 CL 最终模型初始化 | 6 |
 | G3：CL、RetRL、AnsRL | 3 |
-| **合计** | **19** |
+| **合计** | **21** |
 
 另计原始 checkpoint 评测、调参、paired/product 短 matched-time 比较、共享 warm-up
-的存储与生成器评测开销。19 是当前已冻结协议的训练执行数量，不是完整 GPU-hour
+的存储与生成器评测开销。21 是当前已冻结协议的训练执行数量，不是完整 GPU-hour
 报价，也不意味着每项训练耗时相同。共同 CL 前缀只训练一次，其成本单独报告。
 
 预算不足时先删第二模型/第二 QA 数据集、混合数据扩展、额外 G/分布/奖励混合消融。

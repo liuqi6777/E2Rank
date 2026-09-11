@@ -68,27 +68,32 @@ python scripts/experiment.py train G1-J-RL --gpus 8
 JSONL 不存 padding，模型和 loss/reward 均排除 padding。
 
 G1 主对照与 RL 消融使用 joint encoder；`G1-A-QPolicy` 只移除 document policy action，
-但仍更新共享 encoder，并在最终 BRIGHT 评测前用训练后 checkpoint 编码 query 和 passage。
+`G1-A-DPolicy` 只移除 query policy action；两者仍更新共享 encoder，并在最终 BRIGHT 评测前
+用训练后 checkpoint 编码 query 和 passage。`G1-A-Gaussion` 保持 joint action，但改用
+projected-Gaussian 采样替代 vMF。
 这些 run 不需要先执行 `encode G1`。`G1-DR` 则按 ReasonRank source 动态检索完整 corpus，
 冻结 E0 document encoder/index，只更新 query encoder，因此必须先执行 `encode G1`。
 索引准备导出各 source 的完整 `id_doc`，不再仅导出训练候选涉及的文档；新版目录需重新编码。
 
 ## 实验行与依赖
 
-共 21 个逻辑行：19 个训练执行、2 个 E0 评测。
+共 23 个逻辑行：21 个训练执行、2 个 E0 评测。
 
-- G1：四个 `J` run 是 joint 主对照；`A-QPolicy`、`A-Binary`、`A-Paired`、`A-Cal`
-  以 `G1-J-RL` 为控制；`A-MRR` 以 `A-Binary` 为直接控制，仅比较 binary nDCG/MRR。
+- G1：四个 `J` run 是 joint 主对照；`A-QPolicy`、`A-DPolicy`、`A-Gaussion`、`A-Binary`、
+  `A-Paired`、`A-Cal` 以 `G1-J-RL` 为控制；`A-MRR` 以 `A-Binary` 为直接控制，仅比较
+  binary nDCG/MRR。
   `G1-DR` 是独立的 full-corpus 动态检索行。
 - G2：`D` 从初始 LLM 训练；`W` 从 `G2-D-CL-s42/` 最终模型重新训练。
   D-CL 训练 1200 步，W-CL/LL/RL 各新建 optimizer/scheduler 和数据迭代，再训练 1200 步。
   W-CL 是独立训练行，不复用 D-CL；只加载模型权重，不恢复 trainer 状态。
 - G3：从 E0 开始，比较 CL、检索 RL、答案 RL；不自动采用其他组的最优 checkpoint。
 
-当前 G1 joint CL / RN / LL / RL 与五个 RL 消融均已接入。
+当前 G1 joint CL / RN / LL / RL 与七个 RL 消融均已接入。
 LL 固定为 LambdaRank variant：pairwise logistic 乘当前排序交换产生的 `|ΔnDCG@10|`，
 使用 `gain=2^rel-1` 和 sigma 1.0。`G1-A-QPolicy` 仍使用 joint encoder，只将 RL action
-限制为 query；它不是冻结 document encoder 的 query-only 训练。
+限制为 query；`G1-A-DPolicy` 则仅采样 positive/negative document slots。二者都不是冻结
+document encoder 的 query-only 训练。`G1-A-Gaussion` 设置 `sampling_law=gaussian`：它以
+归一化高斯采样 action，但沿用 vMF log-density surrogate，因而是采样一致性消融。
 `G1-DR` 每个 sampled query action 在对应 source 的完整冻结 corpus 中检索 top-20，使用已知
 teacher grades 的 nDCG@10；不在已知 qrels 中的检索结果 gain 为 0。它以 `G1-A-QPolicy`
 作为最近控制，但因同时改变 candidate access 和 document update scope，不作为单因素消融。

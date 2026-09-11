@@ -21,6 +21,11 @@ DEFAULT_SUITE = ROOT / 'configs/experiments/iclr2027/suite.yaml'
 MTEB_ENG_V2 = 'MTEB(eng, v2)'
 BRIGHT_BENCHMARK = 'BRIGHT'
 G1_BRIGHT_FIXED_CORPUS_INDEX_DIR = Path('data/eval/bright_qwen3_e0')
+G1_RL_ABLATION_CONTRACTS = {
+    'G1-A-QPolicy': {'action_components': (('query',),)},
+    'G1-A-DPolicy': {'action_components': (('positive', 'negative'),)},
+    'G1-A-Gaussion': {'sampling_law': 'gaussian'},
+}
 
 
 def merge(left, right):
@@ -125,6 +130,21 @@ def path_at_root(path, root=ROOT):
     return (root / path).resolve()
 
 
+def validate_g1_rl_ablation_contract(run_id, config):
+    """Keep named G1 policy ablations tied to their declared intervention."""
+    expected = G1_RL_ABLATION_CONTRACTS.get(run_id)
+    if expected is None:
+        return
+    for key, expected_value in expected.items():
+        actual = config.get(key)
+        if key == 'action_components':
+            actual = tuple(tuple(group) for group in actual)
+        if actual != expected_value:
+            raise ValueError(
+                f'{run_id} requires {key}={expected_value!r}, got {actual!r}'
+            )
+
+
 def resolve_run(suite, suite_path, run_id, root=ROOT, nproc=1):
     run = suite['runs'][run_id]
     profile = suite['profiles'][run['group']]
@@ -169,6 +189,7 @@ def resolve_run(suite, suite_path, run_id, root=ROOT, nproc=1):
     if protocol.get('eval_steps') is not None:
         config['save_steps'] = protocol['eval_steps']
     config = merge(config, run.get('overrides', {}))
+    validate_g1_rl_ablation_contract(run_id, config)
     if protocol.get('global_batch_size') is not None:
         total = protocol['global_batch_size']
         micro = protocol.get('micro_batch_size', config['per_device_train_batch_size'])
