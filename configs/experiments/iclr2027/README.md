@@ -55,20 +55,23 @@ python scripts/experiment.py train G1-J-RL --gpus 8
 `--gpus` 改变时自动维持 global batch，GPU 数与 microbatch 的乘积须整除 batch。
 
 `prepare G1` 调用 `scripts/prepare_reasonrank.py`：排除 MSMARCO、隔离 BRIGHT 重叠、清理冲突与重复 query，
-用 seed 42 每个 query 固定抽一个正例，移除其他已知正例，保留负例。生成：
+保留全部去重后的正负例，seed 42 每个 query 固定抽一个 in-batch 代表正例，放在候选首位。
+新版输出至 `data/processed/reasonrank_multi/`，旧数据保留。生成：
 
-- `train.jsonl`：`id/query/positive/negatives/source`，方便查看。
+- `train.jsonl`：`id/query/positives/negatives/source`，`positives` 为列表。
 - `train.metadata.jsonl`：文档 ID、teacher 排序与审计信息。
 - `train.ready.jsonl`：训练唯一使用的文件，包含候选、标签、去重标识和已知正例 ID。
 
 预处理一次完成静态转换。Joint loader 不关联 sidecar，collator 做 tokenization、动态 padding/mask 与当前 batch 过滤。
 已有 public + metadata 时 `prepare` 只编译；已有 ready 时直接提示已准备。
+新版 schema 为 `embedding_candidates_v2`；旧单正例 public 数据须从原始 parquet 重新生成。
 JSONL 不存 padding，模型和 loss/reward 均排除 padding。
 
 G1 主对照与 RL 消融使用 joint encoder；`G1-A-QPolicy` 只移除 document policy action，
 但仍更新共享 encoder，并在最终 BRIGHT 评测前用训练后 checkpoint 编码 query 和 passage。
-这些 run 不需要先执行 `encode G1`。`G1-DR` 则按官方 BRIGHT domain 动态检索完整 corpus，
+这些 run 不需要先执行 `encode G1`。`G1-DR` 则按 ReasonRank source 动态检索完整 corpus，
 冻结 E0 document encoder/index，只更新 query encoder，因此必须先执行 `encode G1`。
+索引准备导出各 source 的完整 `id_doc`，不再仅导出训练候选涉及的文档；新版目录需重新编码。
 
 ## 实验行与依赖
 
@@ -113,9 +116,10 @@ G1-A-Binary 只将 RL nDCG 标签改为已知正例 binary；G1-A-MRR 也使用 
 MRR 与 Binary 直接比较指标变化；Binary 与主 RL 比较标签变化。
 CL 与排序方法的监督信息不同；LL 与 RL 才是相同 graded 目标下的主要对照。
 
-本轮决定保留 LL 当前 sigma=1.0 与其余配方先跑。普通固定候选训练继续抽取单正例；
-DR 计划使用删减前、去重后的完整 teacher qrels，保留所有已知正例身份与完整 corpus。
-当前 DR 仍读取删减后的 grades，完整 qrels 的预处理/加载尚待同步；奖励有效性由运行实测确定。
+本轮决定保留 LL 当前 sigma=1.0 与其余配方先跑。G1 普通训练与 DR 均保留全部已知正例。
+InfoNCE 每个正例分别对有效负例计算损失，其他正例不进入分母，再按正例/query 两级平均。
+独立 positive_mask 不受 teacher grades 影响。In-batch 仅使用每条 query 的一个代表正例。
+DR 使用新版 ready 中的完整 teacher qrels 计算奖励和 IDCG；奖励有效性由运行实测确定。
 
 ## G2 第一版 scratch 参数
 

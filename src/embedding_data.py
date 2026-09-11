@@ -487,7 +487,7 @@ class EmbeddingDataset(Dataset):
         return json.loads(handle.readline())
 
     def _convert(self, file_id: int, record: dict[str, Any]) -> dict[str, Any] | None:
-        if record.get("schema") == "embedding_candidates_v1":
+        if record.get("schema") in {"embedding_candidates_v1", "embedding_candidates_v2"}:
             converted = dict(record)
         elif "positive" in record or "negatives" in record:
             raise ValueError("Compile public records during preprocessing and load train.ready.jsonl")
@@ -724,8 +724,8 @@ class EmbeddingDataCollator:
         )
 
         explicit = ["relevance" in instance for instance in instances]
-        if any("relevance" in item and item.get("schema") != "embedding_candidates_v1" for item in instances):
-            raise ValueError("Explicit relevance must use preprocessed embedding_candidates_v1 records")
+        if any("relevance" in item and item.get("schema") not in {"embedding_candidates_v1", "embedding_candidates_v2"} for item in instances):
+            raise ValueError("Explicit relevance must use preprocessed embedding_candidates_v1/v2 records")
         if any(explicit) and not all(explicit):
             raise ValueError("Do not mix explicit relevance and teacher-grade records in one batch")
         width = max(len(instance["document"]) for instance in instances)
@@ -733,16 +733,17 @@ class EmbeddingDataCollator:
             raise ValueError("At least two candidates are required")
         positive_documents, negative_documents = [], []
         ordered_keys, known_id_sets = [], []
-        relevance_labels, rank_labels, masks, ordered_ids = [], [], [], []
+        relevance_labels, rank_labels, masks, ordered_ids, positive_masks = [], [], [], [], []
         for instance in instances:
             docs = instance["document"]
             n = len(docs)
-            ready = instance.get("schema") == "embedding_candidates_v1"
+            ready = instance.get("schema") in {"embedding_candidates_v1", "embedding_candidates_v2"}
             if ready:
                 labels = torch.tensor(instance["relevance"], dtype=torch.float32)
                 ranks = torch.tensor(instance["rank_labels"], dtype=torch.float32)
-                if len(labels) != n or len(ranks) != n or labels[0] != 1 or labels[1:].any():
-                    raise ValueError("Prepared labels must match candidates with one positive first")
+                if len(labels) != n or len(ranks) != n or labels[0] != 1 or not ((labels == 0) | (labels == 1)).all():
+                    raise ValueError("Prepared binary labels must match candidates with a representative positive first")
+                binary_positive = labels.bool()
                 if self.relevance_scheme == "graded":
                     labels = torch.tensor(instance["graded_relevance"], dtype=torch.float32)
                     if len(labels) != n:
@@ -753,11 +754,14 @@ class EmbeddingDataCollator:
                 labels = build_relevance_labels(ranking, self.relevance_scheme)[0]
                 ranks = build_rank_labels(ranking)[0]
                 positive_index = int(ranking[0, 0])
+                binary_positive = torch.zeros(n, dtype=torch.bool)
+                binary_positive[positive_index] = True
             order = list(range(n)) if ready else [positive_index] + [i for i in range(n) if i != positive_index]
             reordered = [docs[i] for i in order]
             positive_documents.append(reordered[0])
             negative_documents.extend(reordered[1:] + [""] * (width-n))
             relevance_labels.append(F.pad(labels[order], (0, width-n)))
+            positive_masks.append(F.pad(binary_positive[order], (0, width-n)))
             rank_labels.append(F.pad(ranks[order], (0, width-n)))
             masks.append([True]*n + [False]*(width-n))
             ids = instance.get("document_ids", [None]*n)
@@ -794,6 +798,7 @@ class EmbeddingDataCollator:
         result = {
             "query": query_inputs,
             "relevance_labels": torch.stack(relevance_labels),
+            "positive_mask": torch.stack(positive_masks),
             "rank_labels": torch.stack(rank_labels),
             "candidate_mask": torch.tensor(masks, dtype=torch.bool),
             "in_batch_positive_mask": cross_masks[0][..., 0],

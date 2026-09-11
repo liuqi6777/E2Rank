@@ -148,7 +148,7 @@ def materialize_reasonrank_documents(
     documents_dir: str | os.PathLike[str],
     output_dir: str | os.PathLike[str],
 ) -> dict[str, int]:
-    """Extract canonical full texts for the document IDs referenced by G1."""
+    """Materialize full source corpora and validate that all G1 qrels are present."""
     training_path = Path(training_path).resolve()
     documents_dir = Path(documents_dir).resolve()
     output_dir = Path(output_dir).resolve()
@@ -158,7 +158,7 @@ def materialize_reasonrank_documents(
         for route in sorted(expected)
     }
     identity = {
-        "format_version": 1,
+        "format_version": 2,
         "artifact_type": "reasonrank_canonical_documents",
         "source_dataset": REASONRANK_DATASET,
         "source_config": REASONRANK_CONFIG,
@@ -184,8 +184,6 @@ def materialize_reasonrank_documents(
             remaining = set(expected_documents)
             with (stage / f"{route}.jsonl").open("w", encoding="utf-8") as output:
                 for document_id, text in _iter_json_mapping(source_path):
-                    if document_id not in remaining:
-                        continue
                     if not isinstance(text, str) or not text.strip():
                         raise ValueError(
                             f"Canonical ReasonRank document {document_id!r} in {source_path} is empty"
@@ -195,13 +193,13 @@ def materialize_reasonrank_documents(
                         ensure_ascii=False,
                         separators=(",", ":"),
                     ) + "\n")
-                    remaining.remove(document_id)
+                    remaining.discard(document_id)
+                    unique_count += 1
             if remaining:
                 preview = ", ".join(sorted(remaining)[:3])
                 raise ValueError(
                     f"G1 references document IDs absent from ReasonRank {route!r}: {preview}"
                 )
-            unique_count += len(expected_documents)
         statistics = {
             "candidate_count": candidate_count,
             "unique_document_ids": unique_count,

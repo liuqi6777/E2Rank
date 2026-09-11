@@ -9,9 +9,9 @@
 本次只修订实验计划，论文正文、表格和 runner 尚须按本版同步。
 
 日常配置入口已收敛到 `configs/experiments.yaml` 和 `scripts/experiment.py`。
-G1 对外数据接口为 `id/query/positive/negatives/source`。预处理关联审计元数据并将
+G1 对外数据接口为 `id/query/positives/negatives/source`。预处理关联审计元数据并将
 候选顺序、标签、去重标识写入 `train.ready.jsonl`；loader 直接读取，batch mask 动态构造。
-当前目录为 `data/processed/reasonrank_simple/`，
+当前目录为 `data/processed/reasonrank_multi/`（旧单正例产物保留），
 仍为 4,963 条全量训练；底层 suite 保留作高级配置。
 
 **G1 初始运行参数已定：** E0、full FT、seed 42、AdamW、LR 5e-6、global batch 128、
@@ -20,14 +20,15 @@ weight decay 0.01、max grad norm 1.0；每 25 步保存，报告最终模型。
 RL 使用 group size 32、kappa 755；CL/RankNet temperature 0.03。此版未经 dev 调参。
 G1 不再将模型 revision 和 manifest/hash 校验作为启动条件；保留必需的结构检查。
 
-**G1 最新决定（2026-09-11）：** 固定 seed 随机选择一个正例、删除其余已知正例，
+**G1 最新决定（2026-09-11）：** 保留全部去重后的已知正例与负例；固定 seed 仅选择
+一个 in-batch 代表正例，不删除其余正例。
 使用全部 4,963 条清理后的非 MSMARCO 数据训练，不划分 dev。提前固定配置/训练预算，
 报告最终 checkpoint；G1 不执行下文通用的 dev 网格调参或最佳 checkpoint 选择。
 BRIGHT 仅作最终评测。G2/G3 的开发集协议暂不改变。
 
 **本轮评审决定（2026-09-11）：** LL 保留当前 sigma=1.0 与训练配方先跑，暂不追加
-尺度调参；G1-A-MRR 的直接控制改为 G1-A-Binary。普通固定候选训练保留单正例删减，
-G1-DR 则保留完整 corpus 与删减前的已知标注，其奖励有效性由实验确定。
+尺度调参；G1-A-MRR 的直接控制改为 G1-A-Binary。普通固定候选训练与 G1-DR
+共享完整已知标注；DR 保留完整 corpus，其奖励有效性由实验确定。
 G3 的无检索 generator 基线和答案/证据变化联合诊断后移，不作为当前 G1/G2 的前置条件。
 
 ## 0. 研究问题与贡献边界
@@ -122,7 +123,8 @@ G1 不再划分 train/dev，清理后全部用于训练。预处理支持可选�
 
 ### 2.2 主监督与候选协议
 
-主比较用 seed 42 按 query 独立固定抽取一个原始正例，删除其他已知正例，保留负例。
+主比较保留全部去重后的已知正例与负例；seed 42 按 query 独立固定抽取一个正例，
+仅作为 in-batch 代表，不改变本条 query 的候选集合。
 候选集合相同，但正例身份与排序监督分开保存。RL 主 reward 为 teacher-derived graded nDCG@10：
 保留候选中 teacher 第 1 名为 3，第 2–5 名为 2，第 6–10 名为 1，其余为 0。
 E2Rank pilot 支持该设置，ReasonRank 的收益由 binary 消融验证。
@@ -130,13 +132,13 @@ E2Rank pilot 支持该设置，ReasonRank 的收益由 binary 消融验证。
 
 | Objective | 主监督定义 |
 |---|---|
-| Single-positive InfoNCE | 对固定抽取正例计算 log-softmax loss；其余有效候选为负例 |
+| Multi-positive InfoNCE | 每个正例分别与全部有效负例计算 log-softmax loss，其他正例不进入分母；先对正例平均，再对 query 平均 |
 | RankNet | 使用保留候选的完整 teacher 排序构造有序 pairs |
 | LambdaLoss | LambdaRank variant：pairwise logistic × 当前排序的 `|ΔnDCG@10|`；使用与 RL 相同的 graded 标签与候选，`gain=2^rel-1`、`sigma=1.0` |
 | Proposed RL | teacher-derived graded 标签与相同候选上的 exact nDCG@10 |
 
 主协议沿用扩展候选池设计：加入其他记录固定抽取的正例作为 in-batch 候选，
-所有 objective 相同。合并同文本/同 ID 项；若当前 query 被删除的已知正例重新出现则 mask 掉，
+所有 objective 相同。合并同文本/同 ID 项；跨 query 的已知正例（含去重别名）被 mask 掉，
 其余跨 query 候选按负例近似，明确其不完整标注与 false-negative 风险。
 跨 query document embeddings detach，文档只通过自身记录得到梯度。
 
@@ -152,7 +154,7 @@ CL 使用已知正例，排序方法使用 teacher 信号，监督信息并不�
 | ID | Objective | 更新范围 |
 |---|---|---|
 | G1-E0 | 无训练 | 原始模型，评测复用 |
-| G1-J-CL | Single-positive InfoNCE | Joint |
+| G1-J-CL | Multi-positive InfoNCE | Joint |
 | G1-J-RN | RankNet | Joint |
 | G1-J-LL | LambdaLoss | Joint |
 | G1-J-RL | Proposed nDCG RL | Joint；query 与 document policy |
@@ -161,11 +163,12 @@ CL 使用已知正例，排序方法使用 teacher 信号，监督信息并不�
 G1-J-RL 超过 E0 只证明额外训练有益；超过 CL 但不超过 LL 不能证明优于 metric-aware 监督。
 
 `G1-DR` 是单独的动态检索实验：从 E0 初始化并冻结分 source 的完整 document index，
-只更新 query encoder。每个 sampled query action 检索 top-20，以单正例删减前、去重后的
+只更新 query encoder。每个 sampled query action 检索 top-20，以去重后的
 完整已知候选 teacher order 按 3/2/1/0 构造 grades，计算 nDCG@10；保留所有已知正例身份，
-不因普通训练的单正例抽样而从 corpus 或 qrels 删除其余正例，也不将 binary 正例身份
+不因 in-batch 代表抽样而从 corpus 或 qrels 删除其余正例，也不将 binary 正例身份
 强行转换为 teacher 高 grade。未出现在完整已知 qrels 中的文档 gain 为 0。
-当前 ready 数据仅提供删减后的 grades，DR 的完整 qrels 预处理和加载尚须同步。
+新版 ready 已保留完整候选 IDs 与 grades，DR 通过同一 collator 加载完整已知 qrels，
+IDCG 使用完整已知 qrels 而非仅本次检索结果计算。
 其最近控制为 `G1-A-QPolicy`，但二者
 同时改变 candidate access 和 document update scope，因此不解释为单因素因果对照。
 
@@ -298,14 +301,14 @@ corpus，再由检索或答案 reward 评分。candidate manifest 在 RL 中只�
 
 ### Phase 0 — 数据和实现前置条件
 
-- [x] G1 保守隔离、单正例抽取、去重和全量 train manifest（4,963 条）。
+- [x] G1 保守隔离、多正例保留、去重和全量 train manifest（4,963 条）。
 - [x] G1 空字符串补齐和有效候选 mask 的文本层 helper。
 - [x] G1 候选 mask 接入 collator、有效文档编码、CL/RankNet 和 RL reward/log-prob/KL；CPU 数值检查通过。
 - [ ] G1 最终同题复核。
-- [ ] G1-DR 恢复删减前、去重后的完整 teacher qrels 与全部已知正例身份，接入动态检索奖励；普通训练继续使用现有单正例数据。
+- [x] G1 主对照与 DR 共享完整 teacher qrels 与全部已知正例；CPU 检查完整标注的 DR 奖励与 IDCG。
 - [ ] G2 E2Rank 版本与规模、外部 overlap 审计、固定全量 train 文件。
 - [ ] 固定 E0、B0、pooling/prompts 和各组评测协议；校验 full FT 与冻结分支。
-- [x] 接入 single-positive CL、teacher-order RankNet 和可变长 RL。
+- [x] G1 接入逐正例独立分母的 multi-positive CL、teacher-order RankNet 和可变长 RL；G2 保留 rank-1 CL。
 - [x] 实现指定 LambdaLoss variant；G1/G2 使用 teacher grades 3/2/1/0，padding 不参与 loss。
 - [ ] 明确两套标签的 MRR 阈值，确保 padding 不参与 reward。
 - [ ] 接入最终 checkpoint 的固定候选排序评测与全 corpus 检索。
@@ -385,5 +388,6 @@ base 初始化与共同 warm-up、MTEB 辅助/外部评测角色、RAG 答案指
 `check` 明确列出数据、预算及实现缺项；正式运行是否就绪以其输出为准。
 
 
-ReasonRank 训练仅接受预处理后的 `embedding_candidates_v1` ready 记录；旧单正例 schema
-和运行时格式转换已移除。E2Rank 的 teacher-ranking 输入属于第二组实验，继续支持。
+ReasonRank 当前产物为 `embedding_candidates_v2`，保存完整多正例。Loader 兼容旧 v1
+供历史复现，但不能将旧产物重命名为 v2 恢复已删除的正例；须从原始 parquet 重新生成。
+E2Rank 的 teacher-ranking 输入属于第二组实验，继续支持。

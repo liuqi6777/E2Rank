@@ -13,15 +13,15 @@ pending:
 profiles:
   G1:
     config: g1.yaml
-    dataset_manifest: data/processed/reasonrank_simple/manifest.json
+    dataset_manifest: data/processed/reasonrank_multi/manifest.json
     selection: fixed_budget_final_checkpoint
     final_evaluation: [bright, mteb_retrieval_retention]
     requirements: []
     protocol:
-      labels: teacher_grades_3_2_1_0_with_selected_positive_for_cl
+      labels: teacher_grades_3_2_1_0_with_all_known_positives_for_cl
       exclude_sources: [msmarco]
       variable_candidates: true
-      positive_selection: per_query_seeded_uniform_once
+      positive_selection: retain_all_seeded_in_batch_representative
       positive_selection_seed: 42
       frozen_cross_query_documents: true
       max_steps: null

@@ -1169,6 +1169,7 @@ class GRPOModel(nn.Module):
         negative_document: Dict[str, torch.Tensor] = None,
         relevance_labels: torch.Tensor = None,
         rank_labels: torch.Tensor = None,
+        positive_mask: torch.Tensor = None,
         candidate_mask: torch.Tensor = None,
         in_batch_positive_mask: torch.Tensor = None,
         in_batch_candidate_mask: torch.Tensor = None,
@@ -1201,6 +1202,8 @@ class GRPOModel(nn.Module):
             slate_length=slate_length,
         )
 
+        # Legacy role names describe slots: representative vs remaining documents.
+        # G1's document component samples both, including all additional positives.
         sample_document = self.grpo.sample_positive or self.grpo.sample_negative
         if sample_document:
             encoded_document_embeddings = encode_valid_candidates(self.encode, document_inputs, candidate_mask)

@@ -1,4 +1,4 @@
-"""Prepare pinned ReasonRank data with one sampled positive and variable candidates.
+"""Prepare pinned ReasonRank data retaining all positives and variable candidates.
 
 uv run --no-project --with pyarrow python scripts/prepare_reasonrank.py
 Raw parquet and previous conversion outputs are never overwritten.
@@ -94,10 +94,10 @@ def validate_record(record):
         raise ValueError('Stored candidates must be nonempty; padding belongs to collation')
     if len(set(ids)) != len(ids) or any(not isinstance(i, str) or not i for i in ids):
         raise ValueError('Document IDs must be unique nonempty strings')
-    if any(v not in (0, 1) for v in relevance) or sum(relevance) != 1:
-        raise ValueError('Exactly one positive is required')
+    if any(v not in (0, 1) for v in relevance) or not 0 < sum(relevance) < len(docs):
+        raise ValueError('At least one positive and one negative are required')
     selected = record['selected_positive_id']
-    if ids[relevance.index(1)] != selected:
+    if selected not in ids or relevance[ids.index(selected)] != 1:
         raise ValueError('Selected ID disagrees with relevance')
     original = set(record['original_relevant_docids'])
     if selected not in original or any(i in original for i, r in zip(ids, relevance) if r == 0):
@@ -107,12 +107,14 @@ def validate_record(record):
 
 
 def simplify_record(record):
-    """Expose one positive and negatives; retain audit fields in a keyed sidecar."""
+    """Expose all positives; the seeded in-batch representative comes first."""
     validate_record(record)
-    pos = record['relevance'].index(1)
-    order = [pos] + [i for i in range(len(record['document'])) if i != pos]
-    public = dict(id=record['record_id'], query=record['query'], positive=record['document'][pos],
-                  negatives=[record['document'][i] for i in order[1:]], source=record['source'])
+    pos = record['document_ids'].index(record['selected_positive_id'])
+    positives = [pos] + [i for i, r in enumerate(record['relevance']) if r and i != pos]
+    negatives = [i for i, r in enumerate(record['relevance']) if not r]
+    order = positives + negatives
+    public = dict(id=record['record_id'], query=record['query'], positives=[record['document'][i] for i in positives],
+                  negatives=[record['document'][i] for i in negatives], source=record['source'])
     metadata = {k: v for k, v in record.items() if k not in {'query', 'document', 'relevance', 'source'}}
     metadata['document_ids'] = [record['document_ids'][i] for i in order]
     positions = {old+1: new+1 for new, old in enumerate(order)}
@@ -122,15 +124,15 @@ def simplify_record(record):
 
 def _join_preprocessing_metadata(record, metadata):
     """Adapt the public interface to internal candidate/label tensors automatically."""
-    positive, negatives = record.get('positive'), record.get('negatives')
-    if not isinstance(positive, str) or not positive.strip():
-        raise ValueError('positive must be nonempty text')
+    positives, negatives = record.get('positives'), record.get('negatives')
+    if not isinstance(positives, list) or not positives or not all(isinstance(x, str) and x.strip() for x in positives):
+        raise ValueError('positives must contain nonempty texts; regenerate legacy data from raw inputs')
     if not isinstance(negatives, list) or not negatives or not all(isinstance(x, str) and x.strip() for x in negatives):
         raise ValueError('negatives must contain nonempty texts')
     if not isinstance(record.get('query'), str) or not record['query'].strip():
         raise ValueError('query must be nonempty text')
-    normalized = dict(query=record['query'], document=[positive, *negatives],
-                      relevance=[1, *([0]*len(negatives))], source=record.get('source', 'unknown'))
+    normalized = dict(query=record['query'], document=[*positives, *negatives],
+                      relevance=[1]*len(positives)+[0]*len(negatives), source=record.get('source', 'unknown'))
     if metadata['record_id'] != record['id']:
         raise ValueError('Training record does not match its metadata sidecar')
     normalized.update(metadata)
@@ -138,7 +140,7 @@ def _join_preprocessing_metadata(record, metadata):
     return normalized
 
 
-READY_SCHEMA = 'embedding_candidates_v1'
+READY_SCHEMA = 'embedding_candidates_v2'
 
 
 def document_key(text):
@@ -220,7 +222,7 @@ def sha(path):
     return h.hexdigest()
 
 
-def convert_single_positive(row, row_index, seed=42):
+def convert_multi_positive(row, row_index, seed=42):
     query, docs = parse_query_and_passages(_user_prompt(row['prompt']))
     ids = row['initial_list']
     if len(ids) != len(docs) or len(set(ids)) != len(ids):
@@ -247,15 +249,15 @@ def convert_single_positive(row, row_index, seed=42):
     # Per-query RNG makes choice independent of row order, exclusions and split assignment.
     entropy = hashlib.sha256(f'{seed}\0{query_key(query)}'.encode()).digest()
     selected = random.Random(int.from_bytes(entropy, 'big')).choice(positives)
-    kept = sorted([selected, *negatives])
+    kept = unique
     new_position = {old: position + 1 for position, old in enumerate(kept)}
     record = dict(record_id=f'reasonrank/train/{row_index}', raw_row=row_index,
         source=row['dataset'], query=query, document=[docs[i] for i in kept],
-        document_ids=[ids[i] for i in kept], relevance=[int(i == selected) for i in kept],
+        document_ids=[ids[i] for i in kept], relevance=[int(ids[i] in relevant) for i in kept],
         selected_positive_id=ids[selected], original_relevant_docids=sorted(relevant),
         teacher_ranking=[new_position[i-1] for i in ranking if i-1 in new_position],
         positive_selection_seed=seed,
-        removed_positive_ids=[ids[i] for i in range(len(ids)) if ids[i] in relevant and i != selected],
+        removed_positive_ids=[],
         duplicate_texts_removed=len(ids)-len(unique))
     validate_record(record)
     return record, 'kept'
@@ -327,7 +329,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--data-dir', type=Path, default=ROOT/'data/audit_reasonrank_bright',
                         help='Downloaded inputs and results/ from the BRIGHT audit')
-    parser.add_argument('--output-dir', type=Path, default=ROOT/'data/processed/reasonrank_simple')
+    parser.add_argument('--output-dir', type=Path, default=ROOT/'data/processed/reasonrank_multi')
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--split-seed', type=int, default=20260911)
     parser.add_argument('--dev-size', type=int, default=0)
@@ -358,7 +360,7 @@ def main():
         elif row['dataset'] == 'msmarco' and not args.include_msmarco:
             reason = 'excluded_source'
         else:
-            record, reason = convert_single_positive(row, row_index, args.seed)
+            record, reason = convert_multi_positive(row, row_index, args.seed)
             if record:
                 key = query_key(record['query'])
                 if key in seen:
@@ -387,7 +389,8 @@ def main():
             decisions=dict(Counter(d['decision'] for d in decisions)),
             candidate_counts=dict(sorted(Counter(len(r['document']) for r in records).items())),
             train_sources=dict(Counter(r['source'] for r in train)), dev_sources=dict(Counter(r['source'] for r in dev)),
-            removed_positive_ids=sum(len(r['removed_positive_ids']) for r in records))
+            removed_positive_ids=sum(len(r['removed_positive_ids']) for r in records),
+            positive_counts=dict(sorted(Counter(sum(r['relevance']) for r in records).items())))
         write_json(stage/'summary.json', stats)
         artifacts = [dict(role=role,path=str((args.output_dir/name).resolve()),sha256=sha(stage/name))
                      for role,name in [('train','train.ready.jsonl'),('dev','dev.ready.jsonl'),('public_train','train.jsonl'),('public_dev','dev.jsonl'),('train_metadata','train.metadata.jsonl'),('dev_metadata','dev.metadata.jsonl'),('decisions','decisions.jsonl'),('split_audit','split_audit.json')]]

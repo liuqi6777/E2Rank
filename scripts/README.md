@@ -8,7 +8,7 @@
 | `experiments/iclr2027.py` | 实验定义解析、预算与依赖检查、实际启动；由公共入口调用 |
 | `download_reasonrank_audit.py` | 下载审计使用的 ReasonRank / BRIGHT 原始数据 |
 | `audit_reasonrank_bright.py` | 检查数据来源、标签和 BRIGHT 重叠，产出审计记录 |
-| `prepare_reasonrank.py` | 单正例化、去污染与 ready 数据编译，也提供审计共用的原始格式解析函数 |
+| `prepare_reasonrank.py` | 多正例保留、去污染与 ready 数据编译，也提供审计共用的原始格式解析函数 |
 | `run.sh` / `run_baseline.sh` | 通用 RL / supervised torchrun 包装器，显式指定 `NPROC_PER_NODE` |
 | `rag_pipeline.sh` | RAG 数据准备、编码、候选挖掘、底层训练与评测 |
 | `rag_acceptance.sh` / `rag_toy_distributed.py` | RAG 分布式索引和端到端验收 |

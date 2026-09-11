@@ -91,16 +91,18 @@ def compute_infonce_loss(
     if temperature <= 0:
         raise ValueError(f"infonce temperature must be positive, got {temperature}")
 
-    if candidate_mask is not None:
-        scores = scores.masked_fill(~candidate_mask, float("-inf"))
-        relevance_labels = relevance_labels.masked_fill(~candidate_mask, 0)
-    positive_exists = relevance_labels.max(dim=-1).values > 0
-    positive_indices = relevance_labels.argmax(dim=-1, keepdim=True)
-    scaled_scores = scores / float(temperature)
-    positive_scores = scaled_scores.gather(dim=1, index=positive_indices).squeeze(1)
-    partition = torch.logsumexp(scaled_scores, dim=-1)
-    loss = partition - positive_scores
-    return torch.where(positive_exists, loss, torch.zeros_like(loss))
+    # Each positive competes only against valid negatives, never other positives.
+    valid = torch.ones_like(scores, dtype=torch.bool) if candidate_mask is None else candidate_mask.bool()
+    positives = (relevance_labels > 0) & valid
+    negatives = valid & ~positives
+    scaled = scores.masked_fill(~valid, 0) / float(temperature)
+    negative_scores = scaled.masked_fill(~negatives, float('-inf'))
+    has_negative = negatives.any(-1)
+    negative_scores = torch.where(has_negative[:, None], negative_scores, torch.zeros_like(negative_scores))
+    log_negatives = torch.logsumexp(negative_scores, dim=-1, keepdim=True)
+    losses = F.softplus(log_negatives - scaled)
+    losses = losses.masked_fill(~positives | ~has_negative[:, None], 0)
+    return losses.sum(-1) / positives.sum(-1).clamp_min(1)
 
 
 def compute_ranknet_loss(
@@ -274,6 +276,7 @@ class BaselineModel(nn.Module):
         negative_document: Dict[str, Tensor] = None,
         relevance_labels: Tensor = None,
         rank_labels: Tensor = None,
+        positive_mask: Tensor = None,
         candidate_mask: Tensor = None,
         in_batch_positive_mask: Tensor = None,
         in_batch_candidate_mask: Tensor = None,
@@ -317,9 +320,12 @@ class BaselineModel(nn.Module):
                 )
 
         if self.baseline_args.baseline_loss == "infonce":
-            # Collation puts the selected positive first, independently of teacher grades.
+            # Binary identities remain independent of teacher grades. G2 keeps rank 1.
             positive_labels = torch.zeros_like(relevance_labels)
-            positive_labels[:, 0] = 1
+            if positive_mask is None:
+                positive_labels[:, 0] = 1
+            else:
+                positive_labels[:, :positive_mask.size(1)] = positive_mask
             per_sample_loss = compute_infonce_loss(
                 scores=scores,
                 relevance_labels=positive_labels,
