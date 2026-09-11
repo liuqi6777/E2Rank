@@ -12,7 +12,7 @@ from typing import Any
 
 DEFAULT_INPUT_DIR = "results/mteb"
 DEFAULT_BENCHMARK = "MTEB(eng, v1, subset)"
-SUPPORTED_VIEWS = ("run", "type", "task", "retrieval")
+SUPPORTED_VIEWS = ("run", "type", "task", "retrieval", "subset")
 
 # The paper reports MTEB Retrieval as the quantity the ranking reward proxies, so it needs
 # to be readable on its own and not only inside the overall mean.
@@ -31,6 +31,7 @@ class RunSummary:
     benchmark: str
     task_types: dict[str, str]
     task_scores: dict[str, float]
+    task_subset_scores: dict[str, dict[str, float]]
     errors: list[str]
 
     @property
@@ -207,7 +208,7 @@ def discover_result_dirs(input_path: Path, task_catalog: dict[str, str]) -> list
     return sorted(result_dirs)
 
 
-def parse_task_score(payload: dict[str, Any]) -> float:
+def parse_task_subset_scores(payload: dict[str, Any]) -> dict[str, float]:
     scores = payload.get("scores")
     if not isinstance(scores, dict) or not scores:
         raise ValueError("missing or invalid `scores` field")
@@ -216,11 +217,19 @@ def parse_task_score(payload: dict[str, Any]) -> float:
     if not isinstance(split_scores, list) or not split_scores:
         raise ValueError("first eval split does not contain a non-empty score list")
 
-    main_scores = [entry["main_score"] for entry in split_scores if "main_score" in entry]
-    if not main_scores:
+    subset_scores = {
+        str(entry.get("hf_subset", "default")): float(entry["main_score"])
+        for entry in split_scores
+        if "main_score" in entry
+    }
+    if not subset_scores:
         raise ValueError("no `main_score` found in the first eval split")
+    return subset_scores
 
-    return sum(main_scores) / len(main_scores)
+
+def parse_task_score(payload: dict[str, Any]) -> float:
+    subset_scores = parse_task_subset_scores(payload)
+    return sum(subset_scores.values()) / len(subset_scores)
 
 
 def make_run_id(result_dir: Path, input_path: Path) -> str:
@@ -254,6 +263,7 @@ def summarize_result_dir(
     task_catalog: dict[str, str],
 ) -> RunSummary:
     task_scores: dict[str, float] = {}
+    task_subset_scores: dict[str, dict[str, float]] = {}
     errors: list[str] = []
 
     for task_file in list_valid_task_files(result_dir, task_catalog):
@@ -261,7 +271,9 @@ def summarize_result_dir(
         try:
             with task_file.open("r", encoding="utf-8") as handle:
                 payload = json.load(handle)
-            task_scores[task_name] = parse_task_score(payload)
+            subset_scores = parse_task_subset_scores(payload)
+            task_subset_scores[task_name] = subset_scores
+            task_scores[task_name] = sum(subset_scores.values()) / len(subset_scores)
         except Exception as exc:
             errors.append(f"{task_name}: {exc}")
 
@@ -272,6 +284,7 @@ def summarize_result_dir(
         benchmark=benchmark,
         task_types=task_types,
         task_scores=task_scores,
+        task_subset_scores=task_subset_scores,
         errors=errors,
     )
 
@@ -412,6 +425,22 @@ def make_task_rows(summaries: list[RunSummary]) -> list[dict[str, Any]]:
     return rows
 
 
+def make_subset_rows(summaries: list[RunSummary]) -> list[dict[str, Any]]:
+    rows = []
+    for summary in summaries:
+        for task_name, subset_scores in summary.task_subset_scores.items():
+            for subset, score in subset_scores.items():
+                rows.append(
+                    {
+                        "run": summary.run_id,
+                        "task": task_name,
+                        "subset": subset,
+                        "score": round(score * 100.0, 2),
+                    }
+                )
+    return rows
+
+
 def build_table(rows: list[dict[str, Any]], columns: list[tuple[str, str]]) -> str:
     if not rows:
         return "(empty)"
@@ -540,6 +569,26 @@ def print_grouped_view(
                     ],
                 )
             )
+        return
+
+    if view == "subset":
+        print("\n[Subset Summary]")
+        for summary in summaries:
+            rows = [
+                {**row, "score": format_score(row["score"])}
+                for row in make_subset_rows([summary])
+            ]
+            print(f"\n{summary.run_id}")
+            print(
+                build_table(
+                    rows,
+                    [
+                        ("task", "Task"),
+                        ("subset", "Subset"),
+                        ("score", "Score"),
+                    ],
+                )
+            )
 
 
 def export_csv(
@@ -634,7 +683,7 @@ def main() -> None:
 
     if "run" in views:
         print_run_summary(summaries, task_catalog)
-    for view in ("type", "task"):
+    for view in ("retrieval", "type", "task", "subset"):
         if view in views:
             print_grouped_view(summaries, view)
 
@@ -647,6 +696,10 @@ def main() -> None:
             exported_files.append(export_csv(csv_dir, "type", make_type_pivot_rows(summaries)))
         if "task" in views:
             exported_files.append(export_csv(csv_dir, "task", make_task_rows(summaries)))
+        if "retrieval" in views:
+            exported_files.append(export_csv(csv_dir, "retrieval", make_retrieval_rows(summaries)))
+        if "subset" in views:
+            exported_files.append(export_csv(csv_dir, "subset", make_subset_rows(summaries)))
 
         print("\n[CSV Export]")
         for output_path in exported_files:

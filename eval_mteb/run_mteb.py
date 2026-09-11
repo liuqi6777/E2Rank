@@ -26,6 +26,24 @@ logging.basicConfig(
 logger = logging.getLogger('run_mteb.py')
 
 
+BRIGHT_TASK_NAME = "BrightRetrieval"
+BRIGHT_SPLIT = "standard"
+BRIGHT_INSTRUCTIONS = {
+    "biology": "Given a biology post, retrieve relevant passages that help answer the post.",
+    "earth_science": "Given an earth science post, retrieve relevant passages that help answer the post.",
+    "economics": "Given an economics post, retrieve relevant passages that help answer the post.",
+    "psychology": "Given a psychology post, retrieve relevant passages that help answer the post.",
+    "robotics": "Given a robotics post, retrieve relevant passages that help answer the post.",
+    "stackoverflow": "Given a Stack Overflow post, retrieve relevant passages that help answer the post.",
+    "sustainable_living": "Given a sustainable living post, retrieve relevant passages that help answer the post.",
+    "pony": "Given a question about the Pony programming language, retrieve relevant passages that help answer the question.",
+    "leetcode": "Given a coding problem, retrieve relevant examples that help answer the problem.",
+    "aops": "Given a math problem, retrieve relevant examples that help answer the problem.",
+    "theoremqa_theorems": "Given a math problem, retrieve relevant theorems that help answer the problem.",
+    "theoremqa_questions": "Given a math problem, retrieve relevant examples that help answer the problem.",
+}
+
+
 @dataclass
 class EvalArguments:
     """
@@ -118,35 +136,96 @@ def get_model(model_path: str, precision: str = 'fp16', **kwargs):
     return model
 
 
-def run_bright(t, model, args, **kwargs):
-    # task_instructions = {}
-    Instructions = {
-        "aops" : "Given a Math problem, retrieve relevant examples that help answer the problem.",
-        "biology": "Given a post, retrieve relevant passages that help answer the post.",
-        "earth_science": "Given a post, retrieve relevant passages that help answer the post.",
-        "economics": "Given a economics post, retrieve relevant passages that help answer the post.",
-        "leetcode": "Given a coding problem, retrieve relevant examples that help answer the problem.",
-        "pony": "Given a question about pony program language, retrieve relevant passages that help answer the question.",
-        "psychology": "Given a psychology post, retrieve relevant passages that help answer the post.",
-        "theoremqa_questions": "Given a Math problem, retrieve relevant examples that help answer the problem.",
-        "theoremqa_theorems": "Given a Math problem, retrieve relevant theorems that help answer the problem.",
-        "robotics": "Given a robotics post, retrieve relevant passages that help answer the post.",
-        "stackoverflow": "Given a stackoverflow post, retrieve relevant passages that help answer the post.",
-        "sustainable_living": "Given a sustainable_living post, retrieve relevant passages that help answer the post."
+class _InstructionOverrideModel:
+    """Add one query instruction while leaving MTEB's retrieval path unchanged."""
+
+    def __init__(self, model, instruction: str):
+        self.model = model
+        self.instruction = instruction
+        self.mteb_model_meta = model.mteb_model_meta
+
+    def encode(self, sentences, **kwargs):
+        return self.model.encode(
+            sentences,
+            task_instruction=self.instruction,
+            **kwargs,
+        )
+
+
+def _bright_result_subsets(result) -> set[str]:
+    scores = getattr(result, "scores", {})
+    return {
+        score["hf_subset"]
+        for score in scores.get(BRIGHT_SPLIT, [])
+        if score.get("hf_subset")
     }
-    encode_kwargs = args.encode_kwargs or dict()
-    t.metadata.prompt = {'query': "Given a post, retrieve relevant passages that help answer the post."}
-    evaluation = mteb.MTEB(tasks=[t])
-    eval_splits = evaluation.tasks[0].metadata.eval_splits
-    results = evaluation.run(
-        model,
-        output_folder=args.output_dir,
-        encode_kwargs=encode_kwargs,
-        eval_splits=eval_splits,
-        eval_subsets=Instructions.keys(),
-        **kwargs
-    )
-    return results
+
+
+def run_bright(task, model, args, **kwargs):
+    """Evaluate BRIGHT through MTEB, applying its instruction per domain.
+
+    MTEB 1.38 evaluates all BRIGHT domains under one task name and therefore does
+    not expose the current domain to ``Encoder.encode``. Run one MTEB subset at a
+    time so the query instruction is correct, while retaining MTEB's data loader,
+    exact retrieval, metrics, result merging, and on-disk schema.
+    """
+    if args.output_dir is None:
+        raise ValueError("BRIGHT evaluation requires output_dir to merge domain results")
+
+    run_kwargs = dict(kwargs)
+    official_subsets = list(task.metadata.eval_langs)
+    missing_instructions = sorted(set(official_subsets) - BRIGHT_INSTRUCTIONS.keys())
+    if missing_instructions:
+        raise RuntimeError(
+            f"BRIGHT task contains subsets without query instructions: {missing_instructions}"
+        )
+    requested_subsets = run_kwargs.pop("eval_subsets", None)
+    if requested_subsets is None:
+        requested_subsets = official_subsets
+    elif isinstance(requested_subsets, str):
+        requested_subsets = [requested_subsets]
+    else:
+        requested_subsets = list(dict.fromkeys(requested_subsets))
+
+    unknown_subsets = sorted(set(requested_subsets) - set(official_subsets))
+    if unknown_subsets:
+        raise ValueError(
+            f"Unknown BRIGHT subsets: {unknown_subsets}; "
+            f"expected one or more of {official_subsets}"
+        )
+    if not requested_subsets:
+        raise ValueError("No BRIGHT subset selected")
+
+    requested_splits = run_kwargs.pop("eval_splits", None) or [BRIGHT_SPLIT]
+    if isinstance(requested_splits, str):
+        requested_splits = [requested_splits]
+    if list(requested_splits) != [BRIGHT_SPLIT]:
+        raise ValueError(
+            f"BrightRetrieval uses the official {BRIGHT_SPLIT!r} split; "
+            f"got {list(requested_splits)!r}"
+        )
+
+    final_result = None
+    for subset in requested_subsets:
+        logger.info("Evaluating BRIGHT subset %s", subset)
+        evaluation = mteb.MTEB(tasks=[task])
+        results = evaluation.run(
+            _InstructionOverrideModel(model, BRIGHT_INSTRUCTIONS[subset]),
+            output_folder=args.output_dir,
+            encode_kwargs=args.encode_kwargs or {},
+            eval_splits=[BRIGHT_SPLIT],
+            eval_subsets=[subset],
+            **run_kwargs,
+        )
+        if not results:
+            raise RuntimeError(f"MTEB returned no result for BRIGHT subset {subset!r}")
+        final_result = results[0]
+
+    completed_subsets = _bright_result_subsets(final_result)
+    missing_subsets = sorted(set(requested_subsets) - completed_subsets)
+    if missing_subsets:
+        raise RuntimeError(f"BRIGHT result is missing evaluated subsets: {missing_subsets}")
+    return [final_result]
 
 
 def run_eval(model, tasks: list, args: EvalArguments, **kwargs):
@@ -161,26 +240,27 @@ def run_eval(model, tasks: list, args: EvalArguments, **kwargs):
         model.start()
         _started = True
 
-    for t in tasks:
-        if t.metadata.name == 'BrightRetrieval':
-            all_results.extend(run_bright(t, model, args, **kwargs) or [])
-            continue
-        evaluation = mteb.MTEB(tasks=[t])
-        
-        try:
-            results = evaluation.run(
-                model,
-                output_folder=args.output_dir,
-                encode_kwargs=encode_kwargs,
-                **kwargs
-            )
-        except Exception as e:
-            logger.warning(f'meet error when running task: {t.metadata.name}. {str(e)}')
-            continue
-        all_results.extend(results or [])
+    try:
+        for t in tasks:
+            if t.metadata.name == BRIGHT_TASK_NAME:
+                all_results.extend(run_bright(t, model, args, **kwargs))
+                continue
+            evaluation = mteb.MTEB(tasks=[t])
 
-    if model is not None and _started and hasattr(model, 'stop'):
-        model.stop()
+            try:
+                results = evaluation.run(
+                    model,
+                    output_folder=args.output_dir,
+                    encode_kwargs=encode_kwargs,
+                    **kwargs
+                )
+            except Exception as e:
+                logger.warning(f'meet error when running task: {t.metadata.name}. {str(e)}')
+                continue
+            all_results.extend(results or [])
+    finally:
+        if model is not None and _started and hasattr(model, 'stop'):
+            model.stop()
     return all_results
 
 

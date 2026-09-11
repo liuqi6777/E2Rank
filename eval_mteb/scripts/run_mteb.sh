@@ -25,4 +25,5 @@ python eval_mteb/run_mteb.py \
   --batch_size 16 \
   --langs "eng" \
   --benchmark "${benchmark}" \
-  "${extra_args[@]}"
+  "${extra_args[@]}" \
+  "${@:4}"

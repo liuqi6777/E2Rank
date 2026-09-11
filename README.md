@@ -82,6 +82,16 @@ RAG 数据准备需要 `hf`，索引需要兼容 CUDA 的 FAISS；答案生成�
 
 ```bash
 bash eval_mteb/scripts/run_mteb.sh CHECKPOINT 'MTEB(eng, v2)' configs/model/qwen3_embedding_0.6b.yaml
+bash eval_mteb/scripts/run_mteb.sh CHECKPOINT BRIGHT configs/model/qwen3_embedding_0.6b.yaml
+```
+
+BRIGHT 通过 MTEB 的 `BrightRetrieval` 任务运行，复用其官方数据加载、exact retrieval、
+nDCG@10 和结果格式；评测器会按 12 个领域分别应用 query instruction。已有同路径结果默认复用，
+需要重跑时在上述命令末尾添加 `--run_kwargs '{"overwrite_results":true}'`。
+逐领域 nDCG@10 和宏平均可用同一汇总器读取：
+
+```bash
+python eval_mteb/summary.py results/mteb BRIGHT --views run,subset
 ```
 
 ## 目录

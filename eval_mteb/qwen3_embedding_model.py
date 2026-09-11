@@ -274,13 +274,18 @@ class Qwen3Embedding(Wrapper):
         *,
         task_name: str,
         prompt_type: PromptType | None = None,
+        task_instruction: str | None = None,
         batch_size: int = 32,
         show_progress_bar: bool = True,
         **kwargs: Any,
     ) -> np.ndarray:
         instruction = None
         if self.use_instruction:
-            instruction = self.get_instruction(task_name, prompt_type)
+            instruction = (
+                task_instruction
+                if task_instruction is not None and prompt_type == PromptType.query
+                else self.get_instruction(task_name, prompt_type)
+            )
             if self.instruction_template and self.query_prompt_template is None:
                 instruction = self.format_instruction(instruction, prompt_type)
             logger.info(f"Using instruction: '{instruction}' for task: '{task_name}'")
