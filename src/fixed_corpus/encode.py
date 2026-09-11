@@ -1,4 +1,4 @@
-"""Build the immutable G1 document corpus and fp16 embedding shards."""
+"""Build immutable corpora and their shared fp16 embedding shards."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ def normalize_document(text: str) -> str:
     return " ".join(unicodedata.normalize("NFKC", text).casefold().split())
 
 
-def _distributed_context() -> tuple[int, int, torch.device]:
+def distributed_context() -> tuple[int, int, torch.device]:
     world_size = int(os.environ.get("WORLD_SIZE", "1"))
     rank = int(os.environ.get("RANK", "0"))
     local_rank = int(os.environ.get("LOCAL_RANK", "0"))
@@ -120,6 +120,118 @@ def _read_texts(handle, offsets: np.ndarray, start: int, end: int) -> list[str]:
     return values
 
 
+def encode_corpus_shards(
+    *,
+    corpus_path: Path,
+    offsets_path: Path,
+    output_dir: Path,
+    model_name_or_path: str,
+    revision: str | None,
+    num_shards: int,
+    batch_size: int,
+    max_length: int,
+    pooling_method: str,
+    padding_side: str,
+    append_token: str,
+    document_prompt_template: str,
+    rank: int,
+    world_size: int,
+    device: torch.device,
+    overwrite: bool = False,
+) -> tuple[int, str | None, list[dict]]:
+    """Encode an existing immutable corpus into shared fp16 search shards."""
+    if any(value <= 0 for value in (num_shards, batch_size, max_length)):
+        raise ValueError("shard, batch, and maximum-length settings must be positive")
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_name_or_path,
+        revision=revision,
+        padding_side=padding_side,
+        trust_remote_code=True,
+    )
+    if not tokenizer.pad_token:
+        tokenizer.pad_token = (
+            getattr(tokenizer, "eot_token", None)
+            or tokenizer.eos_token
+            or tokenizer.bos_token
+        )
+    model = AutoModel.from_pretrained(
+        model_name_or_path,
+        revision=revision,
+        torch_dtype=torch.float16 if device.type == "cuda" else torch.float32,
+        trust_remote_code=True,
+    ).to(device).eval()
+    dimension = int(model.config.hidden_size)
+    resolved_revision = getattr(model.config, "_commit_hash", None) or revision
+    offsets = np.load(offsets_path, mmap_mode="r")
+    count = len(offsets)
+    per_shard = math.ceil(count / num_shards)
+
+    with corpus_path.open("rb") as corpus:
+        for shard_id in range(rank, num_shards, world_size):
+            start = shard_id * per_shard
+            end = min(start + per_shard, count)
+            if start >= end:
+                continue
+            output_path = output_dir / f"vectors-{shard_id:05d}-of-{num_shards:05d}.npy"
+            if output_path.exists() and not overwrite:
+                raise FileExistsError(f"Index shard already exists: {output_path}")
+            partial = output_path.with_suffix(".npy.partial")
+            vectors = np.lib.format.open_memmap(
+                partial,
+                mode="w+",
+                dtype=np.float16,
+                shape=(end - start, dimension),
+            )
+            for batch_start in range(start, end, batch_size):
+                batch_end = min(batch_start + batch_size, end)
+                texts = _read_texts(corpus, offsets, batch_start, batch_end)
+                texts = [
+                    format_embedding_text(document_prompt_template, text)
+                    for text in texts
+                ]
+                texts = append_configured_token(texts, tokenizer, append_token)
+                inputs = tokenizer(
+                    texts,
+                    padding=True,
+                    truncation=True,
+                    max_length=max_length,
+                    return_tensors="pt",
+                ).to(device)
+                with torch.inference_mode():
+                    embeddings = pool_embeddings(
+                        model(**inputs).last_hidden_state,
+                        inputs["attention_mask"],
+                        pooling_method=pooling_method,
+                        normalize=True,
+                    )
+                vectors[batch_start - start : batch_end - start] = (
+                    embeddings.float().cpu().numpy()
+                )
+            vectors.flush()
+            del vectors
+            os.replace(partial, output_path)
+
+    if dist.is_initialized():
+        dist.barrier()
+    shards = []
+    if rank == 0:
+        for shard_id in range(num_shards):
+            start = shard_id * per_shard
+            end = min(start + per_shard, count)
+            if start >= end:
+                continue
+            path = output_dir / f"vectors-{shard_id:05d}-of-{num_shards:05d}.npy"
+            shards.append(
+                {
+                    "path": path.name,
+                    "start": start,
+                    "count": end - start,
+                    "sha256": sha256_file(path),
+                }
+            )
+    return dimension, resolved_revision, shards
+
+
 def _validate_existing(args, manifest_path: Path) -> None:
     index = FrozenCorpusIndex(str(manifest_path), backend="lookup", device="cpu", verify_hashes=True)
     if index.manifest.get("model_revision") != args.revision:
@@ -182,7 +294,7 @@ def main() -> None:
     )):
         raise ValueError("shard, batch, and embedding length settings must be positive")
 
-    rank, world_size, device = _distributed_context()
+    rank, world_size, device = distributed_context()
     source_path = Path(args.input).resolve()
     output_dir = Path(args.output_dir).resolve()
     manifest_path = output_dir / "index_manifest.json"
@@ -209,83 +321,32 @@ def main() -> None:
     state = json.loads((building / "build_state.json").read_text())
     count = int(state["count"])
 
-    tokenizer = AutoTokenizer.from_pretrained(
-        args.model,
+    dimension, resolved_revision, shards = encode_corpus_shards(
+        corpus_path=building / "corpus.jsonl",
+        offsets_path=building / "corpus_offsets.npy",
+        output_dir=building,
+        model_name_or_path=args.model,
         revision=args.revision,
+        num_shards=args.num_shards,
+        batch_size=args.batch_size,
+        max_length=args.max_length,
+        pooling_method=args.pooling_method,
         padding_side=args.padding_side,
-        trust_remote_code=True,
+        append_token=args.append_token,
+        document_prompt_template=args.document_prompt_template,
+        rank=rank,
+        world_size=world_size,
+        device=device,
     )
-    if not tokenizer.pad_token:
-        tokenizer.pad_token = (
-            getattr(tokenizer, "eot_token", None) or tokenizer.eos_token or tokenizer.bos_token
-        )
-    model = AutoModel.from_pretrained(
-        args.model,
-        revision=args.revision,
-        torch_dtype=torch.float16 if device.type == "cuda" else torch.float32,
-        trust_remote_code=True,
-    ).to(device).eval()
-    dimension = int(model.config.hidden_size)
-    offsets = np.load(building / "corpus_offsets.npy", mmap_mode="r")
-    per_shard = math.ceil(count / args.num_shards)
-    with (building / "corpus.jsonl").open("rb") as corpus:
-        for shard_id in range(rank, args.num_shards, world_size):
-            start = shard_id * per_shard
-            end = min(start + per_shard, count)
-            if start >= end:
-                continue
-            output_path = building / f"vectors-{shard_id:05d}-of-{args.num_shards:05d}.npy"
-            partial = output_path.with_suffix(".npy.partial")
-            vectors = np.lib.format.open_memmap(
-                partial, mode="w+", dtype=np.float16, shape=(end - start, dimension)
-            )
-            for batch_start in range(start, end, args.batch_size):
-                batch_end = min(batch_start + args.batch_size, end)
-                texts = _read_texts(corpus, offsets, batch_start, batch_end)
-                texts = [format_embedding_text(args.document_prompt_template, text) for text in texts]
-                texts = append_configured_token(texts, tokenizer, args.append_token)
-                inputs = tokenizer(
-                    texts,
-                    padding=True,
-                    truncation=True,
-                    max_length=args.max_length,
-                    return_tensors="pt",
-                ).to(device)
-                with torch.inference_mode():
-                    embeddings = pool_embeddings(
-                        model(**inputs).last_hidden_state,
-                        inputs["attention_mask"],
-                        pooling_method=args.pooling_method,
-                        normalize=True,
-                    )
-                vectors[batch_start - start : batch_end - start] = embeddings.float().cpu().numpy()
-            vectors.flush()
-            del vectors
-            os.replace(partial, output_path)
-    if dist.is_initialized():
-        dist.barrier()
 
     if rank == 0:
-        shards = []
-        for shard_id in range(args.num_shards):
-            start = shard_id * per_shard
-            end = min(start + per_shard, count)
-            if start >= end:
-                continue
-            path = building / f"vectors-{shard_id:05d}-of-{args.num_shards:05d}.npy"
-            shards.append({
-                "path": path.name,
-                "start": start,
-                "count": end - start,
-                "sha256": sha256_file(path),
-            })
         corpus_path = building / "corpus.jsonl"
         offsets_path = building / "corpus_offsets.npy"
         mapping_path = building / "document_key_to_ordinal.json"
         protocol = {
             "model_name_or_path": args.model,
             "model_revision": args.revision,
-            "resolved_model_revision": getattr(model.config, "_commit_hash", None),
+            "resolved_model_revision": resolved_revision,
             "pooling_method": args.pooling_method,
             "padding_side": args.padding_side,
             "append_token": args.append_token,

@@ -11,6 +11,7 @@ from .index import (
     write_frozen_training_audit,
 )
 __all__ = [
+    "DynamicRetrievalEnvironment",
     "FixedCorpusGRPOModel",
     "FrozenCandidateScorer",
     "FrozenCorpusIndex",
@@ -42,4 +43,8 @@ def __getattr__(name: str):
         from . import policy
 
         return getattr(policy, name)
+    if name == "DynamicRetrievalEnvironment":
+        from .environment import DynamicRetrievalEnvironment
+
+        return DynamicRetrievalEnvironment
     raise AttributeError(name)

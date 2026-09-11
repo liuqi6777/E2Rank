@@ -299,10 +299,17 @@ class FrozenCorpusIndex:
         dist.all_gather(gathered, padded)
         return torch.cat([value[:count] for value, count in zip(gathered, counts)], dim=0), counts
 
-    def search(self, query_vectors: torch.Tensor, k: int) -> tuple[torch.Tensor, torch.Tensor]:
+    def search(
+        self,
+        query_vectors: torch.Tensor,
+        k: int,
+        route_ids: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Return exact cosine/IP scores and global corpus ordinals."""
         if k <= 0:
             raise ValueError("k must be positive")
+        if route_ids is not None:
+            raise ValueError("A single frozen index does not accept route_ids")
         original_shape = query_vectors.shape[:-1]
         if query_vectors.size(-1) != self.dimension:
             raise ValueError(
@@ -310,6 +317,11 @@ class FrozenCorpusIndex:
             )
         flat_queries = F.normalize(query_vectors.detach().to(self.device).float(), dim=-1).reshape(-1, self.dimension)
         all_queries, counts = self._gather_queries(flat_queries)
+        if all_queries.size(0) == 0:
+            return (
+                torch.empty((*original_shape, k), device=self.device, dtype=torch.float32),
+                torch.empty((*original_shape, k), device=self.device, dtype=torch.long),
+            )
         local_scores, local_ids = self._search_local(all_queries, k)
 
         if self.world_size > 1:
@@ -429,6 +441,8 @@ class FrozenCorpusIndex:
         values = ordinals.detach().cpu().reshape(-1).tolist() if isinstance(ordinals, torch.Tensor) else ordinals
         records = []
         for ordinal in values:
+            if ordinal < 0 or ordinal >= self.count:
+                raise IndexError(f"Corpus ordinal out of range: {ordinal}")
             self._corpus_handle.seek(int(offsets[ordinal]))
             records.append(json.loads(self._corpus_handle.readline()))
         return records
@@ -460,8 +474,6 @@ class FrozenCorpusIndexRouter:
         verify_hashes: bool = True,
         search_batch_size: int = 1024,
     ) -> None:
-        if backend != "lookup":
-            raise ValueError("Routed training indexes currently support backend=lookup only")
         self.manifest_path = str(Path(manifest_path).resolve())
         self.root = Path(self.manifest_path).parent
         with open(self.manifest_path, encoding="utf-8") as handle:
@@ -517,6 +529,52 @@ class FrozenCorpusIndexRouter:
             raise ValueError(f"Routed frozen indexes have inconsistent dimensions: {dimensions}")
         self.dimension = dimensions.pop()
         self.device = torch.device(device)
+        self.rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
+        self.world_size = dist.get_world_size() if dist.is_available() and dist.is_initialized() else 1
+
+    def _expand_route_ids(
+        self,
+        route_ids: torch.Tensor | None,
+        target_shape: torch.Size | tuple[int, ...],
+    ) -> torch.Tensor:
+        if route_ids is None:
+            raise ValueError("Routed frozen-index operation requires route_ids")
+        target_shape = tuple(target_shape)
+        route_ids = route_ids.detach().to(self.device)
+        if route_ids.dtype not in {
+            torch.uint8,
+            torch.int8,
+            torch.int16,
+            torch.int32,
+            torch.int64,
+        }:
+            raise TypeError("route_ids must use an integer dtype")
+        if tuple(route_ids.shape) == target_shape:
+            return route_ids
+        route_shape = tuple(route_ids.shape)
+        if route_shape and route_shape == target_shape[: len(route_shape)]:
+            view_shape = route_shape + (1,) * (len(target_shape) - len(route_shape))
+            return route_ids.reshape(view_shape).expand(target_shape)
+        raise ValueError(
+            f"route_ids shape {route_shape} must be a leading prefix of target shape {target_shape}"
+        )
+
+    def _validate_route_ids(
+        self,
+        expanded_routes: torch.Tensor,
+        *,
+        distributed: bool = False,
+    ) -> None:
+        unknown = (expanded_routes < 0) | (expanded_routes >= len(self.route_names))
+        has_unknown = torch.tensor(
+            int(unknown.any()), device=self.device, dtype=torch.int32
+        )
+        if distributed and self.world_size > 1:
+            dist.all_reduce(has_unknown, op=dist.ReduceOp.MAX)
+        if has_unknown.item():
+            local_values = sorted(set(expanded_routes[unknown].detach().cpu().tolist()))
+            detail = f": {local_values}" if local_values else " on another distributed rank"
+            raise ValueError(f"Unknown frozen index route id(s){detail}")
 
     def route_name(self, source: str) -> str:
         try:
@@ -541,16 +599,8 @@ class FrozenCorpusIndexRouter:
         ordinals: torch.Tensor,
         route_ids: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        if route_ids is None:
-            raise ValueError("Routed frozen-index lookup requires route_ids")
-        if route_ids.dim() == 1:
-            if route_ids.size(0) != ordinals.size(0):
-                raise ValueError("route_ids and ordinals must share their first dimension")
-            expanded_routes = route_ids.reshape(-1, *([1] * (ordinals.dim() - 1))).expand_as(ordinals)
-        elif route_ids.shape == ordinals.shape:
-            expanded_routes = route_ids
-        else:
-            raise ValueError("route_ids must have shape [batch] or match ordinals")
+        expanded_routes = self._expand_route_ids(route_ids, ordinals.shape)
+        self._validate_route_ids(expanded_routes)
         result = torch.empty(
             (*ordinals.shape, self.dimension),
             device=self.device,
@@ -560,11 +610,45 @@ class FrozenCorpusIndexRouter:
             selected = expanded_routes == route_id
             if selected.any():
                 result[selected] = self.indices[route].lookup_embeddings(ordinals[selected])
-        unknown = (expanded_routes < 0) | (expanded_routes >= len(self.route_names))
-        if unknown.any():
-            values = sorted(set(expanded_routes[unknown].detach().cpu().tolist()))
-            raise ValueError(f"Unknown frozen index route id(s): {values}")
         return result
+
+    def search(
+        self,
+        query_vectors: torch.Tensor,
+        k: int,
+        route_ids: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Search each query only in its routed corpus and restore input order."""
+        if k <= 0:
+            raise ValueError("k must be positive")
+        if query_vectors.size(-1) != self.dimension:
+            raise ValueError(
+                f"Query dim {query_vectors.size(-1)} does not match routed index dim {self.dimension}"
+            )
+        original_shape = query_vectors.shape[:-1]
+        expanded_routes = self._expand_route_ids(route_ids, original_shape)
+        self._validate_route_ids(expanded_routes, distributed=True)
+        flat_queries = query_vectors.detach().to(self.device).reshape(-1, self.dimension)
+        flat_routes = expanded_routes.reshape(-1)
+        scores = torch.empty((flat_queries.size(0), k), device=self.device, dtype=torch.float32)
+        ordinals = torch.empty((flat_queries.size(0), k), device=self.device, dtype=torch.long)
+        # Every distributed rank enters every child search in the same route order.
+        # A child search gathers variable local query counts and safely accepts zero.
+        for route_id, route in enumerate(self.route_names):
+            selected = flat_routes == route_id
+            global_count = torch.tensor(
+                int(selected.sum()), device=self.device, dtype=torch.long
+            )
+            if self.world_size > 1:
+                dist.all_reduce(global_count, op=dist.ReduceOp.SUM)
+            if global_count.item() == 0:
+                continue
+            route_scores, route_ordinals = self.indices[route].search(
+                flat_queries[selected], k
+            )
+            scores[selected] = route_scores
+            ordinals[selected] = route_ordinals
+        return scores.reshape(*original_shape, k), ordinals.reshape(*original_shape, k)
 
     def validate_protocol(self, **kwargs) -> None:
         for route, index in self.indices.items():

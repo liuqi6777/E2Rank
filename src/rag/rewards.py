@@ -1,8 +1,208 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Any
 
 import torch
+import torch.distributed as dist
+
+from rag.generator import FrozenGeneratorClient
+from rag.metrics import max_token_f1, passage_contains_answer
+
+
+class RAGResultRewardProvider:
+    """Convert single-corpus RAG search results into the configured RL reward."""
+
+    def __init__(
+        self,
+        reward_type: str = "source_aware_mrr",
+        retrieval_k: int = 20,
+        generator: FrozenGeneratorClient | None = None,
+        generator_top_k: int = 5,
+    ) -> None:
+        if reward_type not in {"source_aware_mrr", "answer_mrr", "answer_f1"}:
+            raise ValueError(f"Unsupported reward_type={reward_type}")
+        if retrieval_k <= 0:
+            raise ValueError("retrieval_k must be positive")
+        if generator_top_k <= 0:
+            raise ValueError("generator_top_k must be positive")
+        self.reward_type = reward_type
+        self.generator = generator
+        self.generator_top_k = int(generator_top_k)
+        self.retrieval_reward = (
+            RetrievalRewardProvider(reward_type, retrieval_k)
+            if reward_type in {"source_aware_mrr", "answer_mrr"}
+            else None
+        )
+
+    def _build_masks(
+        self,
+        index,
+        result_ids: torch.Tensor,
+        golden_answers: Sequence[Sequence[str]],
+        evidence_passage_groups: Sequence[Sequence[Sequence[int]]],
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        contents = index.lookup_text(result_ids)
+        batch, group, depth = result_ids.shape
+        answer_mask = torch.zeros(
+            (batch, group, depth), dtype=torch.bool, device=result_ids.device
+        )
+        max_evidence_groups = max(
+            (len(groups) for groups in evidence_passage_groups), default=0
+        )
+        evidence_hits = torch.zeros(
+            (batch, group, max_evidence_groups, depth),
+            dtype=torch.bool,
+            device=result_ids.device,
+        )
+        offset = 0
+        for batch_index in range(batch):
+            for group_index in range(group):
+                row_ids = result_ids[batch_index, group_index].detach().cpu().tolist()
+                row_contents = contents[offset : offset + depth]
+                offset += depth
+                answer_mask[batch_index, group_index] = torch.tensor(
+                    [
+                        passage_contains_answer(text, golden_answers[batch_index])
+                        for text in row_contents
+                    ],
+                    device=result_ids.device,
+                )
+                for evidence_index, passage_group in enumerate(
+                    evidence_passage_groups[batch_index]
+                ):
+                    evidence_hits[
+                        batch_index, group_index, evidence_index
+                    ] = torch.tensor(
+                        [ordinal in passage_group for ordinal in row_ids],
+                        device=result_ids.device,
+                    )
+        return answer_mask, evidence_hits
+
+    def _generation_requests(
+        self,
+        index,
+        query_ids: Sequence[str],
+        questions: Sequence[str],
+        golden_answers: Sequence[Sequence[str]],
+        result_ids: torch.Tensor,
+    ) -> list[dict[str, Any]]:
+        batch, group, _ = result_ids.shape
+        top_ids = result_ids[..., : self.generator_top_k]
+        top_depth = top_ids.size(-1)
+        texts = index.lookup_text(top_ids)
+        requests = []
+        offset = 0
+        for batch_index in range(batch):
+            for group_index in range(group):
+                passage_ids = top_ids[batch_index, group_index].detach().cpu().tolist()
+                row_texts = texts[offset : offset + top_depth]
+                offset += top_depth
+                requests.append(
+                    {
+                        "query_id": query_ids[batch_index],
+                        "question": questions[batch_index],
+                        "answers": list(golden_answers[batch_index]),
+                        "passage_ids": passage_ids,
+                        "documents": [{"contents": text} for text in row_texts],
+                    }
+                )
+        return requests
+
+    def _score_generation_requests(self, requests: Sequence[dict[str, Any]]) -> list[float]:
+        generations = self.generator.generate_batch(
+            [
+                (
+                    item["query_id"],
+                    item["question"],
+                    item["passage_ids"],
+                    item["documents"],
+                )
+                for item in requests
+            ]
+        )
+        return [
+            max_token_f1(output, item["answers"])
+            for output, item in zip(generations, requests)
+        ]
+
+    def _distributed_generate(
+        self,
+        index,
+        query_ids: Sequence[str],
+        questions: Sequence[str],
+        golden_answers: Sequence[Sequence[str]],
+        result_ids: torch.Tensor,
+    ) -> torch.Tensor:
+        distributed = dist.is_available() and dist.is_initialized()
+        is_rank_zero = not distributed or dist.get_rank() == 0
+        if is_rank_zero and self.generator is None:
+            raise RuntimeError("answer_f1 reward requires a FrozenGeneratorClient")
+
+        requests = self._generation_requests(
+            index, query_ids, questions, golden_answers, result_ids
+        )
+
+        if distributed:
+            gathered = [None] * dist.get_world_size() if is_rank_zero else None
+            dist.gather_object(requests, gathered, dst=0)
+            payload = [None]
+            if is_rank_zero:
+                flat_scores = self._score_generation_requests(
+                    [item for rank_requests in gathered for item in rank_requests]
+                )
+                all_outputs = []
+                offset = 0
+                for rank_requests in gathered:
+                    all_outputs.append(flat_scores[offset : offset + len(rank_requests)])
+                    offset += len(rank_requests)
+                payload[0] = all_outputs
+            dist.broadcast_object_list(payload, src=0)
+            scores = payload[0][dist.get_rank()]
+        else:
+            scores = self._score_generation_requests(requests)
+        batch, group, _ = result_ids.shape
+        return torch.tensor(
+            scores, device=result_ids.device, dtype=torch.float32
+        ).reshape(batch, group)
+
+    def __call__(
+        self,
+        *,
+        result_ids: torch.Tensor,
+        result_scores: torch.Tensor,
+        index,
+        route_ids: torch.Tensor | None = None,
+        query_ids: Sequence[str],
+        sources: Sequence[str],
+        questions: Sequence[str],
+        golden_answers: Sequence[Sequence[str]],
+        evidence_passage_groups: Sequence[Sequence[Sequence[int]]],
+        **_: Any,
+    ) -> torch.Tensor:
+        del result_scores
+        if route_ids is not None:
+            raise ValueError("RAG reward currently uses one shared corpus and no route_ids")
+        if self.reward_type == "answer_f1":
+            return self._distributed_generate(
+                index,
+                query_ids,
+                questions,
+                golden_answers,
+                result_ids,
+            )
+        answer_mask, evidence_memberships = self._build_masks(
+            index,
+            result_ids,
+            golden_answers,
+            evidence_passage_groups,
+        )
+        return self.retrieval_reward(
+            answer_mask,
+            sources,
+            evidence_memberships,
+            [len(groups) for groups in evidence_passage_groups],
+        )
 
 
 class RetrievalRewardProvider:
