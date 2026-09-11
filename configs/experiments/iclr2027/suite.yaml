@@ -87,6 +87,23 @@ runs:
     scope: joint
     control: G1-J-RL
     overrides: {reward_type: mrr_in_batch, relevance_scheme: binary}
+  G1-DR:
+    group: G1
+    objective: rl
+    scope: query_only
+    control: G1-A-QPolicy
+    protocol:
+      candidate_access: per_source_dynamic_full_corpus
+      retrieval_reward: known_qrels_graded_ndcg_at_10
+      unjudged_documents: zero_gain
+      document_encoder: frozen_E0_index
+    overrides:
+      dynamic_retrieval: true
+      dynamic_retrieval_k: 20
+      frozen_document_index_backend: faiss
+      reward_type: ndcg
+      reward_terms: ''
+      reward_ndcg_k: 10
   G2-D-CL: {group: G2, objective: infonce, scope: joint}
   G2-D-LL: {group: G2, objective: lambdaloss, scope: joint}
   G2-D-RL: {group: G2, objective: rl, scope: joint}

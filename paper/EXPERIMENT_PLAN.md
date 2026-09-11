@@ -39,8 +39,8 @@ G1/G3 属于后训练和任务适配；G2 检验更早的表示学习阶段。�
 本身已在这个规模得到验证。G2 的 RL 阶段必须实际使用并记录较大规模的数据预算。
 
 “约 156k”称为较大规模 listwise 训练，不等同于通用 embedding 预训练规模。
-BRIGHT 提升不单独证明学会推理。G1 full-corpus 动态检索作为独立扩展保留，
-其 reward 与对照协议尚未冻结，不计入当前主实验或 RL 消融。
+BRIGHT 提升不单独证明学会推理。G1 full-corpus 动态检索作为独立实验行 `G1-DR`，
+不计入主结果或 RL 单因素消融。
 
 ## 1. 共同实验约束
 
@@ -153,6 +153,11 @@ CL 使用已知正例，排序方法使用 teacher 信号，监督信息并不�
 
 共 **4 个主训练配置**，加原始 E0 评测。四个 objective 使用相同候选和训练预算。
 G1-J-RL 超过 E0 只证明额外训练有益；超过 CL 但不超过 LL 不能证明优于 metric-aware 监督。
+
+`G1-DR` 是单独的动态检索实验：从 E0 初始化并冻结分 source 的完整 document index，
+只更新 query encoder。每个 sampled query action 检索 top-20，以训练记录中已知 teacher grades
+计算 nDCG@10；未出现在已知 qrels 中的文档 gain 为 0。其最近控制为 `G1-A-QPolicy`，但二者
+同时改变 candidate access 和 document update scope，因此不解释为单因素因果对照。
 
 **主结果：** BRIGHT nDCG@10，报告固定官方协议下逐领域与宏平均。
 冻结短/长文档设置、query instruction、excluded-document handling 和全 corpus 检索协议；
@@ -328,12 +333,13 @@ G3 验证固定 generator 的可复现输出和 reward 成本。完成低成本�
 |---|---:|
 | G1：4 个 joint objective 主对照 | 4 |
 | G1：QPolicy、Paired、Cal、MRR、Binary | 5 |
+| G1：full-corpus 动态检索 | 1 |
 | G2：3 个直接训练 + 3 个从 CL 最终模型初始化 | 6 |
 | G3：CL、RetRL、AnsRL | 3 |
-| **合计** | **18** |
+| **合计** | **19** |
 
 另计原始 checkpoint 评测、调参、paired/product 短 matched-time 比较、共享 warm-up
-的存储与生成器评测开销。18 是当前已冻结协议的训练执行数量，不是完整 GPU-hour
+的存储与生成器评测开销。19 是当前已冻结协议的训练执行数量，不是完整 GPU-hour
 报价，也不意味着每项训练耗时相同。共同 CL 前缀只训练一次，其成本单独报告。
 
 预算不足时先删第二模型/第二 QA 数据集、混合数据扩展、额外 G/分布/奖励混合消融。
@@ -345,7 +351,7 @@ G3 验证固定 generator 的可复现输出和 reward 成本。完成低成本�
 本版使用 G1/G2/G3 命名以避免复用旧 ID 混淆；旧 C1–C4 是 E2Rank/E0 方案，不能直接
 改名当作 G1 结果；旧 A9/A6/R2 分别对应新的 Paired/Cal/MRR 概念，但需适配新标签与数据。
 旧 A3 query-only exploration 对应现在的 `G1-A-QPolicy`：共享 encoder 继续更新，只移除
-document policy action。G1 full-corpus 动态检索另行设计，当前不映射 logical ID 或训练入口。
+document policy action。G1 full-corpus 动态检索映射为独立的 `G1-DR`。
 G3 监督对照为 CL，不运行 RAG LambdaLoss。
 
 旧 `posttrain_*.sh` 已退役；当前运行入口为 `scripts/experiment.py`，以 `check RUN` 核实实现就绪状态。
@@ -362,8 +368,7 @@ base 初始化与共同 warm-up、MTEB 辅助/外部评测角色、RAG 答案指
 三组 logical IDs 已映射到 `configs/experiments/iclr2027/suite.yaml`，使用
 `scripts/experiments/iclr2027.py list/resolve/check/launch`。详见
 [运行说明](../configs/experiments/iclr2027/README.md)。`resolve` 可无 GPU 展开，
-`check` 明确列出数据、预算及实现缺项；正式运行当前仍未就绪。建立映射不等于完成
-尚未冻结协议的 full-corpus 动态检索扩展。
+`check` 明确列出数据、预算及实现缺项；正式运行是否就绪以其输出为准。
 
 
 ReasonRank 训练仅接受预处理后的 `embedding_candidates_v1` ready 记录；旧单正例 schema

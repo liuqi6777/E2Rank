@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any
 
 import torch
@@ -11,7 +12,12 @@ from torch import Tensor, nn
 from transformers.file_utils import ModelOutput
 
 from embedding_protocol import pool_embeddings
+from fixed_corpus.environment import (
+    DynamicRetrievalEnvironment,
+    KnownQrelsNDCGRewardProvider,
+)
 from fixed_corpus.index import FrozenCorpusIndex, FrozenCorpusIndexRouter
+from fixed_corpus.policy import QueryOnlyRLWrapper
 
 FrozenIndex = FrozenCorpusIndex | FrozenCorpusIndexRouter
 
@@ -387,4 +393,84 @@ class FixedCorpusGRPOModel(QueryEncoderMixin, nn.Module):
             sigma=sigma,
             kl=kl,
             reward_terms=term_metrics or None,
+        )
+
+
+class DynamicRetrievalGRPOModel(QueryOnlyRLWrapper):
+    """Query-policy GRPO over live full-corpus retrieval and known graded qrels."""
+
+    def __init__(self, model: nn.Module, index: FrozenIndex, rl_args, pooling_method: str = "last"):
+        if tuple(rl_args.action_components) != (("query",),):
+            raise ValueError("Dynamic retrieval requires action_components=[[query]]")
+        if rl_args.sampling_law != "vmf" or rl_args.sigma_learnable:
+            raise ValueError("Dynamic retrieval currently requires fixed-kappa vMF sampling")
+        if rl_args.advantage_baseline != "group" or rl_args.kl_coef != 0:
+            raise ValueError("Dynamic retrieval currently requires group baseline and kl_coef=0")
+        if len(rl_args.reward_terms) != 1 or rl_args.reward_terms[0].type != "ndcg":
+            raise ValueError("G1 dynamic retrieval requires one nDCG reward term")
+        if rl_args.reward_terms[0].weight != 1.0:
+            raise ValueError("G1 dynamic retrieval nDCG reward weight must be 1")
+
+        reward_provider = KnownQrelsNDCGRewardProvider(rl_args.reward_terms[0].k)
+        environment = DynamicRetrievalEnvironment(
+            index=index,
+            result_reward_provider=reward_provider,
+            retrieval_k=rl_args.dynamic_retrieval_k,
+        )
+        kappa = rl_args.kappa if rl_args.kappa is not None else rl_args.sigma**-2
+        super().__init__(
+            model,
+            environment,
+            group_size=rl_args.group_size,
+            kappa=kappa,
+            pooling_method=pooling_method,
+            normalize_advantages=rl_args.advantage_norm != "none",
+        )
+        # GRPOTrainer only uses these immutable fields for resume/save plumbing.
+        self.grpo = SimpleNamespace(
+            reward_terms=rl_args.reward_terms,
+            sigma_learnable=False,
+            advantage_baseline="group",
+        )
+        self.sigma = float(rl_args.sigma)
+
+    @staticmethod
+    def _summary(values: Tensor, prefix: str) -> dict[str, Tensor]:
+        values = values.detach().float()
+        return {
+            f"{prefix}_mean": values.mean(),
+            f"{prefix}_std": values.std(unbiased=False),
+            f"{prefix}_min": values.min(),
+            f"{prefix}_max": values.max(),
+        }
+
+    def forward(
+        self,
+        query: dict[str, Tensor],
+        candidate_ordinals: Tensor,
+        relevance_labels: Tensor,
+        candidate_mask: Tensor | None = None,
+        index_route_ids: Tensor | None = None,
+        **_: Any,
+    ):
+        from grpo import GRPOModelOutput
+
+        output = self.policy_step(
+            query,
+            route_ids=index_route_ids,
+            candidate_ordinals=candidate_ordinals,
+            relevance_labels=relevance_labels,
+            candidate_mask=candidate_mask,
+        )
+        reward_stats = self._summary(output.rewards, "reward")
+        advantage_stats = self._summary(output.advantages, "advantages")
+        zero = output.loss.new_zeros(())
+        return GRPOModelOutput(
+            loss=output.loss,
+            reward=reward_stats["reward_mean"],
+            **reward_stats,
+            **advantage_stats,
+            advantages_degenerate_frac=output.degenerate_fraction,
+            sigma=output.loss.new_tensor(self.sigma),
+            kl=zero,
         )

@@ -43,10 +43,9 @@ G1 使用 `data/processed/reasonrank_simple/` 中的 4,963 条全量训练数据
 `prepare G1` 每个 query 固定抽一个正例，移除其余已知正例，保留变长负例，生成 `train.ready.jsonl`。
 Loader 直接读 ready 文件；collator 动态补齐和生成 mask。公开文本与审计 sidecar 不参与训练加载。
 已有 ready 文件不会自动重写。
-当前 G1 主对照和 RL 消融均使用 joint encoder，不需要预先运行 `encode G1`。已有
-`encode G1` 能从 `xlangai/BRIGHT` 的 `documents` 配置构建分领域只读索引并校验
-ReasonRank document ID；该能力保留给尚未冻结设计的 G1 full-corpus 动态检索扩展，
-当前没有对应正式 run。
+G1 主对照和 RL 消融使用 joint encoder，不需要预先运行 `encode G1`。`G1-DR` 是独立的
+query-only full-corpus 动态检索行：运行前须用 `encode G1` 从 `xlangai/BRIGHT` 的
+`documents` 配置构建分领域 E0 只读索引并校验 ReasonRank document ID。
 
 原始数据下载、BRIGHT 重叠审计和预处理各脚本的职责见 [脚本索引](scripts/README.md)。
 
@@ -95,9 +94,9 @@ bash eval_mteb/scripts/run_mteb.sh CHECKPOINT BRIGHT configs/model/qwen3_embeddi
 ```
 
 通过 `python scripts/experiment.py train G1-* --gpus N` 启动时，最终模型保存成功后会自动运行
-BRIGHT：当前所有 G1 run 都使用训练后 checkpoint 编码 query 和 passage。结果写入各 run 的
-`mteb_eval/bright/`；训练前和中间 checkpoint 不运行 BRIGHT。下面的 fixed-corpus 命令保留给
-未来的动态检索扩展；不能把 12 个 subset 的 corpus 合并搜索。
+BRIGHT：joint run 用训练后 checkpoint 编码 query 和 passage；`G1-DR` 用训练后 query encoder
+配合固定 E0 passage index。结果写入各 run 的 `mteb_eval/bright/`；训练前和中间 checkpoint
+不运行 BRIGHT，也不能把 12 个 subset 的 corpus 合并搜索。
 
 ```bash
 bash eval_mteb/scripts/run_mteb.sh CHECKPOINT BRIGHT \

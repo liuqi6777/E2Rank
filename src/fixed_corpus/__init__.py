@@ -12,6 +12,7 @@ from .index import (
 )
 __all__ = [
     "DynamicRetrievalEnvironment",
+    "DynamicRetrievalGRPOModel",
     "FixedCorpusGRPOModel",
     "FrozenCandidateScorer",
     "FrozenCorpusIndex",
@@ -33,6 +34,7 @@ def __getattr__(name: str):
     """Keep the package API convenient without eagerly importing training stacks."""
     if name in {
         "FixedCorpusGRPOModel",
+        "DynamicRetrievalGRPOModel",
         "FrozenCandidateScorer",
         "QueryOnlySupervisedModel",
     }:

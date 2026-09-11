@@ -65,18 +65,17 @@ python scripts/experiment.py train G1-J-RL --gpus 8
 已有 public + metadata 时 `prepare` 只编译；已有 ready 时直接提示已准备。
 JSONL 不存 padding，模型和 loss/reward 均排除 padding。
 
-当前 G1 主对照与 RL 消融全部使用 joint encoder；`G1-A-QPolicy` 只移除 document policy action，
+G1 主对照与 RL 消融使用 joint encoder；`G1-A-QPolicy` 只移除 document policy action，
 但仍更新共享 encoder，并在最终 BRIGHT 评测前用训练后 checkpoint 编码 query 和 passage。
-因此当前 G1 run 不需要先执行 `encode G1`。现有 `encode G1` 会按官方 BRIGHT domain 构建
-E0 只读索引并校验 ReasonRank document ID，保留给尚未冻结协议的 full-corpus 动态检索扩展，
-当前不对应正式训练行。
+这些 run 不需要先执行 `encode G1`。`G1-DR` 则按官方 BRIGHT domain 动态检索完整 corpus，
+冻结 E0 document encoder/index，只更新 query encoder，因此必须先执行 `encode G1`。
 
 ## 实验行与依赖
 
-共 20 个逻辑行：18 个训练执行、2 个 E0 评测。
+共 21 个逻辑行：19 个训练执行、2 个 E0 评测。
 
 - G1：四个 `J` run 是 joint 主对照；`A-QPolicy`、`A-Binary`、`A-Paired`、`A-Cal`、
-  `A-MRR` 是以 `G1-J-RL` 为控制的 RL 消融。
+  `A-MRR` 是以 `G1-J-RL` 为控制的 RL 消融；`G1-DR` 是独立的 full-corpus 动态检索行。
 - G2：`D` 从初始 LLM 训练；`W` 从 `G2-D-CL-s42/` 最终模型重新训练。
   D-CL 训练 1200 步，W-CL/LL/RL 各新建 optimizer/scheduler 和数据迭代，再训练 1200 步。
   W-CL 是独立训练行，不复用 D-CL；只加载模型权重，不恢复 trainer 状态。
@@ -86,13 +85,16 @@ E0 只读索引并校验 ReasonRank document ID，保留给尚未冻结协议的
 LL 固定为 LambdaRank variant：pairwise logistic 乘当前排序交换产生的 `|ΔnDCG@10|`，
 使用 `gain=2^rel-1` 和 sigma 1.0。`G1-A-QPolicy` 仍使用 joint encoder，只将 RL action
 限制为 query；它不是冻结 document encoder 的 query-only 训练。
+`G1-DR` 每个 sampled query action 在对应 source 的完整冻结 corpus 中检索 top-20，使用已知
+teacher grades 的 nDCG@10；不在已知 qrels 中的检索结果 gain 为 0。它以 `G1-A-QPolicy`
+作为最近控制，但因同时改变 candidate access 和 document update scope，不作为单因素消融。
 G2 使用预处理生成的固定训练文件，采用固定预算和最终 checkpoint，不要求 manifest loader 或 dev 选模。
 模型协议和预算已填写；第二阶段只需先完成 D-CL 以提供初始化权重。
 G3 的监督 CL 使用离线候选；RL action 动态检索冻结的完整 corpus，不设置共享候选控制。
 当前仍需接入答案 F1 选模；检索 RL 需要 nDCG，不能用 source-aware MRR 代替。
 
-运行时以 `check RUN` 为准。当前 G1 run 不加载冻结索引；数据存在、其余实现缺项、必要参数、
-依赖 checkpoint 和输出目录检查仍生效。
+运行时以 `check RUN` 为准。只有 `G1-DR` 加载冻结索引；缺少时 `check` 会提示先运行
+`python scripts/experiment.py encode G1 --gpus N`。
 
 ## 输出
 

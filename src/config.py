@@ -160,14 +160,27 @@ class ModelArguments:
         default=True,
         metadata={"help": "Verify every frozen corpus artifact before training"},
     )
+    frozen_document_index_backend: str = field(
+        default="lookup",
+        metadata={"help": "Frozen index backend: lookup, torch, or faiss"},
+    )
+    frozen_document_search_batch_size: int = field(
+        default=1024,
+        metadata={"help": "Query batch size used by full-corpus index search"},
+    )
 
     def __post_init__(self) -> None:
         self.pooling_method = self.pooling_method.strip().lower()
         self.padding_side = self.padding_side.strip().lower()
         self.append_token = self.append_token.strip().lower()
         self.document_encoder_mode = self.document_encoder_mode.strip().lower()
+        self.frozen_document_index_backend = self.frozen_document_index_backend.strip().lower()
         if self.document_encoder_mode not in {"joint", "frozen_index"}:
             raise ValueError("document_encoder_mode must be joint or frozen_index")
+        if self.frozen_document_index_backend not in {"lookup", "torch", "faiss"}:
+            raise ValueError("frozen_document_index_backend must be lookup, torch, or faiss")
+        if self.frozen_document_search_batch_size <= 0:
+            raise ValueError("frozen_document_search_batch_size must be positive")
         if self.document_encoder_mode == "frozen_index" and not self.frozen_document_index_manifest:
             raise ValueError(
                 "frozen_document_index_manifest is required when document_encoder_mode=frozen_index"
@@ -398,6 +411,14 @@ class LoraArguments:
 
 @dataclass
 class RLArguments:
+    dynamic_retrieval: bool = field(
+        default=False,
+        metadata={"help": "Retrieve candidates from the frozen full corpus for every query action"},
+    )
+    dynamic_retrieval_k: int = field(
+        default=20,
+        metadata={"help": "Number of full-corpus results retrieved per sampled query action"},
+    )
     action_components: str = field(
         default="query",
         metadata={
@@ -583,6 +604,8 @@ class RLArguments:
     )
 
     def __post_init__(self) -> None:
+        if self.dynamic_retrieval_k <= 0:
+            raise ValueError("dynamic_retrieval_k must be positive")
         self.action_components = normalize_action_components(self.action_components)
         self.advantage_norm = normalize_advantage_norm_mode(self.advantage_norm)
         if self.sampling_law not in SUPPORTED_SAMPLING_LAWS:

@@ -55,7 +55,6 @@ python scripts/prepare_reasonrank.py --data-dir data/audit_reasonrank_bright --o
 `--dev-size` 和 `--split-seed` 只用于明确要求的非默认划分；`--compile-only` 只编译已有 public + metadata。
 原始数据、隔离清单和最终 ready 文件的职责分开，准备脚本拒绝覆盖已有输出目录。
 `--include-reasonrank-documents` 会额外下载 pinned `liuwenhan/reasonrank_data_13k` 的 `id_doc`
-映射。当前 G1 主对照和 RL 消融均使用 joint encoder，不需要构建冻结索引。`encode G1`
-仍可为每个训练 source 构建 `<G1.data>/reasonrank_frozen_document_indices/<source>/` 和路由
-manifest，索引、corpus、offset、document-ID 映射及 vector shards 均带 SHA256；该入口保留给
-尚未冻结设计的 full-corpus 动态检索扩展，不对应当前正式 run。
+映射。G1 主对照和 RL 消融不需要冻结索引；`G1-DR` 运行前必须执行 `encode G1`，为每个训练
+source 构建 `<G1.data>/reasonrank_frozen_document_indices/<source>/` 和路由 manifest。
+索引、corpus、offset、document-ID 映射及 vector shards 均带 SHA256。

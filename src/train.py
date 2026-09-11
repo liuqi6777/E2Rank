@@ -38,7 +38,7 @@ from fixed_corpus.index import (
     sha256_file,
     write_frozen_training_audit,
 )
-from fixed_corpus.models import FixedCorpusGRPOModel
+from fixed_corpus.models import DynamicRetrievalGRPOModel, FixedCorpusGRPOModel
 from embedding_protocol import save_embedding_protocol
 from utils import (
     BASE_CONFIG_SLOTS,
@@ -278,9 +278,10 @@ def load_frozen_document_index(
         return None
     index = load_frozen_index(
         model_args.frozen_document_index_manifest,
-        backend="lookup",
+        backend=model_args.frozen_document_index_backend,
         device=device,
         verify_hashes=model_args.frozen_document_verify_hashes,
+        search_batch_size=model_args.frozen_document_search_batch_size,
     )
     index.validate_protocol(
         model_name_or_path=model_args.model_name_or_path,
@@ -348,7 +349,16 @@ def main() -> None:
         model_args, backbone, data_args, training_args.device
     )
     frozen_hashes = frozen_index.artifact_hashes() if frozen_index is not None else None
-    model_class = FixedCorpusGRPOModel if frozen_index is not None else GRPOModel
+    if rl_args.dynamic_retrieval:
+        if frozen_index is None:
+            raise ValueError("dynamic_retrieval requires document_encoder_mode=frozen_index")
+        if model_args.frozen_document_index_backend == "lookup":
+            raise ValueError(
+                "dynamic_retrieval requires a searchable frozen index backend: torch or faiss"
+            )
+        model_class = DynamicRetrievalGRPOModel
+    else:
+        model_class = FixedCorpusGRPOModel if frozen_index is not None else GRPOModel
     model = model_class(
         model=backbone,
         **({"index": frozen_index} if frozen_index is not None else {}),
@@ -376,12 +386,13 @@ def main() -> None:
 
     # Both halves of this check live in different config slots -- the cutoff in reward/, the
     # slate in dataset/ -- so nothing else notices when a change to one invalidates the other.
-    for warning in warn_on_inert_cutoffs(
-        model.grpo.reward_terms,
-        slate_size=data_args.slate_size,
-        batch_size=training_args.per_device_train_batch_size,
-    ):
-        logger.warning(warning)
+    if not rl_args.dynamic_retrieval:
+        for warning in warn_on_inert_cutoffs(
+            model.grpo.reward_terms,
+            slate_size=data_args.slate_size,
+            batch_size=training_args.per_device_train_batch_size,
+        ):
+            logger.warning(warning)
 
     trainer = GRPOTrainer(
         model=model,
