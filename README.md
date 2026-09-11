@@ -89,6 +89,23 @@ bash eval_mteb/scripts/run_mteb.sh CHECKPOINT 'MTEB(eng, v2)' configs/model/qwen
 bash eval_mteb/scripts/run_mteb.sh CHECKPOINT BRIGHT configs/model/qwen3_embedding_0.6b.yaml
 ```
 
+G1-Q-* 的 BRIGHT 主结果必须使用 fixed-corpus 模式：checkpoint 只编码 query，E0 只编码
+passage。首次运行会为每个 BRIGHT subset 单独建立不可变 embedding index，后续 checkpoint
+复用同一目录；不能把 12 个 subset 的 corpus 合并搜索。
+
+```bash
+bash eval_mteb/scripts/run_mteb.sh CHECKPOINT BRIGHT \
+  configs/model/qwen3_embedding_0.6b.yaml \
+  --fixed_corpus_model Qwen/Qwen3-Embedding-0.6B \
+  --fixed_corpus_model_revision E0_COMMIT_SHA \
+  --fixed_corpus_index_dir data/eval/bright_qwen3_e0
+```
+
+`--fixed_corpus_model_revision` 应填写训练所用 E0 的 immutable commit SHA；未显式填写时，
+评测器会使用模型加载后解析出的 revision。每个 subset 的目录都包含 `index_manifest.json`
+和独立 shards；已完成索引的语料、顺序、分块或 E0 表示协议不匹配时会停止而不是重建。
+普通 joint-eval 与 fixed-corpus eval 使用不同结果标识，不会互相复用已有结果。
+
 BRIGHT 通过 MTEB 的 `BrightRetrieval` 任务运行，复用其官方数据加载、exact retrieval、
 nDCG@10 和结果格式；评测器会按 12 个领域分别应用 query instruction。已有同路径结果默认复用，
 需要重跑时在上述命令末尾添加 `--run_kwargs '{"overwrite_results":true}'`。

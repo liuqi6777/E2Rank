@@ -11,8 +11,10 @@ from transformers import HfArgumentParser
 
 try:
     from .qwen3_embedding_model import Qwen3Embedding
+    from .fixed_corpus_model import FixedCorpusMTEBModel
 except ImportError:
     from qwen3_embedding_model import Qwen3Embedding
+    from fixed_corpus_model import FixedCorpusMTEBModel
 
 from embedding_protocol import load_embedding_protocol, protocol_to_eval_kwargs
 from utils import load_raw_config_file
@@ -21,9 +23,9 @@ from utils import load_raw_config_file
 logging.basicConfig(
     format="%(levelname)s|%(asctime)s|%(name)s#%(lineno)s: %(message)s",
     datefmt="%Y/%m/%d %H:%M:%S",
-    level=logging.INFO
+    level=logging.INFO,
 )
-logger = logging.getLogger('run_mteb.py')
+logger = logging.getLogger("run_mteb.py")
 
 
 BRIGHT_TASK_NAME = "BrightRetrieval"
@@ -49,17 +51,21 @@ class EvalArguments:
     """
     Arguments.
     """
+
     model: Optional[str] = field(
         default=None,
-        metadata={"help": "Path to pretrained model or model identifier from huggingface.co/models"}
+        metadata={
+            "help": "Path to pretrained model or model identifier from huggingface.co/models"
+        },
     )
     model_name: Optional[str] = field(
-        default=None,
-        metadata={"help": "Model name for the save path"}
+        default=None, metadata={"help": "Model name for the save path"}
     )
     model_config: Optional[str] = field(
         default=None,
-        metadata={"help": "Optional repository model YAML carrying the embedding protocol"},
+        metadata={
+            "help": "Optional repository model YAML carrying the embedding protocol"
+        },
     )
     model_kwargs: Optional[str] = field(
         default=None,
@@ -74,23 +80,49 @@ class EvalArguments:
         metadata={"help": "The specific kwargs for `MTEB.run()`, json string."},
     )
 
-    output_dir: Optional[str] = field(default='results', metadata={"help": "output dir of results"})
+    output_dir: Optional[str] = field(
+        default="results", metadata={"help": "output dir of results"}
+    )
     benchmark: Optional[str] = field(default=None, metadata={"help": "Benchmark name"})
     tasks: Optional[str] = field(default=None, metadata={"help": "',' seprated"})
     langs: Optional[str] = field(default=None, metadata={"help": "',' seprated"})
     only_load: bool = field(default=False, metadata={"help": ""})
     load_model: bool = field(default=False, metadata={"help": "when only_load"})
 
-    batch_size: int = field(default=128, metadata={"help": "Will be set to `encode_kwargs`"})
-    precision: str = field(default='fp16', metadata={"help": "amp_fp16,amp_bf16,fp16,bf16,fp32"})
+    batch_size: int = field(
+        default=128, metadata={"help": "Will be set to `encode_kwargs`"}
+    )
+    precision: str = field(
+        default="fp16", metadata={"help": "amp_fp16,amp_bf16,fp16,bf16,fp32"}
+    )
+    fixed_corpus_model: Optional[str] = field(
+        default=None,
+        metadata={"help": "E0 document encoder for fixed-corpus BRIGHT evaluation"},
+    )
+    fixed_corpus_model_revision: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "Immutable E0 model revision; resolved revision is recorded in each index"
+        },
+    )
+    fixed_corpus_index_dir: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "Root containing one immutable embedding index per BRIGHT subset"
+        },
+    )
+    fixed_corpus_model_kwargs: Optional[str] = field(
+        default=None,
+        metadata={"help": "JSON kwargs for the E0 document encoder"},
+    )
 
     def __post_init__(self):
         if isinstance(self.tasks, str):
-            self.tasks = self.tasks.split(',')
+            self.tasks = self.tasks.split(",")
         if isinstance(self.langs, str):
-            self.langs = self.langs.split(',')
-        for name in ('model', 'encode', 'run'):
-            name = name + '_kwargs'
+            self.langs = self.langs.split(",")
+        for name in ("model", "encode", "run", "fixed_corpus_model"):
+            name = name + "_kwargs"
             attr = getattr(self, name)
             if attr is None:
                 setattr(self, name, dict())
@@ -98,7 +130,11 @@ class EvalArguments:
                 setattr(self, name, json.loads(attr))
 
 
-def get_tasks(names: list[str] | None, languages: list[str] | None = None, benchmark: str | None = None):
+def get_tasks(
+    names: list[str] | None,
+    languages: list[str] | None = None,
+    benchmark: str | None = None,
+):
     if benchmark:
         if benchmark == "MTEB(eng, v1, subset)":
             names = [
@@ -117,7 +153,7 @@ def get_tasks(names: list[str] | None, languages: list[str] | None = None, bench
                 "STS17",
                 "SICK-R",
                 "STSBenchmark",
-                "SummEval"
+                "SummEval",
             ]
             tasks = mteb.get_tasks(languages=languages, tasks=names)
             return tasks
@@ -127,13 +163,43 @@ def get_tasks(names: list[str] | None, languages: list[str] | None = None, bench
     return tasks
 
 
-def get_model(model_path: str, precision: str = 'fp16', **kwargs):
+def get_model(model_path: str, precision: str = "fp16", **kwargs):
     # Trained checkpoints carry this sidecar, so post-hoc evaluation cannot silently
     # fall back to the Qwen pooling/prompt protocol. Explicit CLI kwargs still win.
     protocol_kwargs = protocol_to_eval_kwargs(load_embedding_protocol(model_path))
     protocol_kwargs.update(kwargs)
     model = Qwen3Embedding(model_path, precision=precision, **protocol_kwargs)
     return model
+
+
+def _model_config_eval_kwargs(path: str) -> dict[str, object]:
+    raw_model_config = load_raw_config_file(path)
+    protocol = {
+        key: raw_model_config[key]
+        for key in (
+            "pooling_method",
+            "padding_side",
+            "append_token",
+            "query_prompt_template",
+            "document_prompt_template",
+        )
+        if key in raw_model_config
+    }
+    missing = {
+        "pooling_method",
+        "padding_side",
+        "append_token",
+        "query_prompt_template",
+        "document_prompt_template",
+    } - protocol.keys()
+    if missing:
+        raise ValueError(
+            f"model_config {path!r} is missing embedding protocol fields: "
+            f"{sorted(missing)}"
+        )
+    protocol["normalize"] = True
+    protocol["max_length"] = raw_model_config.get("embedding_max_length", 8192)
+    return protocol_to_eval_kwargs(protocol)
 
 
 class _InstructionOverrideModel:
@@ -170,7 +236,9 @@ def run_bright(task, model, args, **kwargs):
     exact retrieval, metrics, result merging, and on-disk schema.
     """
     if args.output_dir is None:
-        raise ValueError("BRIGHT evaluation requires output_dir to merge domain results")
+        raise ValueError(
+            "BRIGHT evaluation requires output_dir to merge domain results"
+        )
 
     run_kwargs = dict(kwargs)
     official_subsets = list(task.metadata.eval_langs)
@@ -208,15 +276,25 @@ def run_bright(task, model, args, **kwargs):
     final_result = None
     for subset in requested_subsets:
         logger.info("Evaluating BRIGHT subset %s", subset)
+        manages_fixed_corpus = hasattr(model, "begin_corpus_subset")
+        if manages_fixed_corpus:
+            model.begin_corpus_subset(subset)
         evaluation = mteb.MTEB(tasks=[task])
-        results = evaluation.run(
-            _InstructionOverrideModel(model, BRIGHT_INSTRUCTIONS[subset]),
-            output_folder=args.output_dir,
-            encode_kwargs=args.encode_kwargs or {},
-            eval_splits=[BRIGHT_SPLIT],
-            eval_subsets=[subset],
-            **run_kwargs,
-        )
+        try:
+            results = evaluation.run(
+                _InstructionOverrideModel(model, BRIGHT_INSTRUCTIONS[subset]),
+                output_folder=args.output_dir,
+                encode_kwargs=args.encode_kwargs or {},
+                eval_splits=[BRIGHT_SPLIT],
+                eval_subsets=[subset],
+                **run_kwargs,
+            )
+        except Exception:
+            if manages_fixed_corpus:
+                model.cancel_corpus_subset()
+            raise
+        if manages_fixed_corpus:
+            model.finish_corpus_subset()
         if not results:
             raise RuntimeError(f"MTEB returned no result for BRIGHT subset {subset!r}")
         final_result = results[0]
@@ -224,7 +302,9 @@ def run_bright(task, model, args, **kwargs):
     completed_subsets = _bright_result_subsets(final_result)
     missing_subsets = sorted(set(requested_subsets) - completed_subsets)
     if missing_subsets:
-        raise RuntimeError(f"BRIGHT result is missing evaluated subsets: {missing_subsets}")
+        raise RuntimeError(
+            f"BRIGHT result is missing evaluated subsets: {missing_subsets}"
+        )
     return [final_result]
 
 
@@ -236,7 +316,7 @@ def run_eval(model, tasks: list, args: EvalArguments, **kwargs):
     all_results = []
 
     _num_gpus, _started = torch.cuda.device_count(), False
-    if _num_gpus > 1 and not _started and hasattr(model, 'start'):
+    if _num_gpus > 1 and not _started and hasattr(model, "start"):
         model.start()
         _started = True
 
@@ -252,14 +332,16 @@ def run_eval(model, tasks: list, args: EvalArguments, **kwargs):
                     model,
                     output_folder=args.output_dir,
                     encode_kwargs=encode_kwargs,
-                    **kwargs
+                    **kwargs,
                 )
             except Exception as e:
-                logger.warning(f'meet error when running task: {t.metadata.name}. {str(e)}')
+                logger.warning(
+                    f"meet error when running task: {t.metadata.name}. {str(e)}"
+                )
                 continue
             all_results.extend(results or [])
     finally:
-        if model is not None and _started and hasattr(model, 'stop'):
+        if model is not None and _started and hasattr(model, "stop"):
             model.stop()
     return all_results
 
@@ -279,54 +361,71 @@ def main():
         logger.warning(f"Args {args}")
     del parser
 
+    config_kwargs = None
     if args.model_config:
-        raw_model_config = load_raw_config_file(args.model_config)
-        protocol = {
-            key: raw_model_config[key]
-            for key in (
-                "pooling_method",
-                "padding_side",
-                "append_token",
-                "query_prompt_template",
-                "document_prompt_template",
-            )
-            if key in raw_model_config
-        }
-        missing = {
-            "pooling_method",
-            "padding_side",
-            "append_token",
-            "query_prompt_template",
-            "document_prompt_template",
-        } - protocol.keys()
-        if missing:
-            raise ValueError(
-                f"model_config {args.model_config!r} is missing embedding protocol fields: "
-                f"{sorted(missing)}"
-            )
-        protocol["normalize"] = True
-        protocol["max_length"] = raw_model_config.get("embedding_max_length", 8192)
-        config_kwargs = protocol_to_eval_kwargs(protocol)
+        config_kwargs = _model_config_eval_kwargs(args.model_config)
         config_kwargs.update(args.model_kwargs)
         args.model_kwargs = config_kwargs
 
     tasks = get_tasks(args.tasks, args.langs, args.benchmark)
+    if args.fixed_corpus_model:
+        if not args.fixed_corpus_index_dir:
+            raise ValueError(
+                "--fixed_corpus_index_dir is required with --fixed_corpus_model"
+            )
+        non_bright = [
+            task.metadata.name
+            for task in tasks
+            if task.metadata.name != BRIGHT_TASK_NAME
+        ]
+        if non_bright:
+            raise ValueError(
+                "Fixed-corpus evaluation is currently defined only for BrightRetrieval; "
+                f"got additional tasks: {non_bright}"
+            )
+    elif (
+        args.fixed_corpus_index_dir
+        or args.fixed_corpus_model_revision
+        or args.fixed_corpus_model_kwargs
+    ):
+        raise ValueError(
+            "--fixed_corpus_model is required when fixed-corpus options are supplied"
+        )
     # print('args.model_kwargs', args.model_kwargs)
-    logger.warning(f"Selected {len(tasks)} tasks:\n" + '\n'.join(str(t) for t in tasks))
+    logger.warning(f"Selected {len(tasks)} tasks:\n" + "\n".join(str(t) for t in tasks))
     if args.only_load:
         for t in tasks:
             logger.warning(f"Loading {t}")
             try:
                 t.load_data()
             except Exception as e:
-                logger.warning(f'meet error when loading task: {t.metadata.name}. {str(e)}')
+                logger.warning(
+                    f"meet error when loading task: {t.metadata.name}. {str(e)}"
+                )
                 # t.load_data(force_download=True)
             else:
                 continue
-            
+
         if not args.load_model:
             return
     model = get_model(args.model, precision=args.precision, **args.model_kwargs)
+    if args.fixed_corpus_model:
+        corpus_kwargs = dict(config_kwargs or {})
+        corpus_kwargs.update(args.fixed_corpus_model_kwargs)
+        if args.fixed_corpus_model_revision:
+            corpus_kwargs["revision"] = args.fixed_corpus_model_revision
+        corpus_model = get_model(
+            args.fixed_corpus_model,
+            precision=args.precision,
+            **corpus_kwargs,
+        )
+        model = FixedCorpusMTEBModel(
+            model,
+            corpus_model,
+            index_dir=args.fixed_corpus_index_dir,
+            corpus_model_name_or_path=args.fixed_corpus_model,
+            task_name=BRIGHT_TASK_NAME,
+        )
     if args.only_load:
         return
 
@@ -336,5 +435,5 @@ def main():
     return
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
