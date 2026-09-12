@@ -5,8 +5,12 @@ action_components:
 group_size: 32
 kappa: 755
 sigma_learnable: false
-advantage_norm: per_component
+advantage_norm: none
 sampling_law: vmf
 rollout: product
 frozen_doc_rescale: true
-advantage_baseline: group
+advantage_baseline: leave_one_out
+document_log_prob_reduction: sum
+target_alignment: null
+final_alignment: null
+exploration_schedule: fixed

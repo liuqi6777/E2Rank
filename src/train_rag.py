@@ -42,6 +42,9 @@ RAG_CONFIG_SLOTS = ("train", "model", "rag")
 
 
 class RAGTrainer(EmbeddingTrainerMixin, HFTrainer):
+    def _extra_train_metrics(self, outputs):
+        return self._output_field(outputs, "exploration_metrics") or {}
+
     train_metric_names = ("reward_mean", "reward_std", "degenerate_fraction")
     train_metric_log_names = {
         "reward_mean": "reward/mean",
@@ -233,6 +236,12 @@ def main() -> None:
             generator=generator,
             generator_top_k=generator_args.rag_generator_top_k,
             normalize_advantages=reward_args.rag_advantage_normalize,
+            advantage_baseline=reward_args.rag_advantage_baseline,
+            advantage_norm=reward_args.rag_advantage_norm,
+            advantage_baseline_momentum=reward_args.rag_advantage_baseline_momentum,
+            target_alignment=reward_args.rag_target_alignment,
+            final_alignment=reward_args.rag_final_alignment,
+            exploration_schedule=reward_args.rag_exploration_schedule,
         )
     model.train()
     apply_gradient_checkpointing(model, training_args, lora_args)
@@ -254,6 +263,8 @@ def main() -> None:
     if not training_args.overwrite_output_dir and os.path.isdir(training_args.output_dir):
         resume_checkpoint = get_last_checkpoint(training_args.output_dir)
 
+    from grpo_trainer import restore_exploration_state
+    restore_exploration_state(model, resume_checkpoint)
     trainer = RAGTrainer(
         model=model,
         processing_class=tokenizer,

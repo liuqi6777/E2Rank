@@ -77,18 +77,21 @@ projected-Gaussian 采样替代 vMF。
 
 ## 实验行与依赖
 
-共 23 个逻辑行：21 个训练执行、2 个 E0 评测。
+共 28 个逻辑行：**22 个核心训练、4 个可选训练、2 个 E0 评测**。
+仅增加探索成对对照时为 24 次训练；四项可选全部运行时为 26 次。
 
-- G1：四个 `J` run 是 joint 主对照；`A-QPolicy`、`A-DPolicy`、`A-Gaussion`、`A-Binary`、
-  `A-Paired`、`A-Cal` 以 `G1-J-RL` 为控制；`A-MRR` 以 `A-Binary` 为直接控制，仅比较
-  binary nDCG/MRR。
+- G1：四个 `J` run 是主对照；新增 `A-Norm`、`A-DocMean`、`A-NormDocMean` 与 `J-RL`
+  组成相同 leave-one-out baseline 的标准化 × 文档权重 2×2。
+  `A-Paired`、`A-QPolicy`、`A-DPolicy`、`A-Cal`、`A-Binary` 是其余五个核心消融。
   `G1-DR` 是独立的 full-corpus 动态检索行。
+  `A-Anneal` / `A-FixedSmall` 为成对可选对照；`A-Gaussion` / `A-MRR` 也为可选，
+  MRR 直接比较 Binary，其余行复用主 RL 为控制。
 - G2：`D` 从初始 LLM 训练；`W` 从 `G2-D-CL-s42/` 最终模型重新训练。
   D-CL 训练 1200 步，W-CL/LL/RL 各新建 optimizer/scheduler 和数据迭代，再训练 1200 步。
   W-CL 是独立训练行，不复用 D-CL；只加载模型权重，不恢复 trainer 状态。
 - G3：从 E0 开始，比较 CL、检索 RL、答案 RL；不自动采用其他组的最优 checkpoint。
 
-当前 G1 joint CL / RN / LL / RL 与七个 RL 消融均已接入。
+当前 G1 joint CL / RN / LL / RL、八个核心 RL 消融和四个可选 RL 消融均已注册。
 LL 固定为 LambdaRank variant：pairwise logistic 乘当前排序交换产生的 `|ΔnDCG@10|`，
 使用 `gain=2^rel-1` 和 sigma 1.0。`G1-A-QPolicy` 仍使用 joint encoder，只将 RL action
 限制为 query；`G1-A-DPolicy` 则仅采样 positive/negative document slots。二者都不是冻结
@@ -104,6 +107,36 @@ G3 的监督 CL 使用离线候选；RL action 动态检索冻结的完整 corpu
 
 运行时以 `check RUN` 为准。只有 `G1-DR` 加载冻结索引；缺少时 `check` 会提示先运行
 `python scripts/experiment.py encode G1 --gpus N`。
+
+## 推荐执行顺序
+
+`list` 按 suite 的 `execution_stages` 排序，并显示 `core` / `optional` / `reference` 与 stage；
+`show RUN` 同时显示阶段名称。阶段是建议次序，不会自动串行执行、等待、创建依赖或启动训练。
+`control` 表示比较对象，只有 `init_from` 表示模型权重依赖。就绪检查仍以实际数据/实现/输出状态为准。
+
+| Stage | 建议顺序 | 核心训练数 |
+|---|---|---:|
+| 0 | G1-E0，复用原始模型评测 | 0 |
+| 1 | G1-J-LL → G1-J-RL → G1-J-CL → G1-J-RN | 4 |
+| 2 | G1-A-Norm → G1-A-DocMean → G1-A-NormDocMean | 3 |
+| 3 | G1-A-Paired → G1-A-QPolicy → G1-A-DPolicy → G1-A-Cal → G1-A-Binary | 5 |
+| 4 | G2-D-CL → D-LL / D-RL / W-LL / W-RL / W-CL | 6 |
+| 5 | 索引就绪后 G1-DR | 1 |
+| 6 | G3-E0 → G3-CL → G3-AnsRL → G3-RetRL；先解决对应 blocker | 3 |
+| 7 | 可选：Anneal + FixedSmall，然后 Gaussian mismatch / MRR | 0（另计最多 4） |
+
+第一批优先完成 stage 1–2 共 7 次训练，得到同标签主对照与完整 2×2。
+G2 的 W 系列只依赖 D-CL 的最终模型；D-CL 就绪后这些分支可以独立安排。
+G2-D-CL 或索引/QA 准备可与独立 G1 运行重叠；顺序不增加人为的硬依赖。
+所有正式消融从 E0 初始化，不从主 RL 的最终模型继续训练。主结果只复用为控制。
+
+四格仅改变 `advantage_norm` 与 `document_log_prob_reduction`，其余配置一致；
+`NormDocMean` 不是旧版完整复现，因为它仍使用 leave-one-out。
+可选 Anneal 起点使用当前 1024 维模型的 `A(755)=0.5302373892742263`，终点为 0.80；
+FixedSmall 全程固定 0.80。命名行已显式设置参数，覆盖公共配置中的调度值，且限定当前模型。
+若改变主方法的探索或初始化，应重新声明整套对照，不能沿用原有可比性解释。
+两个可选探索结果必须一起报告，不能用其中表现更好的配方替换预定主方法。
+最终测试分数不用于选择训练顺序、预算、checkpoint 或消融保留范围。
 
 ## 输出
 
@@ -146,3 +179,30 @@ G2 读取 `data/train.jsonl`，全量训练。每个 G2 训练行成功保存最
 完整的 `MTEB(eng, v2)`，输出到该模型目录的 `mteb_eval/final/`；不会在训练前或中间 checkpoint
 重复运行，任一 MTEB 任务失败则整个命令返回失败。当前本地尚缺该文件。
 先运行 D-CL，再分别启动 W-CL/LL/RL；入口不会隐式训练依赖。
+
+
+## 第一轮方法修订（2026-09-12）
+
+Embedding RL 主配置现为 leave-one-out baseline、不做 advantage normalization、文档 log-density 求和。
+固定索引与 RAG 使用相同 baseline 语义；query-only 不存在文档权重。
+`configs/grpo/legacy.yaml` 保留旧版配置；`configs/grpo/annealed.yaml` 是底层独立调度预设。
+默认 κ=755 保持不变。可在公共 `configs/experiments.yaml` 的某个组中显式添加：
+
+```yaml
+target_alignment: 0.53
+final_alignment: 0.80
+exploration_schedule: linear
+```
+
+这些值仅传入 RL 行；G3 自动映射为 `rag_*` 参数。该配方是预定示例，未经效果验证。
+Alignment 优先于 κ，按实际 embedding 维度反解；线性调度从第一次更新到最后一次更新收缩探索。
+它只支持 exact vMF，不能同时用于 G1-A-Gaussion 或 learnable sigma；Gaussian 消融应保持固定 κ。
+对单条 run 的调度可在 suite 的该 run `overrides` 中声明，避免改变整组。
+改变策略配方应使用新的 output_dir。新版 checkpoint 中的 `exploration_state.json` 校验估计器与调度配置；
+旧 checkpoint 缺少新版契约时不会被静默作为新版续训。Trainer 恢复的 global_step/max_steps 控制后续调度，
+不会在每个 accumulation microbatch 推进。
+
+日志中 `exploration/kappa` 和 `exploration/mean_alignment` 描述采样分布；joint 路径另记录
+`exploration/own_boundary_pairs` 与 `exploration/own_boundary_flip_rate`。后者只涵盖 own-list 的
+不同 grade、非平局且涉及 top-K 的相邻比较，不应解释为完整 corpus 或答案变化率。
+不归一化时近退化统计仍有效，但非零 advantage 不会被日志阈值截断。

@@ -21,7 +21,7 @@ SUPPORTED_ACTION_COMPONENTS = {"query", "positive", "negative"}
 
 SUPPORTED_ADVANTAGE_NORM_MODES = ("per_component", "shared", "none")
 
-SUPPORTED_ADVANTAGE_BASELINES = ("group", "ema")
+SUPPORTED_ADVANTAGE_BASELINES = ("group", "leave_one_out", "ema")
 
 SUPPORTED_SAMPLING_LAWS = ("vmf", "gaussian")
 
@@ -448,12 +448,16 @@ class RLArguments:
         default=None,
         metadata={
             "help": (
-                "vMF concentration override. When set, sigma is derived as 1/sqrt(kappa). "
+                "vMF concentration override (unless target_alignment is set). sigma = 1/sqrt(kappa). "
                 "E.g. kappa=755 matches the sampling concentration (mean cosine 0.53 at d=1024) "
                 "of the legacy projected-Gaussian sampler with sigma=0.05."
             )
         },
     )
+    target_alignment: Optional[float] = field(default=None, metadata={"help": "Target vMF mean cosine; overrides kappa using the actual embedding dimension"})
+    final_alignment: Optional[float] = field(default=None, metadata={"help": "Final mean cosine for linear exploration shrinkage"})
+    exploration_schedule: str = field(default="fixed", metadata={"help": "fixed or linear, indexed by optimizer steps"})
+    document_log_prob_reduction: str = field(default="sum", metadata={"help": "sum is the joint policy density; mean applies legacy 1/n role weighting"})
     sigma_learnable: bool = field(
         default=False,
         metadata={"help": "Learn a global sigma scalar for GRPO"},
@@ -529,7 +533,7 @@ class RLArguments:
         metadata={"help": "Temperature used by the contrastive/infonce reward"},
     )
     advantage_norm: str = field(
-        default="per_component",
+        default="none",
         metadata={
             "help": (
                 "Advantage normalization: 'per_component' divides each component's group by its own "
@@ -572,10 +576,10 @@ class RLArguments:
         },
     )
     advantage_baseline: str = field(
-        default="group",
+        default="leave_one_out",
         metadata={
             "help": (
-                "Baseline subtracted from rewards. 'group' is GRPO's per-input group mean; "
+                "Baseline: 'leave_one_out' excludes the current action; 'group' is the group mean; "
                 "'ema' is a single global exponential-moving-average scalar, which reduces the "
                 "method to REINFORCE with a running baseline and exists as an ablation."
             )
@@ -607,6 +611,12 @@ class RLArguments:
     )
 
     def __post_init__(self) -> None:
+        from policy_math import validate_exploration
+        validate_exploration(self.target_alignment, self.final_alignment, self.exploration_schedule)
+        if self.document_log_prob_reduction not in {"sum", "mean"}:
+            raise ValueError("document_log_prob_reduction must be sum or mean")
+        if self.target_alignment is not None and (self.sigma_learnable or self.sampling_law != "vmf"):
+            raise ValueError("Alignment-based exploration requires vMF with sigma_learnable=false")
         if self.dynamic_retrieval_k <= 0:
             raise ValueError("dynamic_retrieval_k must be positive")
         self.action_components = normalize_action_components(self.action_components)

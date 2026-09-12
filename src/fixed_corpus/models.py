@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from types import SimpleNamespace
 from typing import Any
 
 import torch
@@ -324,6 +323,10 @@ class FixedCorpusGRPOModel(QueryEncoderMixin, nn.Module):
             group_size=rl_args.group_size,
             sigma=rl_args.sigma,
             kappa=rl_args.kappa,
+            target_alignment=rl_args.target_alignment,
+            final_alignment=rl_args.final_alignment,
+            exploration_schedule=rl_args.exploration_schedule,
+            document_log_prob_reduction=rl_args.document_log_prob_reduction,
             sigma_learnable=rl_args.sigma_learnable,
             sigma_min=rl_args.sigma_min,
             sigma_max=rl_args.sigma_max,
@@ -403,9 +406,9 @@ class DynamicRetrievalGRPOModel(QueryOnlyRLWrapper):
         if tuple(rl_args.action_components) != (("query",),):
             raise ValueError("Dynamic retrieval requires action_components=[[query]]")
         if rl_args.sampling_law != "vmf" or rl_args.sigma_learnable:
-            raise ValueError("Dynamic retrieval currently requires fixed-kappa vMF sampling")
-        if rl_args.advantage_baseline != "group" or rl_args.kl_coef != 0:
-            raise ValueError("Dynamic retrieval currently requires group baseline and kl_coef=0")
+            raise ValueError("Dynamic retrieval requires vMF with non-learnable concentration")
+        if rl_args.kl_coef != 0:
+            raise ValueError("Dynamic retrieval currently requires kl_coef=0")
         if len(rl_args.reward_terms) != 1 or rl_args.reward_terms[0].type != "ndcg":
             raise ValueError("G1 dynamic retrieval requires one nDCG reward term")
         if rl_args.reward_terms[0].weight != 1.0:
@@ -424,15 +427,14 @@ class DynamicRetrievalGRPOModel(QueryOnlyRLWrapper):
             group_size=rl_args.group_size,
             kappa=kappa,
             pooling_method=pooling_method,
-            normalize_advantages=rl_args.advantage_norm != "none",
+            advantage_baseline=rl_args.advantage_baseline,
+            advantage_norm=rl_args.advantage_norm,
+            advantage_baseline_momentum=rl_args.advantage_baseline_momentum,
+            target_alignment=rl_args.target_alignment,
+            final_alignment=rl_args.final_alignment,
+            exploration_schedule=rl_args.exploration_schedule,
         )
-        # GRPOTrainer only uses these immutable fields for resume/save plumbing.
-        self.grpo = SimpleNamespace(
-            reward_terms=rl_args.reward_terms,
-            sigma_learnable=False,
-            advantage_baseline="group",
-        )
-        self.sigma = float(rl_args.sigma)
+        self.policy.reward_terms = rl_args.reward_terms
 
     @staticmethod
     def _summary(values: Tensor, prefix: str) -> dict[str, Tensor]:
@@ -471,6 +473,7 @@ class DynamicRetrievalGRPOModel(QueryOnlyRLWrapper):
             **reward_stats,
             **advantage_stats,
             advantages_degenerate_frac=output.degenerate_fraction,
-            sigma=output.loss.new_tensor(self.sigma),
+            sigma=output.loss.new_tensor(self.policy.kappa**-0.5),
+            reward_terms=self.policy.exploration_metrics(),
             kl=zero,
         )

@@ -10,6 +10,8 @@ from torch import Tensor, nn
 from transformers import PreTrainedModel
 from transformers.file_utils import ModelOutput
 
+from policy_math import ExplorationSchedule, group_advantages, mean_alignment
+
 from config import (
     SUPPORTED_ADVANTAGE_BASELINES,
     SUPPORTED_ROLLOUTS,
@@ -206,15 +208,19 @@ class GRPO(nn.Module):
         ndcg_in_batch_include_negatives: bool = False,
         contrastive_use_in_batch_negatives: bool = False,
         contrastive_temperature: float = 0.03,
-        advantage_norm: str | bool = "per_component",
+        advantage_norm: str | bool = "none",
         sampling_law: str = "vmf",
         rollout: str = "product",
         frozen_doc_rescale: bool = True,
-        advantage_baseline: str = "group",
+        advantage_baseline: str = "leave_one_out",
         advantage_baseline_momentum: float = 0.99,
         in_batch_use_sampled_documents: bool = False,
         kl_coef: float = 0.0,
         reward_rbo_p: float = 0.9,
+        document_log_prob_reduction: str = "sum",
+        target_alignment: float | None = None,
+        final_alignment: float | None = None,
+        exploration_schedule: str = "fixed",
     ):
         super().__init__()
         reward_type = reward_type.lower()
@@ -273,6 +279,12 @@ class GRPO(nn.Module):
                     f"Initial sigma {sigma} must lie within the learnable bounds [{sigma_min}, {sigma_max}]"
                 )
 
+        self.exploration = ExplorationSchedule(kappa if kappa is not None else sigma**-2, target_alignment, final_alignment, exploration_schedule)
+        if target_alignment is not None and (sigma_learnable or sampling_law != "vmf"):
+            raise ValueError("Alignment-based exploration requires non-learnable vMF")
+        if document_log_prob_reduction not in {"sum", "mean"}:
+            raise ValueError("document_log_prob_reduction must be sum or mean")
+        self.document_log_prob_reduction = document_log_prob_reduction
         self.action_components = action_components
         self.sample_query = any(group == ("query",) for group in action_components)
         self.sample_positive = any("positive" in group for group in action_components)
@@ -377,9 +389,11 @@ class GRPO(nn.Module):
         """
         batch_mean = component_rewards.detach().mean()
         if not bool(self.reward_baseline_initialized):
-            self.reward_baseline.copy_(batch_mean)
-            self.reward_baseline_initialized.fill_(True)
-            return self.reward_baseline.clone()
+            baseline = self.reward_baseline.clone()
+            if self.training:
+                self.reward_baseline.copy_(batch_mean)
+                self.reward_baseline_initialized.fill_(True)
+            return baseline
 
         baseline = self.reward_baseline.clone()
         if self.training:
@@ -391,40 +405,13 @@ class GRPO(nn.Module):
         self,
         component_rewards: torch.Tensor,
         shared_std: torch.Tensor | None = None,
+        external_baseline: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        # Promote to fp32: bf16 round-off in mean/std introduces a systematic, distribution-
-        # dependent bias in the normalized advantages (especially after marginalization).
-        component_rewards = component_rewards.float()
-        if self.advantage_baseline == "ema":
-            advantages = component_rewards - self._current_reward_baseline(component_rewards)
-        else:
-            advantages = component_rewards - component_rewards.mean(dim=1, keepdim=True)
-        batch_size = component_rewards.size(0)
-        if self.advantage_norm == "none":
-            degenerate_mask = torch.zeros(batch_size, device=component_rewards.device, dtype=torch.bool)
-            return advantages, degenerate_mask
-
-        # 'per_component' rescales each component's group to unit std, which equalizes gradient
-        # magnitudes across components regardless of their true effect sizes; 'shared' divides all
-        # components by the per-sample std of the raw reward tensor instead, preserving the
-        # relative first-order effects of query vs. document perturbations.
-        std = shared_std if shared_std is not None else advantages.std(dim=1, keepdim=True, unbiased=False)
-        # Scale-aware threshold: rewards range from nDCG in [0, 1] to contrastive margins of a
-        # very different magnitude, so a fixed absolute cutoff means something different for each.
-        # clamp_min(1) keeps this identical to the old absolute 1e-4 for bounded rewards.
-        reward_scale = component_rewards.abs().mean(dim=1, keepdim=True).clamp_min(1.0)
-        is_degenerate = std <= 1e-4 * reward_scale
-        if self.advantage_baseline == "ema":
-            # Under a global baseline a zero-spread group is NOT signal-free: every rollout can
-            # be uniformly better than the running baseline. Zeroing it would discard a real
-            # gradient, so only guard the division.
-            advantages = advantages / std.clamp_min(1e-4 * reward_scale)
-        else:
-            # Degenerate groups (all rollouts gave the same reward) carry no learning signal;
-            # zero them out instead of dividing by a near-zero std and amplifying noise.
-            advantages = torch.where(~is_degenerate, advantages / std, torch.zeros_like(advantages))
-        degenerate_mask = is_degenerate.reshape(batch_size, -1).any(dim=-1)
-        return advantages, degenerate_mask
+        baseline = external_baseline
+        if self.advantage_baseline == "ema" and baseline is None:
+            baseline = self._current_reward_baseline(component_rewards.float())
+        return group_advantages(component_rewards, self.advantage_baseline,
+                                self.advantage_norm, shared_std, baseline)
 
     def _draw(self, mean_directions: torch.Tensor, kappa: torch.Tensor) -> torch.Tensor:
         if self.sampling_law == "gaussian":
@@ -495,15 +482,9 @@ class GRPO(nn.Module):
             sampled_document_embeddings.detach().float() * policy_document_embeddings.float().unsqueeze(1)
         ).sum(dim=-1)
         log_prob = kappa.float() * cosine
-        # The exact product-policy log-prob is the SUM over slate documents; we average instead,
-        # which rescales the slate-side gradient by 1/slate_length and keeps its magnitude
-        # comparable across slate sizes.
-        if document_mask is None:
-            return log_prob.mean(dim=-1)
-
-        mask = document_mask.unsqueeze(1).to(dtype=log_prob.dtype)
-        num_documents = mask.sum(dim=-1).clamp_min(1.0)
-        return (log_prob * mask).sum(dim=-1) / num_documents
+        if document_mask is not None:
+            log_prob = log_prob * document_mask.unsqueeze(1).to(log_prob.dtype)
+        return log_prob.sum(dim=-1)
 
     @staticmethod
     def _resolve_group_size(active_components: Sequence[_ActionComponent]) -> int:
@@ -803,6 +784,8 @@ class GRPO(nn.Module):
             else:
                 shared_stds.append(None)
 
+        # Snapshot once: the document baseline must not include this batch's query rewards.
+        ema_baseline = self._current_reward_baseline(rewards) if self.advantage_baseline == "ema" else None
         losses = []
         advantages = []
         degenerate_masks = []
@@ -819,7 +802,7 @@ class GRPO(nn.Module):
             for (input_name, weight, reward_tensor), shared_std in zip(advantage_inputs, shared_stds):
                 component_rewards = reward_tensor.mean(dim=other_dims) if other_dims else reward_tensor
                 term_advantages, term_degenerate = self._compute_advantages(
-                    component_rewards, shared_std=shared_std
+                    component_rewards, shared_std=shared_std, external_baseline=ema_baseline
                 )
                 if weight != 1.0:
                     term_advantages = term_advantages * weight
@@ -841,13 +824,42 @@ class GRPO(nn.Module):
                     .std(dim=-1, unbiased=False).mean()
                 )
                 axis_stats[f"{axis_prefix}/degenerate_frac"] = term_degenerate.detach().float().mean()
-            losses.append(-(component_advantages.detach() * log_prob).mean())
+            weighted_log_prob = log_prob
+            component = active_components[component_index]
+            if component.role == "document" and self.document_log_prob_reduction == "mean":
+                if component.document_mask is None:
+                    count = log_prob.new_full((batch_size, 1), component.policy_embeddings.size(1))
+                else:
+                    count = component.document_mask.sum(-1, keepdim=True).clamp_min(1)
+                weighted_log_prob = log_prob / count
+            losses.append(-(component_advantages.detach() * weighted_log_prob).mean())
             advantages.append(component_advantages)
 
         # Fraction of (batch-element, component, reward-term) rows whose reward variance
-        # collapsed. These rows received zero advantage and contributed no learning signal.
+        # is near zero. This diagnostic never thresholds an unnormalized advantage.
         degenerate_frac = torch.cat(degenerate_masks).float().mean()
         reward_stats = self.summarize_tensor(rewards, prefix="reward")
+        with torch.no_grad():
+            means = torch.cat([c.rollout_embeddings for c in document_components], dim=1)
+            deterministic = torch.einsum("bd,bnd->bn", query_component.rollout_embeddings.float(), means.float())
+            valid = torch.ones_like(relevance_labels, dtype=torch.bool) if candidate_mask is None else candidate_mask.bool()
+            order = deterministic.masked_fill(~valid, -torch.inf).argsort(dim=-1, descending=True)
+            grades = relevance_labels.gather(1, order)
+            ordered_valid = valid.gather(1, order)
+            ordered_mean = deterministic.gather(1, order)
+            cutoff = min(self.reward_ndcg_k, max(means.size(1)-1, 0))
+            eligible = (ordered_valid[:, :-1] & ordered_valid[:, 1:]
+                        & (grades[:, :-1] != grades[:, 1:])
+                        & ((ordered_mean[:, :-1] - ordered_mean[:, 1:]).abs() > 1e-8))
+            eligible[:, cutoff:] = False
+            sampled = scores.reshape(batch_size, -1, means.size(1))
+            ordered = sampled.gather(-1, order.unsqueeze(1).expand_as(sampled))
+            flips = ordered[:, :, :-1] < ordered[:, :, 1:]
+            count = eligible.sum()
+            reward_stats["exploration/own_boundary_pairs"] = count.float() / batch_size
+            reward_stats["exploration/own_boundary_flip_rate"] = (
+                (flips & eligible.unsqueeze(1)).sum().float() / (count * sampled.size(1)).clamp_min(1))
+
         reward_stats.update(axis_stats)
         # How many distinct values the reward resolves per group. Emitted for every term,
         # including single-term runs, because comparing this between two candidate pools is how
@@ -988,6 +1000,9 @@ class GRPO(nn.Module):
         # sigma stays in fp32; kappa is a differentiable function of log_sigma when learnable,
         # so the vMF log-prob term kappa * h^T e carries the exploration-scale gradient.
         sigma = self.current_sigma(device=rollout_query_embeddings.device, dtype=torch.float32)
+        if not self.sigma_learnable:
+            kappa_value = self.exploration.resolve(rollout_query_embeddings.size(-1))
+            sigma = sigma.new_tensor(kappa_value**-0.5)
         kappa = sigma.pow(-2)
         components = []
         if self.sample_query:
@@ -1112,6 +1127,11 @@ class GRPO(nn.Module):
                 kl = torch.stack(kl_terms).sum()
                 loss = loss + self.kl_coef * kl
 
+        reward_stats["exploration/kappa"] = kappa.detach()
+        reward_stats["exploration/mean_alignment"] = kappa.new_tensor(
+            mean_alignment(rollout_query_embeddings.size(-1), float(kappa.detach()))
+            if self.sampling_law == "vmf" else projected_gaussian_mean_alignment(
+                float(sigma.detach()), rollout_query_embeddings.size(-1)))
         advantage_stats = self.summarize_tensor(advantages, prefix="advantages")
         advantage_stats["advantages_degenerate_frac"] = degenerate_frac.detach()
         return loss, reward_stats, advantage_stats, sigma.detach(), kl.detach()
@@ -1133,6 +1153,10 @@ class GRPOModel(nn.Module):
             group_size=rl_args.group_size,
             sigma=rl_args.sigma,
             kappa=rl_args.kappa,
+            target_alignment=rl_args.target_alignment,
+            final_alignment=rl_args.final_alignment,
+            exploration_schedule=rl_args.exploration_schedule,
+            document_log_prob_reduction=rl_args.document_log_prob_reduction,
             sigma_learnable=rl_args.sigma_learnable,
             sigma_min=rl_args.sigma_min,
             sigma_max=rl_args.sigma_max,

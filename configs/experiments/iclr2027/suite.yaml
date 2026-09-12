@@ -51,12 +51,72 @@ profiles:
       learning_rate: null
       eval_steps: null
 
+# Advisory order only: launch still requires one explicit run ID.
+# Independent stages may overlap when inputs/resources are ready; test scores never select recipes.
+execution_stages:
+  - name: G1 reference
+    runs: [G1-E0]
+  - name: G1 main comparisons
+    runs: [G1-J-LL, G1-J-RL, G1-J-CL, G1-J-RN]
+  - name: G1 estimator factorial
+    runs: [G1-A-Norm, G1-A-DocMean, G1-A-NormDocMean]
+  - name: G1 policy and reward mechanisms
+    runs: [G1-A-Paired, G1-A-QPolicy, G1-A-DPolicy, G1-A-Cal, G1-A-Binary]
+  - name: G2 initialization and common warm-up
+    runs: [G2-D-CL, G2-D-LL, G2-D-RL, G2-W-LL, G2-W-RL, G2-W-CL]
+  - name: G1 fixed-index deployment
+    runs: [G1-DR]
+  - name: G3 answer feedback
+    runs: [G3-E0, G3-CL, G3-AnsRL, G3-RetRL]
+  - name: Optional exploration and reward diagnostics
+    runs: [G1-A-Anneal, G1-A-FixedSmall, G1-A-Gaussion, G1-A-MRR]
+
 runs:
   G1-E0: {group: G1, kind: evaluation, scope: reference}
   G1-J-CL: {group: G1, objective: infonce, scope: joint}
   G1-J-RN: {group: G1, objective: ranknet, scope: joint}
   G1-J-LL: {group: G1, objective: lambdaloss, scope: joint}
   G1-J-RL: {group: G1, objective: rl, scope: joint}
+  G1-A-Norm:
+    group: G1
+    objective: rl
+    scope: joint
+    control: G1-J-RL
+    overrides: {advantage_baseline: leave_one_out, advantage_norm: per_component, document_log_prob_reduction: sum}
+  G1-A-DocMean:
+    group: G1
+    objective: rl
+    scope: joint
+    control: G1-J-RL
+    overrides: {advantage_baseline: leave_one_out, advantage_norm: none, document_log_prob_reduction: mean}
+  G1-A-NormDocMean:
+    group: G1
+    objective: rl
+    scope: joint
+    control: G1-J-RL
+    overrides: {advantage_baseline: leave_one_out, advantage_norm: per_component, document_log_prob_reduction: mean}
+  # Paired optional study, anchored to A_1024(755) rather than the rounded 0.53 example.
+  # These two recipes are scoped to the current Qwen3-Embedding-0.6B initialization.
+  G1-A-Anneal:
+    group: G1
+    objective: rl
+    scope: joint
+    priority: optional
+    control: G1-J-RL
+    overrides:
+      target_alignment: 0.5302373892742263
+      final_alignment: 0.80
+      exploration_schedule: linear
+  G1-A-FixedSmall:
+    group: G1
+    objective: rl
+    scope: joint
+    priority: optional
+    control: G1-J-RL
+    overrides:
+      target_alignment: 0.80
+      final_alignment: null
+      exploration_schedule: fixed
   G1-A-QPolicy:
     group: G1
     objective: rl
@@ -70,6 +130,7 @@ runs:
     control: G1-J-RL
     overrides: {action_components: [[positive, negative]]}
   G1-A-Gaussion:
+    priority: optional
     group: G1
     objective: rl
     scope: joint
@@ -94,6 +155,7 @@ runs:
     control: G1-J-RL
     overrides: {frozen_doc_rescale: false}
   G1-A-MRR:
+    priority: optional
     group: G1
     objective: rl
     scope: joint

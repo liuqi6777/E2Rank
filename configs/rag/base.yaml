@@ -36,7 +36,12 @@ rag_retrieval_reward: source_aware_mrr
 rag_retrieval_k: 20
 rag_group_size: 32
 rag_kappa: 755
-rag_advantage_normalize: true
+rag_advantage_normalize: null
+rag_advantage_norm: none
+rag_advantage_baseline: leave_one_out
+rag_target_alignment: null
+rag_final_alignment: null
+rag_exploration_schedule: fixed
 
 rag_generator_model: Qwen/Qwen2.5-7B-Instruct
 rag_generator_system_prompt: "Answer the question based on the given documents. Only give me the answer and do not output any other words."

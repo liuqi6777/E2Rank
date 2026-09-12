@@ -1,0 +1,5 @@
+# Optional predetermined recipe; no empirical benefit is claimed.
+_base_: posttrain.yaml
+target_alignment: 0.53
+final_alignment: 0.80
+exploration_schedule: linear

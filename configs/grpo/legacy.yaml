@@ -1,3 +1,4 @@
+# Historical normalized, document-mean update (before 2026-09-12).
 # Main post-training policy: independently sample the query and the bundled
 # document slate, then evaluate their G x G cross product.
 action_components:
@@ -6,14 +7,11 @@ action_components:
 group_size: 32
 kappa: 755
 sigma_learnable: false
-advantage_norm: none
+advantage_norm: per_component
 sampling_law: vmf
 rollout: product
 frozen_doc_rescale: true
-advantage_baseline: leave_one_out
+advantage_baseline: group
 in_batch_use_sampled_documents: false
 kl_coef: 0
-document_log_prob_reduction: sum
-target_alignment: null
-final_alignment: null
-exploration_schedule: fixed
+document_log_prob_reduction: mean

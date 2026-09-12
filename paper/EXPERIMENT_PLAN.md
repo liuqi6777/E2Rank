@@ -1,5 +1,51 @@
 # Experiment Plan: Reward-Based Optimization of Embedding Retrievers
 
+## 2026-09-12：实验优先级与执行顺序（当前生效）
+
+核心预算为 **22 次训练**。新增 Norm / DocMean / NormDocMean，和主方法组成统一
+leave-one-out baseline 的 2×2 对照；Gaussian mismatch 与 MRR 降为可选。
+探索收缩和固定终点强度必须成对安排，启用这两项后为 24 次；四项可选全部启用为 26 次。
+两个 E0 评测不计入训练次数。主方法保持固定 κ=755，不按消融结果更换配方。
+
+推荐顺序：G1 同标签 LL/RL → G1 CL/RN → 更新规则 2×2 → 其他核心机制 → G2 → G1-DR → G3。
+详见第 5 节。顺序是资源安排，不是基于测试分数的模型选择或自动批量执行。
+配置中的 `execution_stages` 与 `priority` 记录该顺序；`list` / `show` 可直接查看。
+本次仅修订计划、运行行与论文，没有启动实验。
+
+## 2026-09-12：第一轮方法修订
+
+本节覆盖下文涉及旧估计器的历史说明。标签、候选、G1/G2 预算和评测协议不变；没有因本次修订启动训练。
+
+- 主策略采用 `advantage_baseline=leave_one_out`、`advantage_norm=none`、`document_log_prob_reduction=sum`。
+  Document log-density 始终按有效文档求和；`mean` 只在 loss 层施加旧版 `1/n_valid` 权重。
+- 默认仍固定 `kappa=755`、`G=32`，不预先声称新更新规则能提升检索。
+  旧版可由 `configs/grpo/legacy.yaml` 复现：group baseline、per-component normalization、document mean。
+- `configs/grpo/annealed.yaml` 提供独立、未经效果验证的预定调度：期望余弦从 0.53 线性增加到 0.80，
+  按实际向量维度反解 κ。第 t 个 optimizer update（从 0 计数）使用 t/max(T−1,1)；
+  同一步的 accumulation microbatches 共用 κ，采样与评分使用同值。此时每步对应 J_{κ_t}，不是同一个固定目标。
+- Joint、固定候选 query-only、G1-DR 和 RAG 共用 baseline 语义与调度。
+  Checkpoint 新增 `exploration_state.json`，记录配方、估计器及进度；恢复时校验配方，
+  下一步以 Trainer 恢复的 global_step/max_steps 为准。缺少新版元数据的旧 checkpoint 不自动续训新版策略。
+- Leave-one-out 去掉 group baseline 的 (1−1/G) 因子。无偏性仅指冻结当前 cross-query 向量条件下的原始梯度；
+  不包括 detached 向量随共享 encoder 刷新的依赖，也不包括 optimizer/gradient clipping 的变换。
+- 探索方差修正为 `A/κ * ||δ_perp||² + A' * g²`；Gaussian 翻转概率使用完整方差。
+  `g*` 仅作边界附近的近似尺度。κ=755、d=1024 的期望余弦约 0.5302，不属于小角度扰动。
+- 关闭归一化后仍记录近退化组比例，但不因日志阈值清零非零的原始 advantage。
+  `exploration/own_boundary_flip_rate` 仅覆盖 own-list 中涉及 top-K 的不同 grade、非平局相邻对；不代表全库变化。
+- 第二轮的逐文档 counterfactual baseline、几何保持、奖励标签重定义、各向异性探索均未加入本轮主方法。
+
+本轮验证：25 项 CPU 数学/接口检查通过，包含确定性球面积分、完整离散组枚举、维度反解、
+两路径 baseline 一致性、padding 梯度、固定候选封装、动态检索、Trainer 累积/恢复和配置传递。
+12 条已实现 RL 配方完成参数解析；未实现的 G3-RetRL 保留原 blocker。论文全量 LaTeX 编译通过，
+无未定义引用或 overfull box；未启动模型训练、语料编码、生成器调用或检索基准实验。
+旧测试套件存在两个独立失效点：`test_frozen_corpus.py` 导入当前及 HEAD 均不存在的
+`validate_training_against_bright_documents`；`test_g1_dynamic_retrieval.py` 的 suite 测试把根目录
+定位到 `scripts/`。未将这些旧测试计入通过数，也未扩展本轮范围修复；当前固定候选及配置接口
+已由新增 `scripts/tests/test_policy_math.py` 覆盖。测试目录与论文源码沿用仓库现有的本地保留规则。
+
+
+
+
 **修订：2026-09-11。本文档是实验设计的 source of truth。**
 
 本版替代此前以 E2Rank → MTEB 为主、base-LLM 训练仅作可选边界实验的方案。
@@ -181,19 +227,48 @@ IDCG 使用完整已知 qrels 而非仅本次检索结果计算。
 
 ### 2.4 主要消融与理论诊断（集中在 G1）
 
-复用 G1-J-RL checkpoint/config，不在 ablation runner 中隐式重训主方法。
+所有消融从相同 E0 开始，使用同一数据顺序、候选池、113 步预算和最终 checkpoint 协议。
+复用主方法的**结果作为对照**；不从已训练的 G1-J-RL checkpoint 继续微调消融，也不隐式重训主方法。
 
-| ID | 改动 | 优先级 |
+| ID | 相对直接控制的变化 | 优先级 |
 |---|---|---|
-| G1-A-Binary | 相同数据与预算，nDCG 改用已知正例 binary 标签 | 核心 |
-| G1-A-Paired | 同 G、相同 component samples，使用 paired/diagonal 而非 product rollout | 核心 |
-| G1-A-Cal | 禁用 frozen-candidate mean-score rescaling | 核心 |
-| G1-A-MRR | 以 G1-A-Binary 为直接控制，仅将 binary nDCG@10 改为 binary MRR@10，相关阈值为 label=1 | 核心 |
-| G1-A-QPolicy | joint encoder 仍训练，只移除 document policy/exploration | 核心；与 G1-J-RL 直接比较 |
-| G1-A-DPolicy | joint encoder 仍训练，只移除 query policy/exploration | 核心；与 G1-J-RL 直接比较 |
-| G1-A-Gaussion | 将 vMF policy 替换为 projected-Gaussian policy，保持其余 RL 配置不变 | 核心；与 G1-J-RL 直接比较 |
-| G1-A-Own | 不加 in-batch candidates | 次要 |
-| G1-A-G | 改变 G 的质量/成本曲线 | 次要 |
+| G1-A-Norm | 对 G1-J-RL 恢复 per-component advantage 标准化，文档仍求和 | 核心 |
+| G1-A-DocMean | 对 G1-J-RL 恢复文档 `1/n_valid` 权重，不标准化 | 核心 |
+| G1-A-NormDocMean | 同时恢复标准化和文档平均；结合前三格分析交互 | 核心 |
+| G1-A-Paired | 对 G1-J-RL 改为同 G 的 paired/diagonal rollout | 核心 |
+| G1-A-QPolicy | 对 G1-J-RL 只移除 document policy/exploration，仍训练共享 encoder | 核心 |
+| G1-A-DPolicy | 对 G1-J-RL 只移除 query policy/exploration，仍训练共享 encoder | 核心 |
+| G1-A-Cal | 对 G1-J-RL 禁用 frozen-candidate mean-score rescaling | 核心 |
+| G1-A-Binary | 对 G1-J-RL 将 teacher grades 改为全部已知正例 binary 标签 | 核心 |
+| G1-A-Anneal | 与主方法相同初始探索强度，期望余弦预定线性增加到 0.80 | 可选，与 FixedSmall 成对 |
+| G1-A-FixedSmall | 全程固定期望余弦 0.80；控制 Anneal 的终点探索强度 | 可选，与 Anneal 成对 |
+| G1-A-Gaussion | projected-Gaussian 采样，但沿用 vMF log-density；仅研究采样/评分失配 | 可选诊断 |
+| G1-A-MRR | 以 G1-A-Binary 为直接控制，仅将 binary nDCG@10 改为 binary MRR@10 | 可选 |
+| G1-A-Own / G1-A-G | 去除 in-batch candidates / group size 质量成本曲线 | 次要，尚未加入可启动行 |
+
+更新规则的四格必须保持相同 leave-one-out baseline，不能把 baseline 也一起切回旧值：
+
+| | 文档求和 | 文档平均 |
+|---|---|---|
+| 不标准化 | G1-J-RL（复用主结果） | G1-A-DocMean |
+| per-component 标准化 | G1-A-Norm | G1-A-NormDocMean |
+
+令四格最终评测结果分别为 S_none,sum、S_norm,sum、S_none,mean、S_norm,mean。
+分别报告两个背景下的简单效应，以及交互差分
+`(S_norm,mean − S_none,mean) − (S_norm,sum − S_none,sum)`。
+单 seed 的交互差分只是描述性证据，不据此声称跨 seed 显著性。
+NormDocMean **不是完整旧版复现**：旧版 baseline 为 group，当前四格均为 leave-one-out。
+Baseline 常数因子的作用由数学/数值检查验证，不单独增加完整训练。
+
+四格的 LR、梯度裁剪和 optimizer 保持一致；报告裁剪前梯度范数、角色夹角和裁剪比例，
+避免把最终差异全部解释为梯度方向变化。标准化与文档平均也会改变尺度，而 Adam/裁剪未必尺度不变。
+
+探索三方比较复用固定 κ=755 的主结果，另加 Anneal 和 FixedSmall 两次训练。
+对当前 Qwen3-Embedding-0.6B（1024 维），Anneal 起点固定为 `A_1024(755)=0.5302373892742263`，
+终点为 0.80；FixedSmall 全程为 0.80。由实际维度反解 κ，其他配置与主方法一致。
+这与底层 annealed.yaml 的四舍五入示例 0.53 有区别；正式命名行使用精确起点。
+切换模型、改变主方法的探索配置时，应先重新声明成套对照；当前两个命名行固定适用的初始化模型。
+启用可选实验应在看到最终测试分数前按资源/论文主张决定，并将两项都报告；不以更优者替换主方法。
 
 Paired 的 G 次 reward 与 product 的 G² 次存在成本差异；报告 example-matched 结果，
 另做短 matched-time 比较或质量/成本曲线。G² 个组合相关，不是 G² 独立 joint samples。
@@ -210,10 +285,19 @@ policy-gradient estimator。正式报告须明确这一点。
 比较直接 InfoNCE 梯度与平均 score-function 梯度，分别检查角色再施加一致角色权重。
 报告 cosine、relative error 和采样预算；有限样本噪声不等于理论极限失败。
 
-持续记录 raw marginal reward spread、退化 group 比例、每角色梯度、mean alignment、
-sampled/frozen score 分布及冻结候选 top-K 占比。归一化后的 advantage std 不能独自说明信号质量。
-实践中的 per-component normalization 和 document-role `1/n_valid` 权重不等于未加权联合
-目标的无偏梯度；mean-score calibration 匹配一阶分数矩，不是期望 ranking reward。
+诊断与完整训练分开计数。已经接入 raw marginal reward spread、近退化比例、mean alignment、
+own-list 边界翻转率。还需补充的观察项如下，不能把计划中的日志写成已有结果：
+
+| 观察项 | 用途与协议 | 当前状态 |
+|---|---|---|
+| 同候选池的 sampled / deterministic reward | 固定标签和候选；确定性版本使用原始 cosine，不作 sampled-document 衰减校准；不当成全库检索分数 | 待接入 |
+| 裁剪前 query/document 梯度范数、夹角、裁剪比例 | 区分方向冲突、尺度与优化器影响；在固定诊断 batch 上采集，单列额外成本 | 待接入 |
+| 按候选长度分组的确定性 reward 与边界翻转 | 观察 `1/n_valid` 的影响；预先固定分组 2–5、6–10、11–20，报告样本数；不据此重新选训练数据 | 待接入 |
+| sampled/frozen 分数分布与冻结候选 top-K 占比 | 解释 calibration，不将均值匹配当成完整分布匹配 | 待接入 |
+
+归一化后的 advantage std 不能独自说明信号质量。
+旧版 per-component normalization 和 document-role `1/n_valid` 权重不等于未加权联合
+目标的无偏梯度；新版默认已移除这两项。Mean-score calibration 仍只匹配一阶分数矩，不是期望 ranking reward。
 
 ## 3. G2：从通用 LLM 开始的较大规模 embedding 训练
 
@@ -320,57 +404,88 @@ corpus，再由检索或答案 reward 评分。candidate manifest 在 RL 中只�
 - [x] 实现指定 LambdaLoss variant；G1/G2 使用 teacher grades 3/2/1/0，padding 不参与 loss。
 - [ ] 明确两套标签的 MRR 阈值，确保 padding 不参与 reward。
 - [ ] 接入最终 checkpoint 的固定候选排序评测与全 corpus 检索。
-- [ ] 固定各组 LR/目标网格、trial 与主训练预算、tie-break 和 G2 两阶段预算。
+- [ ] 核对固定 LR/主训练预算和 G2 两阶段预算；G1/G2 不使用 dev 网格选模。
 - [ ] G3 QA、index、generator manifests；验证 RL action 动态检索完整冻结 corpus，且训练
       不消费离线 candidate IDs。
 - [ ] 所有命令 dry-run，检查 resolved configs，再提交 GPU；尚无已完成结果。
 
-### Phase 1 — 短运行与诊断
+### Phase 1 — 数值检查、协议固定与短运行准备
 
-G1 四个 objective 与 query-policy-only、document-policy-only、Gaussian-policy RL 消融跑 smoke；
-核对各 action component 的 reward variance 和梯度。
-G2 用 B0 短跑 CL/LL/RL，检查 reward/advantage 信号；基于训练数值稳定性和成本诊断提前冻结预算。
-G3 验证固定 generator 的可复现输出和 reward 成本。完成低成本梯度诊断。
-G1-DR 在运行中记录已知 qrels 的索引覆盖、检索命中及全零/无差异奖励 group 比例，
-以实测判断奖励有效性，不预先据此否定动态检索路线。
-这些短运行不取代正式预算，也不根据最终测试分数决定保留哪条路线。
+先完成配置展开、padding/梯度/断点恢复检查；本轮已有 CPU 验证不必因每个新 YAML 行重复训练。
+正式 GPU 前仅安排能够发现数值或接口故障的短 smoke，并将其成本与主训练分开记录。
+若修复实现或修改配方，须在正式比较前冻结新版本，让全部相关对照采用一致版本。
+不以 BRIGHT/MTEB 的早期分数调 LR、选择 κ、筛掉数据或替换主方法。
+G3 的 generator 可复现性及成本检查在 G3 正式训练前完成，不阻塞 G1/G2。
 
-### Phase 2 — G1 主实验与机制
+### Phase 2 — G1 主效果和更新规则（第一批）
 
-先固定 G1 配置与预算，完成四个 joint 主对照，以最终 checkpoint 做 BRIGHT/保持性评测。
-核心 RL 消融 QPolicy、DPolicy、Gaussion、Paired、Cal、Binary 以 G1-J-RL 为控制；MRR 以
-Binary 为直接控制，分别隔离 action role、采样分布、标签与指标变化。Own/G 按具体问题安排。
-约 5k 数据使用预先声明的统一更新预算，不机械沿用大数据一轮默认值；不进行 dev calibration。
+| 顺序 | 执行项 | 次数 | 目的 / 前置条件 |
+|---|---|---:|---|
+| 0 | G1-E0 | 0 次训练 | 固定 BRIGHT 评测协议，原始模型结果只评测一次并复用 |
+| 1 | G1-J-LL → G1-J-RL | 2 | 最先得到同 grades/cutoff 下的监督与 RL 对照；两项独立，可按资源重叠 |
+| 2 | G1-J-CL → G1-J-RN | 2 | 补齐常规表示学习与完整 teacher 顺序的主对照 |
+| 3 | G1-A-Norm → G1-A-DocMean → G1-A-NormDocMean | 3 | 完成更新规则 2×2，复用主 RL 为第四格；均从 E0 开始 |
 
-### Phase 3 — G2 两组对照
+这批合计 7 次训练。LL/RL 的差异先帮助理解效用，四格进一步解释标准化与文档权重。
+即使先得到的结果不利于 RL，也记录并完成预先声明的比较；测试分数不决定哪格成为新默认。
+只有明确数值/实现故障才先修复再统一重跑受影响对照，不用无限补跑寻找正结果。
 
-在更大 E2Rank 数据上完成 direct 与 common-warm-up 两组结果。
-保存 W0 并明确复用，不把 G2 再降为默认可删的附录边界实验。
-保留从 base 直接 RL 不收敛或无收益的结果，用于决定论文贡献边界。
+### Phase 3 — G1 其他核心机制（第二批）
 
-### Phase 4 — G3 下游反馈
+依次建议 `G1-A-Paired → G1-A-QPolicy → G1-A-DPolicy → G1-A-Cal → G1-A-Binary`，共 5 次。
+先检查 product rollout 和两侧探索的必要性，再检查分数校准与 teacher 标签来源。
+Paired/product 继续报告相同 query exposure 的结果及单列的质量/时间诊断。
+这些行无权重依赖，可以在资源允许时调度重叠，但都复用同一个固定主方法结果作控制。
+两批 G1 共 12 次训练，尚不包含固定索引 G1-DR。
 
-完成三个训练配置与原始 E0，优先保证 AnsRL、监督 CL 对照和统一的最终评测协议。
-若 GPU/数据准备允许，组间可以调度重叠；各组内部配置选择和共享 checkpoint 仍有依赖。
+### Phase 4 — G2 初始化与共同 warm-up（第三批）
+
+先执行 `G2-D-CL`，其最终模型就是 W0；随后安排 `G2-D-LL / G2-D-RL` 与
+`G2-W-LL / G2-W-RL / G2-W-CL`，合计 6 次。
+W 系列只有对 D-CL 最终权重的真实依赖，无需等待 D-LL 或 D-RL；各自新建 optimizer、scheduler 和数据迭代。
+不把 D-CL 再训练一遍当作 warm-up，也不从 G1 最优消融继承模型或配方。
+数据准备就绪、资源允许时，G2-D-CL 可与 G1 后续机制运行重叠；顺序不构成额外阻塞条件。
+保留直接 RL 不收敛或无收益的结果，用于界定初始化条件。
+
+### Phase 5 — 固定索引部署与下游反馈（第四批）
+
+1. 准备并核验 G1 分领域 E0 索引后，执行 `G1-DR`（1 次）。它与 QPolicy 不同的 candidate access
+   和文档更新范围必须同时注明，不按单因素消融解释。
+2. G3 的 QA/index/generator 协议和 answer-F1 选模能力接入后，先得到 `G3-E0`，再安排
+   `G3-CL → G3-AnsRL → G3-RetRL`（3 次）。优先完成答案反馈问题；RetRL 还需 nDCG 实现。
+   现有 `rag_selection` / `rag_ndcg` blockers 保留，不用 source-aware MRR 顶替 nDCG。
+
+G1-DR 的索引准备可提前进行，但不是 G1 joint 或 G2 的前置依赖。
+G3 与前两组无 checkpoint 依赖；其准备完成后可与其他独立运行重叠。
+
+### Phase 6 — 可选扩展（单独申明预算）
+
+优先成对执行 `G1-A-Anneal` 与 `G1-A-FixedSmall`（2 次），同时复用主方法作为固定初始探索对照。
+若保留分布失配或奖励接口的额外主张，再安排 `G1-A-Gaussion` 与 `G1-A-MRR`（各 1 次）；
+MRR 的直接控制为已经完成的 Binary。无需为了可选行重训主方法或 Binary。
+可选与核心区分是预先声明的研究范围，不按结果好坏决定是否报告。
 
 ### 核心预算与删减顺序
 
-| 部分 | 主训练执行数，不含调参 |
+| 部分 | 主训练执行数，不含 smoke 和诊断 |
 |---|---:|
-| G1：4 个 joint objective 主对照 | 4 |
-| G1：QPolicy、DPolicy、Gaussion、Paired、Cal、MRR、Binary | 7 |
+| G1：四个 joint objective 主对照 | 4 |
+| G1：Norm / DocMean / NormDocMean | 3 |
+| G1：Paired / QPolicy / DPolicy / Cal / Binary | 5 |
 | G1：full-corpus 动态检索 | 1 |
-| G2：3 个直接训练 + 3 个从 CL 最终模型初始化 | 6 |
-| G3：CL、RetRL、AnsRL | 3 |
-| **合计** | **21** |
+| G2：三个直接训练 + 三个共同 CL 初始化 | 6 |
+| G3：CL / AnsRL / RetRL | 3 |
+| **核心合计** | **22** |
+| 可选：Anneal + FixedSmall（成对） | +2 |
+| 可选：Gaussian mismatch + MRR | +2 |
+| **核心 + 探索对照 / 全部已注册训练** | **24 / 26** |
 
-另计原始 checkpoint 评测、调参、paired/product 短 matched-time 比较、共享 warm-up
-的存储与生成器评测开销。21 是当前已冻结协议的训练执行数量，不是完整 GPU-hour
-报价，也不意味着每项训练耗时相同。共同 CL 前缀只训练一次，其成本单独报告。
+Suite 共 28 行：22 个核心训练、4 个可选训练、2 个 E0 评测。Own/G 尚未注册，不计入上述预算。
+训练执行数不等于 GPU-hour；原始 checkpoint 评测、完整检索评测、索引编码、generator 调用、
+paired/product 时间诊断和 smoke 单列成本。共享 CL 前缀只计算一次。
 
-预算不足时先删第二模型/第二 QA 数据集、混合数据扩展、额外 G/分布/奖励混合消融。
-然后缩减各对照一致的调参预算。保留三组核心问题、同标签强监督基线、paired/product
-证据和 RAG 答案 reward。若仍不足，明确缩小论文贡献范围，不以省略关键对照保留主张。
+预算不足时先取消可选扩展；探索对照应成对取消。保留 LL/RL、完整 2×2、核心 product/role 证据、
+G2 初始化问题与 G3 答案反馈。若仍不足，显式缩小论文主张与整组范围，不只删掉不利结果或关键对照。
 
 ## 6. Runner 与论文同步清单
 

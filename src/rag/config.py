@@ -86,9 +86,23 @@ class RAGRewardArguments:
     rag_retrieval_k: int = field(default=20)
     rag_group_size: int = field(default=32)
     rag_kappa: float = field(default=755.0)
-    rag_advantage_normalize: bool = field(default=True)
+    rag_advantage_normalize: Optional[bool] = field(default=None)
+    rag_advantage_norm: str = field(default="none")
+    rag_advantage_baseline: str = field(default="leave_one_out")
+    rag_advantage_baseline_momentum: float = field(default=0.99)
+    rag_target_alignment: Optional[float] = field(default=None)
+    rag_final_alignment: Optional[float] = field(default=None)
+    rag_exploration_schedule: str = field(default="fixed")
 
     def __post_init__(self) -> None:
+        from policy_math import validate_exploration
+        validate_exploration(self.rag_target_alignment, self.rag_final_alignment, self.rag_exploration_schedule)
+        if self.rag_advantage_norm not in {"none", "shared", "per_component"}:
+            raise ValueError("Unsupported RAG advantage normalization")
+        if self.rag_advantage_baseline not in {"group", "leave_one_out", "ema"}:
+            raise ValueError("Unsupported RAG baseline")
+        if not 0 <= self.rag_advantage_baseline_momentum < 1:
+            raise ValueError("RAG baseline momentum must lie in [0, 1)")
         self.rag_retrieval_reward = self.rag_retrieval_reward.strip().lower()
         if self.rag_retrieval_reward not in SUPPORTED_RAG_REWARDS:
             raise ValueError(

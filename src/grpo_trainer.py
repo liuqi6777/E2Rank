@@ -24,11 +24,35 @@ logger = logging.getLogger(__name__)
 GRPO_STATE_FILENAME = "grpo_state.json"
 
 
+EXPLORATION_STATE_FILENAME = "exploration_state.json"
+
+
+def restore_exploration_state(model, checkpoint_dir):
+    head = getattr(model, "grpo", None)
+    if not checkpoint_dir or head is None or not hasattr(head, "exploration"):
+        return
+    path = os.path.join(checkpoint_dir, EXPLORATION_STATE_FILENAME)
+    if not os.path.exists(path):
+        if head.exploration.target_alignment is not None or head.advantage_baseline == "leave_one_out":
+            raise ValueError("Checkpoint lacks the new policy contract; use a fresh output directory")
+        return
+    with open(path, encoding="utf-8") as handle:
+        payload = json.load(handle)
+    for key, value in payload["estimator"].items():
+        if getattr(head, key, None) != value:
+            raise ValueError(f"Checkpoint estimator differs: {key}; start a new run")
+    head.exploration.load_state_dict(payload["exploration"])
+    if head.advantage_baseline == "ema":
+        head.reward_baseline.fill_(payload["reward_baseline"])
+        head.reward_baseline_initialized.fill_(payload["reward_baseline_initialized"])
+
+
 def restore_grpo_state(model, checkpoint_dir: str | None) -> None:
     """Restore the learnable exploration scale saved next to a checkpoint.
 
     Call before the trainer is built, i.e. before DeepSpeed partitions the parameter.
     """
+    restore_exploration_state(model, checkpoint_dir)
     if not checkpoint_dir or (
         not model.grpo.sigma_learnable and model.grpo.advantage_baseline != "ema"
     ):
@@ -193,6 +217,11 @@ class EmbeddingTrainerMixin:
         return logs
 
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+        unwrapped = self.accelerator.unwrap_model(model)
+        head = getattr(unwrapped, "grpo", None)
+        if head is not None and hasattr(head, "exploration"):
+            # One value for all accumulation microbatches; restored Trainer state is authoritative.
+            head.exploration.set_step(self.state.global_step, self.state.max_steps)
         loss, outputs = super().compute_loss(
             model,
             inputs,
@@ -240,7 +269,20 @@ class EmbeddingTrainerMixin:
         return super()._get_train_sampler(train_dataset)
 
     def _save(self, output_dir=None, state_dict=None) -> str:
-        return save_wrapped_backbone(self, output_dir=output_dir, state_dict=state_dict)
+        output_dir = save_wrapped_backbone(self, output_dir=output_dir, state_dict=state_dict)
+        head = getattr(self.model, "grpo", None)
+        if self.is_world_process_zero() and head is not None and hasattr(head, "exploration"):
+            exploration = head.exploration.state_dict()
+            exploration.update(step=self.state.global_step, total_steps=self.state.max_steps)
+            estimator = {key: getattr(head, key, None) for key in (
+                "advantage_baseline", "advantage_norm", "document_log_prob_reduction", "group_size")}
+            payload = dict(exploration=exploration, estimator=estimator)
+            if head.advantage_baseline == "ema":
+                payload.update(reward_baseline=float(head.reward_baseline),
+                               reward_baseline_initialized=bool(head.reward_baseline_initialized))
+            with open(os.path.join(output_dir, EXPLORATION_STATE_FILENAME), "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, indent=2)
+        return output_dir
 
 
 class GRPOTrainer(EmbeddingTrainerMixin, HFTrainer):

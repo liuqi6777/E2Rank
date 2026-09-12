@@ -42,6 +42,7 @@ class RAGModelOutput(ModelOutput):
     reward_mean: Optional[Tensor] = None
     reward_std: Optional[Tensor] = None
     degenerate_fraction: Optional[Tensor] = None
+    exploration_metrics: Optional[dict[str, Tensor]] = None
 
 
 class RAGSupervisedModel(QueryOnlySupervisedModel):
@@ -91,7 +92,13 @@ class RAGRLModel(QueryOnlyRLWrapper):
         pooling_method: str = "last",
         generator: FrozenGeneratorClient | None = None,
         generator_top_k: int = 5,
-        normalize_advantages: bool = True,
+        normalize_advantages: bool | None = None,
+        advantage_baseline: str = "leave_one_out",
+        advantage_norm: str = "none",
+        advantage_baseline_momentum: float = 0.99,
+        target_alignment: float | None = None,
+        final_alignment: float | None = None,
+        exploration_schedule: str = "fixed",
     ):
         result_reward_provider = RAGResultRewardProvider(
             reward_type=reward_type,
@@ -111,6 +118,10 @@ class RAGRLModel(QueryOnlyRLWrapper):
             kappa=kappa,
             pooling_method=pooling_method,
             normalize_advantages=normalize_advantages,
+            advantage_baseline=advantage_baseline, advantage_norm=advantage_norm,
+            advantage_baseline_momentum=advantage_baseline_momentum,
+            target_alignment=target_alignment, final_alignment=final_alignment,
+            exploration_schedule=exploration_schedule,
         )
     def forward(self, query: dict[str, Tensor], **reward_inputs: Any) -> RAGModelOutput:
         output = self.policy_step(query, **reward_inputs)
@@ -119,4 +130,5 @@ class RAGRLModel(QueryOnlyRLWrapper):
             reward_mean=output.rewards.mean().detach(),
             reward_std=output.rewards.std(unbiased=False).detach(),
             degenerate_fraction=output.degenerate_fraction.detach(),
+            exploration_metrics=self.policy.exploration_metrics(),
         )

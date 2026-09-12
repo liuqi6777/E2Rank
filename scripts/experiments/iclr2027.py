@@ -22,6 +22,11 @@ MTEB_ENG_V2 = 'MTEB(eng, v2)'
 BRIGHT_BENCHMARK = 'BRIGHT'
 G1_BRIGHT_FIXED_CORPUS_INDEX_DIR = Path('data/eval/bright_qwen3_e0')
 G1_RL_ABLATION_CONTRACTS = {
+    'G1-A-Norm': {'advantage_baseline': 'leave_one_out', 'advantage_norm': 'per_component', 'document_log_prob_reduction': 'sum'},
+    'G1-A-DocMean': {'advantage_baseline': 'leave_one_out', 'advantage_norm': 'none', 'document_log_prob_reduction': 'mean'},
+    'G1-A-NormDocMean': {'advantage_baseline': 'leave_one_out', 'advantage_norm': 'per_component', 'document_log_prob_reduction': 'mean'},
+    'G1-A-Anneal': {'target_alignment': 0.5302373892742263, 'final_alignment': 0.8, 'exploration_schedule': 'linear', 'model_name_or_path': 'Qwen/Qwen3-Embedding-0.6B', 'sampling_law': 'vmf'},
+    'G1-A-FixedSmall': {'target_alignment': 0.8, 'final_alignment': None, 'exploration_schedule': 'fixed', 'model_name_or_path': 'Qwen/Qwen3-Embedding-0.6B', 'sampling_law': 'vmf'},
     'G1-A-QPolicy': {'action_components': (('query',),)},
     'G1-A-DPolicy': {'action_components': (('positive', 'negative'),)},
     'G1-A-Gaussion': {'sampling_law': 'gaussian'},
@@ -73,6 +78,8 @@ def load_suite(path=DEFAULT_SUITE):
             raise ValueError(f'{run_id}: invalid run kind')
         if run.get('kind', 'train') == 'train' and run.get('objective') not in {'infonce', 'ranknet', 'lambdaloss', 'rl'}:
             raise ValueError(f'{run_id}: invalid objective')
+        if run.get('priority', 'core') not in {'core', 'optional'}:
+            raise ValueError(f'{run_id}: invalid priority')
         if run.get('scope') not in {'joint', 'query_only', 'reference'}:
             raise ValueError(f'{run_id}: invalid update scope')
         for key in ('control', 'reuse', 'init_from'):
@@ -81,6 +88,14 @@ def load_suite(path=DEFAULT_SUITE):
         requirements = suite['profiles'][run['group']].get('requirements', []) + run.get('requirements', [])
         if any(name not in suite['pending'] for name in requirements):
             raise ValueError(f'{run_id}: requirement has no readiness explanation')
+    if suite.get('execution_stages'):
+        order = ordered_run_ids(suite)
+        if len(order) != len(runs) or set(order) != set(runs):
+            raise ValueError('Execution stages must contain every run exactly once')
+        positions = {name: index for index, name in enumerate(order)}
+        for run_id, run in runs.items():
+            if run.get('init_from') and positions[run['init_from']] >= positions[run_id]:
+                raise ValueError(f'{run_id}: initialization must precede its dependent run')
     # Detect cycles across both checkpoint and control links.
     def visit(run_id, stack):
         if run_id in stack:
@@ -91,6 +106,20 @@ def load_suite(path=DEFAULT_SUITE):
     for run_id in runs:
         visit(run_id, ())
     return suite
+
+
+def ordered_run_ids(suite):
+    stages = suite.get('execution_stages')
+    return [run_id for stage in stages for run_id in stage['runs']] if stages else list(suite['runs'])
+
+
+def execution_metadata(suite, run_id):
+    run = suite['runs'][run_id]
+    priority = 'reference' if run.get('kind') == 'evaluation' else run.get('priority', 'core')
+    for index, stage in enumerate(suite.get('execution_stages', [])):
+        if run_id in stage['runs']:
+            return dict(priority=priority, execution_stage=index, execution_stage_name=stage['name'])
+    return dict(priority=priority, execution_stage=None, execution_stage_name=None)
 
 
 def apply_settings(suite, path):
@@ -104,7 +133,9 @@ def apply_settings(suite, path):
         suite['output_root'] = settings['output_dir']
     mapping = dict(model='model_name_or_path', learning_rate='learning_rate',
                    steps='max_steps', checkpoint_every='eval_steps',
-                   batch_size='global_batch_size', micro_batch_size='micro_batch_size')
+                   batch_size='global_batch_size', micro_batch_size='micro_batch_size',
+                   target_alignment='target_alignment', final_alignment='final_alignment',
+                   exploration_schedule='exploration_schedule')
     for group in ('G1', 'G2', 'G3'):
         values = settings.get(group, {})
         unknown = set(values) - set(mapping) - {'data'}
@@ -188,6 +219,10 @@ def resolve_run(suite, suite_path, run_id, root=ROOT, nproc=1):
             config[key] = protocol[key]
     if protocol.get('eval_steps') is not None:
         config['save_steps'] = protocol['eval_steps']
+    if objective == 'rl':
+        for key in ('target_alignment', 'final_alignment', 'exploration_schedule'):
+            if key in protocol:
+                config[('rag_' if group == 'G3' else '') + key] = protocol[key]
     config = merge(config, run.get('overrides', {}))
     validate_g1_rl_ablation_contract(run_id, config)
     if protocol.get('global_batch_size') is not None:
@@ -208,6 +243,7 @@ def resolve_run(suite, suite_path, run_id, root=ROOT, nproc=1):
         dependency = path_at_root(suite['output_root'], root) / f"{run['init_from']}-s42"
         config['model_name_or_path'] = str(dependency)
     return dict(run_id=run_id, group=group, kind=kind, scope=run['scope'],
+                **execution_metadata(suite, run_id),
                 objective=objective, entrypoint=entrypoint, config=config, protocol=protocol,
                 selection=profile['selection'], final_evaluation=profile['final_evaluation'],
                 dataset_manifest=str(path_at_root(profile['dataset_manifest'], root)),
@@ -522,7 +558,7 @@ def main(argv=None):
         suite = apply_settings(load_suite(args.suite), args.settings)
         if args.run_id and args.run_id not in suite['runs']:
             raise ValueError(f'Unknown run ID: {args.run_id}')
-        selected = [args.run_id] if args.run_id else [k for k, r in suite['runs'].items() if not args.group or r['group'] == args.group]
+        selected = [args.run_id] if args.run_id else [k for k in ordered_run_ids(suite) if not args.group or suite['runs'][k]['group'] == args.group]
         if args.action in {'resolve', 'launch'} and not args.run_id:
             raise ValueError(f'{args.action} requires one explicit run ID')
         failures = 0
@@ -544,7 +580,7 @@ def main(argv=None):
                 print(json.dumps(resolved, indent=2, ensure_ascii=False))
             else:
                 status = 'REUSE' if resolved['reuse'] else ('EVAL' if resolved['kind'] == 'evaluation' else ('BLOCKED' if problems else 'READY'))
-                print(f'{run_id:16} {status:7} {resolved["scope"]:10} {resolved["objective"] or "-"}')
+                print(f'{run_id:20} {status:7} {resolved["scope"]:10} {resolved["objective"] or "-":10} {resolved["priority"]:9} stage={resolved["execution_stage"]}')
                 if args.action == 'check':
                     for issue in problems:
                         print(f'  - {issue}')
