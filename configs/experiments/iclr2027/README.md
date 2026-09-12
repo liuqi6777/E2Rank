@@ -1,5 +1,55 @@
 # 三组实验配置指南
 
+## 固定探索强度扫描（最新）
+
+分别使用 binary MRR@10、teacher-graded nDCG@10 和 binary nDCG@10，比较期望余弦
+**0.40、0.530237、0.65、0.80、0.90、0.95**；
+越大表示探索越弱。0.530237 复用 `G1-A-MRR` 的 19.21，0.80 使用
+`G1-J-RL-MRRSmall`，其余为 `G1-A-MRRAlign040/065/090/095` 四个新配置。
+所有点从 E0 独立训练，固定 113 steps 和其他参数；不混用 graded reward 结果。
+
+nDCG 曲线复用 `G1-J-RL`（0.530237，18.14）和 `G1-A-FixedSmall`（0.80，18.98），
+新增 `G1-A-NDCGAlign040/065/090/095` 四行。
+binary nDCG 复用 `G1-A-Binary`（0.530237，18.42），新增
+`G1-A-BinaryNDCGAlign040/065/080/090/095` 五行。
+binary MRR vs binary nDCG 比较同标签下的指标；graded vs binary nDCG 比较标签配方。
+共 18 点、4 个已有结果、14 次待训练。
+
+```bash
+bash scripts/run_g1_mrr_exploration.sh check 8
+bash scripts/run_g1_mrr_exploration.sh train 8
+bash scripts/run_g1_ndcg_exploration.sh check 8
+bash scripts/run_g1_ndcg_exploration.sh train 8
+bash scripts/run_g1_binary_ndcg_exploration.sh check 8
+bash scripts/run_g1_binary_ndcg_exploration.sh train 8
+```
+
+每个批量入口先预检本组全部待训练行，再顺序训练并自动评测最终模型的 BRIGHT，失败即停止。
+不会重训已有 0.530237 点，也不会自动覆盖输出。若 MRRSmall 已运行，直接用
+`scripts/experiment.py train RUN --gpus 8` 启动其余四行并复用其结果。
+当前共 43 个逻辑行（41 次训练、2 次评测）；下文预算为历史记录。
+
+## 第二轮：优先开发 BRIGHT 配置（2026-09-12）
+
+当前新增两行，旧 ID 保持原配方，分别写入新输出目录：
+
+- `G1-J-RL-MRRSmall`：binary MRR@10 + 固定期望余弦 0.80，其余沿用主 RL。
+  从 E0 重新训练，不从已有 MRR checkpoint 续训。
+- `G1-J-LL-Scaled`：graded LambdaLoss 的 sigma 改为 `1/0.03`，对齐 RankNet 的 logistic 输入尺度。
+
+```bash
+python scripts/experiment.py show G1-J-RL-MRRSmall --verbose
+python scripts/experiment.py check G1-J-RL-MRRSmall
+python scripts/experiment.py train G1-J-RL-MRRSmall --gpus 8
+python scripts/experiment.py train G1-J-LL-Scaled --gpus 8
+```
+
+这是基于第一轮 BRIGHT 结果提出的新候选配置，效果待测。G1 当前只要求 BRIGHT，
+不要求 retention、逐 query bootstrap 或成本测量。两行均保持 113 steps、LR 5e-6、
+batch 128 / microbatch 16、seed 42 和最终 checkpoint 协议。
+当前注册 30 行：24 个核心训练、4 个可选训练、2 个 E0 评测。
+下文 28 行及“尚未完成实验”的描述为第一轮历史说明；最新决定以实验计划顶部为准。
+
 ## 修改与运行
 
 日常只改 `configs/experiments.yaml`。从仓库根目录运行：

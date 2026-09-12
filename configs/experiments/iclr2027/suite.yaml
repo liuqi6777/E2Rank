@@ -15,7 +15,7 @@ profiles:
     config: g1.yaml
     dataset_manifest: data/processed/reasonrank_multi/manifest.json
     selection: fixed_budget_final_checkpoint
-    final_evaluation: [bright, mteb_retrieval_retention]
+    final_evaluation: [bright]
     requirements: []
     protocol:
       labels: teacher_grades_3_2_1_0_with_all_known_positives_for_cl
@@ -52,10 +52,18 @@ profiles:
       eval_steps: null
 
 # Advisory order only: launch still requires one explicit run ID.
-# Independent stages may overlap when inputs/resources are ready; test scores never select recipes.
+# Round 2 explicitly develops configurations using the first-round BRIGHT results.
 execution_stages:
   - name: G1 reference
     runs: [G1-E0]
+  - name: G1 round 2 configuration development
+    runs: [G1-J-LL-Scaled]
+  - name: G1 MRR fixed exploration sweep
+    runs: [G1-A-MRRAlign040, G1-A-MRRAlign065, G1-J-RL-MRRSmall, G1-A-MRRAlign090, G1-A-MRRAlign095]
+  - name: G1 graded nDCG fixed exploration sweep
+    runs: [G1-A-NDCGAlign040, G1-A-NDCGAlign065, G1-A-NDCGAlign090, G1-A-NDCGAlign095]
+  - name: G1 binary nDCG fixed exploration sweep
+    runs: [G1-A-BinaryNDCGAlign040, G1-A-BinaryNDCGAlign065, G1-A-BinaryNDCGAlign080, G1-A-BinaryNDCGAlign090, G1-A-BinaryNDCGAlign095]
   - name: G1 main comparisons
     runs: [G1-J-LL, G1-J-RL, G1-J-CL, G1-J-RN]
   - name: G1 estimator factorial
@@ -77,6 +85,103 @@ runs:
   G1-J-RN: {group: G1, objective: ranknet, scope: joint}
   G1-J-LL: {group: G1, objective: lambdaloss, scope: joint}
   G1-J-RL: {group: G1, objective: rl, scope: joint}
+  # Round 2: result-informed development; historical run IDs retain their recipes.
+  G1-A-BinaryNDCGAlign040:
+    group: G1
+    objective: rl
+    scope: joint
+    control: G1-A-Binary
+    overrides: {reward_type: ndcg_in_batch, relevance_scheme: binary, target_alignment: 0.40, final_alignment: null, exploration_schedule: fixed}
+  G1-A-BinaryNDCGAlign065:
+    group: G1
+    objective: rl
+    scope: joint
+    control: G1-A-Binary
+    overrides: {reward_type: ndcg_in_batch, relevance_scheme: binary, target_alignment: 0.65, final_alignment: null, exploration_schedule: fixed}
+  G1-A-BinaryNDCGAlign080:
+    group: G1
+    objective: rl
+    scope: joint
+    control: G1-A-Binary
+    overrides: {reward_type: ndcg_in_batch, relevance_scheme: binary, target_alignment: 0.80, final_alignment: null, exploration_schedule: fixed}
+  G1-A-BinaryNDCGAlign090:
+    group: G1
+    objective: rl
+    scope: joint
+    control: G1-A-Binary
+    overrides: {reward_type: ndcg_in_batch, relevance_scheme: binary, target_alignment: 0.90, final_alignment: null, exploration_schedule: fixed}
+  G1-A-BinaryNDCGAlign095:
+    group: G1
+    objective: rl
+    scope: joint
+    control: G1-A-Binary
+    overrides: {reward_type: ndcg_in_batch, relevance_scheme: binary, target_alignment: 0.95, final_alignment: null, exploration_schedule: fixed}
+  G1-A-NDCGAlign040:
+    group: G1
+    objective: rl
+    scope: joint
+    control: G1-J-RL
+    overrides: {reward_type: ndcg_in_batch, relevance_scheme: graded, target_alignment: 0.40, final_alignment: null, exploration_schedule: fixed}
+  G1-A-NDCGAlign065:
+    group: G1
+    objective: rl
+    scope: joint
+    control: G1-J-RL
+    overrides: {reward_type: ndcg_in_batch, relevance_scheme: graded, target_alignment: 0.65, final_alignment: null, exploration_schedule: fixed}
+  G1-A-NDCGAlign090:
+    group: G1
+    objective: rl
+    scope: joint
+    control: G1-J-RL
+    overrides: {reward_type: ndcg_in_batch, relevance_scheme: graded, target_alignment: 0.90, final_alignment: null, exploration_schedule: fixed}
+  G1-A-NDCGAlign095:
+    group: G1
+    objective: rl
+    scope: joint
+    control: G1-J-RL
+    overrides: {reward_type: ndcg_in_batch, relevance_scheme: graded, target_alignment: 0.95, final_alignment: null, exploration_schedule: fixed}
+  G1-A-MRRAlign040:
+    group: G1
+    objective: rl
+    scope: joint
+    control: G1-A-MRR
+    overrides: {reward_type: mrr_in_batch, relevance_scheme: binary, target_alignment: 0.40, final_alignment: null, exploration_schedule: fixed}
+  G1-A-MRRAlign065:
+    group: G1
+    objective: rl
+    scope: joint
+    control: G1-A-MRR
+    overrides: {reward_type: mrr_in_batch, relevance_scheme: binary, target_alignment: 0.65, final_alignment: null, exploration_schedule: fixed}
+  G1-A-MRRAlign090:
+    group: G1
+    objective: rl
+    scope: joint
+    control: G1-A-MRR
+    overrides: {reward_type: mrr_in_batch, relevance_scheme: binary, target_alignment: 0.90, final_alignment: null, exploration_schedule: fixed}
+  G1-A-MRRAlign095:
+    group: G1
+    objective: rl
+    scope: joint
+    control: G1-A-MRR
+    overrides: {reward_type: mrr_in_batch, relevance_scheme: binary, target_alignment: 0.95, final_alignment: null, exploration_schedule: fixed}
+  G1-J-RL-MRRSmall:
+    group: G1
+    objective: rl
+    scope: joint
+    control: G1-A-MRR
+    overrides:
+      reward_type: mrr_in_batch
+      relevance_scheme: binary
+      target_alignment: 0.80
+      final_alignment: null
+      exploration_schedule: fixed
+  G1-J-LL-Scaled:
+    group: G1
+    objective: lambdaloss
+    scope: joint
+    control: G1-J-LL
+    overrides:
+      lambdaloss_sigma: 33.333333333333336
   G1-A-Norm:
     group: G1
     objective: rl

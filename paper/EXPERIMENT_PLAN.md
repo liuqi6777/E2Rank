@@ -1,5 +1,83 @@
 # Experiment Plan: Reward-Based Optimization of Embedding Retrievers
 
+## 2026-09-12：固定探索强度趋势实验（最新安排）
+
+围绕 **binary MRR@10、teacher-graded nDCG@10 与 binary nDCG@10 三种 reward 配方**，
+分别固定 reward 与其余训练设置，只改变 vMF 的
+`target_alignment = E[cos(action, mean)]`。值越大，探索越弱。
+采用 **0.40 / 0.5302373892742263 / 0.65 / 0.80 / 0.90 / 0.95** 六点：
+0.40 检查比旧默认更强的探索，0.65 补齐中间区间，0.90/0.95 检查弱探索端是否回落。
+
+| 期望余弦 | binary MRR@10 | graded nDCG@10 | binary nDCG@10 |
+|---|---|---|---|
+| 0.40 | G1-A-MRRAlign040，待训练 | G1-A-NDCGAlign040，待训练 | G1-A-BinaryNDCGAlign040，待训练 |
+| 0.5302373892742263 | G1-A-MRR，复用 19.21 | G1-J-RL，复用 18.14 | G1-A-Binary，复用 18.42 |
+| 0.65 | G1-A-MRRAlign065，待训练 | G1-A-NDCGAlign065，待训练 | G1-A-BinaryNDCGAlign065，待训练 |
+| 0.80 | G1-J-RL-MRRSmall，待训练 | G1-A-FixedSmall，复用 18.98 | G1-A-BinaryNDCGAlign080，待训练 |
+| 0.90 | G1-A-MRRAlign090，待训练 | G1-A-NDCGAlign090，待训练 | G1-A-BinaryNDCGAlign090，待训练 |
+| 0.95 | G1-A-MRRAlign095，待训练 | G1-A-NDCGAlign095，待训练 | G1-A-BinaryNDCGAlign095，待训练 |
+
+共 18 个配置点，复用 4 个已有结果，14 个待训练点均从 E0 独立启动；双侧 vMF product、G=32、
+leave-one-out、无标准化、文档求和、分数校准、113 steps、LR 5e-6、
+global batch 128 / microbatch 16、seed 42 保持一致。全程固定探索，不使用退火。
+训练时按实际 embedding 维度反解 κ；target_alignment 优先于继承的 kappa=755。
+不同 κ 也会改变 score-function 梯度尺度，因此这里检验的是固定优化器下探索配方的
+端到端效果，不将趋势完全归因于采样半径。
+
+每个点只评测最终 checkpoint 的 BRIGHT；横轴为期望余弦，纵轴为 12 领域宏平均
+nDCG@10，同时保留领域分数。分别绘制三条六点曲线，FixedSmall 只属于 graded nDCG
+曲线，不混入 Anneal，不将 E0 15.07 当作“零探索训练”点。全量报告三条曲线，
+观察各自最优区间、同强度下的差异，以及 reward 配方是否改变最合适的探索强度。
+binary MRR 与 binary nDCG 使用完全相同的已知正例标签，比较奖励指标；
+graded nDCG 与 binary nDCG 保持指标不变，比较标签来源和粒度。
+graded nDCG 与 binary MRR 的直接比较同时包含标签和指标变化。
+各对照均在相同期望余弦处比较，并观察最合适的探索强度是否随 reward 配方变化。
+其他配置在本轮固定，已有消融作为选择依据，不据此声称已找到所有组件的全局最优组合。
+本轮属于 BRIGHT 配置开发，结果不是独立于调参过程的最终测试证据。
+
+使用 `bash scripts/run_g1_mrr_exploration.sh check 8` 预检，
+`bash scripts/run_g1_mrr_exploration.sh train 8` 顺序训练五点，每点训练后自动执行 BRIGHT。
+任一步失败即停止，不覆盖既有运行；若 MRRSmall 已完成，复用其结果，单独启动其余四行。
+新增 nDCG 入口 `bash scripts/run_g1_ndcg_exploration.sh check 8` / `train 8`，
+只训练四个缺失点，不重复默认强度与 FixedSmall。
+binary nDCG 入口为 `bash scripts/run_g1_binary_ndcg_exploration.sh check 8` / `train 8`，
+只训练五个缺失点，复用 G1-A-Binary。相较两条曲线新增 5 行；
+当前共 43 行（41 次训练、2 次评测），其中 37 个核心训练、4 个可选训练。
+三组共待执行 14 次训练；LL-Scaled 独立，不计入探索曲线。
+用户将在其他训练平台运行，目前无法登录；本次只准备配置与批量入口，没有启动训练。
+
+## 2026-09-12：第二轮配置开发（当前生效，覆盖下文冲突安排）
+
+用户补充 E0 的 BRIGHT nDCG@10 为 **15.07**；来源为用户提供的结果，
+尚未加入本地逐领域 CSV。第一轮 `_summary/g1_bright` 已有 16 个训练配置，
+每个覆盖 12 个领域。主 RL 为 18.14（较 E0 +3.07），FixedSmall 为 18.98
+（+3.91），MRR 为 19.21（+4.14），RankNet 为 17.96，LL 为 10.53。
+
+当前优先目标改为开发更好的 BRIGHT 配置。G1 不再要求 MTEB retention、
+逐 query bootstrap 或成本测量；它们也不作为下一轮训练的前置条件。
+相应不主张已经验证通用检索能力保持、统计显著性或计算效率优势。
+G2 的外部检索评测与 G3 的答案评测属于各自研究问题，不受这一 G1 决定影响。
+
+下一批增加 **2 次独立训练**，都从 E0 开始，沿用相同数据、seed 42、
+full FT、LR 5e-6、113 steps、global batch 128、microbatch 16 和最终 checkpoint：
+
+| ID | 配方 | 目的 / 对照 |
+|---|---|---|
+| G1-J-RL-MRRSmall | binary MRR@10，固定期望余弦 0.80；G=32，双侧 product，leave-one-out，无标准化，文档求和，保留校准 | 优先候选；相对 G1-A-MRR 只减小探索，另与 FixedSmall 比较 reward 设置 |
+| G1-J-LL-Scaled | graded LambdaLoss，sigma=1/0.03，其他设置沿用 G1-J-LL | 将 pairwise logistic 输入尺度对齐现有 RankNet；不改变 teacher grades 或 nDCG cutoff |
+
+MRRSmall 的假设是：强调首个已知正例的反馈，与较小的球面扰动可能互补。
+两个单项收益不能相加预测组合分数；不引入退火、额外标准化或更长预算。
+LL 的尺度修改有现有 RankNet temperature 作为依据，但效果尚未验证；
+同 logistic 尺度不意味着梯度、优化动态完全相同。LL-Scaled 与原 graded RL /
+FixedSmall 是同标签同 cutoff 的对照，不能称为 MRRSmall 的完全同目标监督控制。
+
+本轮是查看第一轮 BRIGHT 结果后进行的配置开发，后续分数按这一背景报告，
+不继续宣称 BRIGHT 从未用于配置选择。旧运行 ID、配方和结果保留；新配置使用独立
+输出目录，尚无结果，不自动替换主表的实测行。当前共注册 30 行（28 次训练、2 次评测）；
+其中核心训练 24 次、第一轮可选训练 4 次。下文 22/26 次预算为第一轮历史安排。
+本次仅更新计划与可解析配置，没有启动训练。
+
 ## 2026-09-12：实验优先级与执行顺序（当前生效）
 
 核心预算为 **22 次训练**。新增 Norm / DocMean / NormDocMean，和主方法组成统一
