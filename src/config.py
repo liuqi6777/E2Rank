@@ -295,7 +295,10 @@ class DataArguments:
 
 @dataclass
 class TrainingArguments(HFTrainingArguments):
-    pass
+    overwrite_output_dir: bool = field(
+        default=False,
+        metadata={"help": "Allow training into a non-empty output directory"},
+    )
 
 
 @dataclass

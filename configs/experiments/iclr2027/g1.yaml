@@ -7,8 +7,6 @@ document_encoder_mode: joint # Runner resolves query-only runs to frozen_index.
 frozen_document_verify_hashes: true
 frozen_document_index_backend: lookup
 frozen_document_search_batch_size: 1024
-dynamic_retrieval: false
-dynamic_retrieval_k: 20
 data_path: data/processed/reasonrank_multi/train.ready.jsonl
 per_dataset_max_samples: null
 q_max_len: 512
