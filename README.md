@@ -115,6 +115,16 @@ BRIGHT 通过 MTEB 的 `BrightRetrieval` 任务运行，但显式从 `xlangai/BR
 配置和仓库固定 revision 加载 corpus，复用 MTEB 的 exact retrieval、nDCG@10 和结果格式；
 评测器会按 12 个领域分别应用 query instruction。已有同路径结果默认复用，
 需要重跑时在上述命令末尾添加 `--run_kwargs '{"overwrite_results":true}'`。
+默认 `--bright_query_set original` 使用原始 query；也可选择官方 examples 中的 GPT reasoning
+作为 query 扩展（缺少有效 reasoning 的样本自动保持原 query）：
+
+```bash
+bash eval_mteb/scripts/run_mteb.sh CHECKPOINT BRIGHT \
+  configs/model/qwen3_embedding_0.6b.yaml \
+  --bright_query_set gpt-reasoning
+```
+
+`gpt-reasoning` 的结果写入输出目录下的 `query-gpt-reasoning/`，不会与原始 query 结果互相复用。
 逐领域 nDCG@10 和宏平均可用同一汇总器读取：
 
 ```bash
