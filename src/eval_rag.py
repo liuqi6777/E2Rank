@@ -73,6 +73,8 @@ def _validate_project_checkpoint(checkpoint: str | None, index_manifest_path: st
 def evaluate(args: argparse.Namespace) -> Path:
     if torch.distributed.is_available() and torch.distributed.is_initialized() and torch.distributed.get_world_size() > 1:
         raise RuntimeError("eval_rag.py is intentionally single-process; use one 80GB GPU")
+    if args.generator_top_k > args.retrieval_k:
+        raise ValueError("generator_top_k cannot exceed retrieval_k")
     output_dir = Path(args.output_dir).resolve()
     if output_dir.exists() and any(output_dir.iterdir()) and not args.overwrite:
         raise FileExistsError(f"Evaluation output is not empty: {output_dir}")
@@ -181,13 +183,15 @@ def evaluate(args: argparse.Namespace) -> Path:
                         "passage_ids": ids,
                         "scores": values,
                         "answer_recall_at_5": float(any(answer_mask[:5])),
+                        "answer_recall_at_10": float(any(answer_mask[:10])),
                         "answer_recall_at_20": float(any(answer_mask[:20])),
+                        "answer_mrr_at_10": _first_relevant_rank(answer_mask, 10),
                         "answer_mrr_at_20": _first_relevant_rank(answer_mask, 20),
                     }
                     if source in MULTIHOP_SOURCES:
                         groups = map_hotpot_evidence(record, title_catalog, args.evidence_minimum_f1)
                         found_counts = []
-                        for cutoff in (5, 20):
+                        for cutoff in (5, 10, 20):
                             found = 0 if groups is None else sum(
                                 any(ordinal in set(group) for ordinal in ids[:cutoff])
                                 for group in groups
@@ -195,7 +199,7 @@ def evaluate(args: argparse.Namespace) -> Path:
                             count = len(groups) if groups else 0
                             row[f"evidence_group_recall_at_{cutoff}"] = found / max(count, 1)
                             found_counts.append((found, count))
-                        for cutoff, (found, count) in zip((5, 20), found_counts):
+                        for cutoff, (found, count) in zip((5, 10, 20), found_counts):
                             row[f"all_evidence_success_at_{cutoff}"] = float(
                                 groups is not None and found == count
                             )
@@ -228,9 +232,10 @@ def evaluate(args: argparse.Namespace) -> Path:
             raise ValueError(f"{source}/{split} has {len(rows)} rows, expected {expected_count}")
         total_queries += len(rows)
         metric_keys = [
-            "answer_recall_at_5", "answer_recall_at_20", "answer_mrr_at_20",
+            "answer_recall_at_5", "answer_recall_at_10", "answer_recall_at_20",
+            "answer_mrr_at_10", "answer_mrr_at_20",
             *( ["generator_em", "generator_token_f1"] if generator else [] ),
-            *( ["evidence_group_recall_at_5", "evidence_group_recall_at_20", "all_evidence_success_at_5", "all_evidence_success_at_20", "evidence_mapping_success"] if source in MULTIHOP_SOURCES else [] ),
+            *( ["evidence_group_recall_at_5", "evidence_group_recall_at_10", "evidence_group_recall_at_20", "all_evidence_success_at_5", "all_evidence_success_at_10", "all_evidence_success_at_20", "evidence_mapping_success"] if source in MULTIHOP_SOURCES else [] ),
         ]
         summaries[source] = {key: _mean(rows, key) for key in metric_keys}
         summaries[source]["count"] = len(rows)
@@ -238,7 +243,10 @@ def evaluate(args: argparse.Namespace) -> Path:
     elapsed = time.perf_counter() - started
     if total_queries != sum(value[1] for value in EVALUATION_SUITE.values()):
         raise RuntimeError(f"Evaluation suite count mismatch: {total_queries}")
-    common_keys = ["answer_recall_at_5", "answer_recall_at_20", "answer_mrr_at_20"]
+    common_keys = [
+        "answer_recall_at_5", "answer_recall_at_10", "answer_recall_at_20",
+        "answer_mrr_at_10", "answer_mrr_at_20",
+    ]
     if generator:
         common_keys += ["generator_em", "generator_token_f1"]
     def aggregate(sources: list[str]) -> dict[str, float]:
@@ -315,7 +323,7 @@ def main() -> None:
     ))
     parser.add_argument("--generator-revision", default=None)
     parser.add_argument("--generator-cache", default="data/rag/generator_cache.sqlite3")
-    parser.add_argument("--generator-top-k", type=int, default=5)
+    parser.add_argument("--generator-top-k", type=int, default=10)
     parser.add_argument("--generator-max-input-length", type=int, default=2048)
     parser.add_argument("--generator-max-new-tokens", type=int, default=32)
     parser.add_argument("--generator-timeout-seconds", type=int, default=600)

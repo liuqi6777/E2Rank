@@ -6,8 +6,12 @@ from typing import Any
 import torch
 import torch.distributed as dist
 
+from fixed_corpus.environment import (
+    KnownQrelsMRRRewardProvider,
+    KnownQrelsNDCGRewardProvider,
+)
 from rag.generator import FrozenGeneratorClient
-from rag.metrics import max_token_f1, passage_contains_answer
+from rag.metrics import max_token_f1
 
 
 class RAGResultRewardProvider:
@@ -15,69 +19,28 @@ class RAGResultRewardProvider:
 
     def __init__(
         self,
-        reward_type: str = "source_aware_mrr",
-        retrieval_k: int = 20,
+        reward_type: str = "mrr",
+        retrieval_k: int = 10,
         generator: FrozenGeneratorClient | None = None,
-        generator_top_k: int = 5,
+        generator_top_k: int = 10,
     ) -> None:
-        if reward_type not in {"source_aware_mrr", "answer_mrr", "answer_f1"}:
+        if reward_type not in {"mrr", "ndcg", "answer_f1"}:
             raise ValueError(f"Unsupported reward_type={reward_type}")
         if retrieval_k <= 0:
             raise ValueError("retrieval_k must be positive")
         if generator_top_k <= 0:
             raise ValueError("generator_top_k must be positive")
+        if reward_type == "answer_f1" and generator_top_k > retrieval_k:
+            raise ValueError("answer_f1 generator_top_k cannot exceed retrieval_k")
         self.reward_type = reward_type
         self.generator = generator
         self.generator_top_k = int(generator_top_k)
-        self.retrieval_reward = (
-            RetrievalRewardProvider(reward_type, retrieval_k)
-            if reward_type in {"source_aware_mrr", "answer_mrr"}
-            else None
-        )
-
-    def _build_masks(
-        self,
-        index,
-        result_ids: torch.Tensor,
-        golden_answers: Sequence[Sequence[str]],
-        evidence_passage_groups: Sequence[Sequence[Sequence[int]]],
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        contents = index.lookup_text(result_ids)
-        batch, group, depth = result_ids.shape
-        answer_mask = torch.zeros(
-            (batch, group, depth), dtype=torch.bool, device=result_ids.device
-        )
-        max_evidence_groups = max(
-            (len(groups) for groups in evidence_passage_groups), default=0
-        )
-        evidence_hits = torch.zeros(
-            (batch, group, max_evidence_groups, depth),
-            dtype=torch.bool,
-            device=result_ids.device,
-        )
-        offset = 0
-        for batch_index in range(batch):
-            for group_index in range(group):
-                row_ids = result_ids[batch_index, group_index].detach().cpu().tolist()
-                row_contents = contents[offset : offset + depth]
-                offset += depth
-                answer_mask[batch_index, group_index] = torch.tensor(
-                    [
-                        passage_contains_answer(text, golden_answers[batch_index])
-                        for text in row_contents
-                    ],
-                    device=result_ids.device,
-                )
-                for evidence_index, passage_group in enumerate(
-                    evidence_passage_groups[batch_index]
-                ):
-                    evidence_hits[
-                        batch_index, group_index, evidence_index
-                    ] = torch.tensor(
-                        [ordinal in passage_group for ordinal in row_ids],
-                        device=result_ids.device,
-                    )
-        return answer_mask, evidence_hits
+        if reward_type == "mrr":
+            self.retrieval_reward = KnownQrelsMRRRewardProvider(retrieval_k)
+        elif reward_type == "ndcg":
+            self.retrieval_reward = KnownQrelsNDCGRewardProvider(retrieval_k)
+        else:
+            self.retrieval_reward = None
 
     def _generation_requests(
         self,
@@ -178,9 +141,10 @@ class RAGResultRewardProvider:
         questions: Sequence[str],
         golden_answers: Sequence[Sequence[str]],
         evidence_passage_groups: Sequence[Sequence[Sequence[int]]],
+        candidate_passage_ids: torch.Tensor | None = None,
+        training_positive_mask: torch.Tensor | None = None,
         **_: Any,
     ) -> torch.Tensor:
-        del result_scores
         if route_ids is not None:
             raise ValueError("RAG reward currently uses one shared corpus and no route_ids")
         if self.reward_type == "answer_f1":
@@ -191,22 +155,24 @@ class RAGResultRewardProvider:
                 golden_answers,
                 result_ids,
             )
-        answer_mask, evidence_memberships = self._build_masks(
-            index,
-            result_ids,
-            golden_answers,
-            evidence_passage_groups,
-        )
-        return self.retrieval_reward(
-            answer_mask,
-            sources,
-            evidence_memberships,
-            [len(groups) for groups in evidence_passage_groups],
-        )
+        if self.reward_type in {"mrr", "ndcg"}:
+            if candidate_passage_ids is None or training_positive_mask is None:
+                raise ValueError(
+                    "Fixed-label RAG rewards require candidate_passage_ids and "
+                    "training_positive_mask as passage-level relevance judgments"
+                )
+            return self.retrieval_reward(
+                result_ids=result_ids,
+                result_scores=result_scores,
+                candidate_ordinals=candidate_passage_ids,
+                relevance_labels=training_positive_mask.float(),
+                candidate_mask=candidate_passage_ids >= 0,
+            )
+        raise AssertionError(f"Unhandled reward_type={self.reward_type}")
 
 
 class RetrievalRewardProvider:
-    """One configurable provider for answer-MRR and source-aware-MRR."""
+    """Offline answer/evidence diagnostics; not a training reward type."""
 
     def __init__(self, mode: str = "source_aware_mrr", k: int = 20):
         if mode not in {"source_aware_mrr", "answer_mrr"}:

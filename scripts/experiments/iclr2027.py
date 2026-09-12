@@ -310,6 +310,12 @@ def blockers(suite, resolved, root=ROOT):
     for key in data_keys:
         if not cfg.get(key) or not path_at_root(cfg[key], root).is_file():
             errors.append(f'Missing runtime input {key}: {cfg.get(key)}')
+    if resolved['group'] == 'G3':
+        if cfg.get('rag_generator_top_k') != cfg.get('rag_retrieval_k'):
+            errors.append(
+                'G3 training requires rag_generator_top_k == rag_retrieval_k'
+            )
+        errors.extend(check_rag_candidate_manifest(cfg, root))
     if resolved['group'] == 'G1' and resolved['scope'] == 'query_only':
         errors.extend(check_frozen_document_index(cfg, root))
     if resolved['dependency']:
@@ -324,6 +330,60 @@ def blockers(suite, resolved, root=ROOT):
     output = Path(cfg['output_dir'])
     if (output.parent / '.launches' / output.name).exists():
         errors.append('Launch receipt already exists; explicit recovery is required')
+    return errors
+
+
+def check_rag_candidate_manifest(config, root=ROOT):
+    """Verify that a G3 candidate pool carries frozen corpus-aligned qrels."""
+    candidate_value = config.get('rag_candidate_manifest')
+    index_value = config.get('rag_index_manifest')
+    if not candidate_value or not index_value:
+        return []
+    candidate_path = path_at_root(candidate_value, root)
+    index_path = path_at_root(index_value, root)
+    if not candidate_path.is_file() or not index_path.is_file():
+        return []
+    metadata_path = candidate_path.with_suffix(candidate_path.suffix + '.manifest.json')
+    if not metadata_path.is_file():
+        return [f'Missing RAG candidate metadata: {metadata_path}']
+    errors = []
+    try:
+        metadata = read_mapping(metadata_path)
+        index_manifest = read_mapping(index_path)
+        if metadata.get('candidate_manifest_sha256') != digest(candidate_path):
+            errors.append(f'RAG candidate content hash mismatch: {candidate_path}')
+        if metadata.get('index_manifest_sha256') != digest(index_path):
+            errors.append('RAG candidates were mined against a different frozen index')
+        if metadata.get('training_label_protocol', {}).get('type') != 'external_binary_passage_qrels':
+            errors.append('RAG candidates do not use external binary passage qrels')
+        qrels_path = Path(metadata.get('qrels', ''))
+        if not qrels_path.is_absolute():
+            qrels_path = metadata_path.parent / qrels_path
+        qrels_manifest_path = Path(metadata.get('qrels_manifest', ''))
+        if not qrels_manifest_path.is_absolute():
+            qrels_manifest_path = metadata_path.parent / qrels_manifest_path
+        if not qrels_path.is_file():
+            errors.append(f'Missing RAG qrels: {qrels_path}')
+        elif metadata.get('qrels_sha256') != digest(qrels_path):
+            errors.append(f'RAG qrels hash mismatch: {qrels_path}')
+        if not qrels_manifest_path.is_file():
+            errors.append(f'Missing RAG qrels manifest: {qrels_manifest_path}')
+        else:
+            if metadata.get('qrels_manifest_sha256') != digest(qrels_manifest_path):
+                errors.append(f'RAG qrels manifest hash mismatch: {qrels_manifest_path}')
+            qrels_manifest = read_mapping(qrels_manifest_path)
+            qrels_corpus_hash = qrels_manifest.get('inputs', {}).get('corpus', {}).get('sha256')
+            if qrels_corpus_hash != index_manifest.get('corpus_sha256'):
+                errors.append('RAG qrels and frozen index use different corpus contents')
+        selected_sources = {
+            source.strip().lower()
+            for source in str(config.get('rag_train_sources', '')).split(',')
+            if source.strip()
+        }
+        if set(metadata.get('statistics', {})) != selected_sources:
+            errors.append('RAG candidate sources do not match rag_train_sources')
+    except (ValueError, KeyError, TypeError, OSError) as exc:
+        errors.append(f'Invalid RAG candidate/qrels metadata: {exc}')
     return errors
 
 

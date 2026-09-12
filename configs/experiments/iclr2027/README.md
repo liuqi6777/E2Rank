@@ -27,7 +27,7 @@ bash scripts/run_g1_binary_ndcg_exploration.sh train 8
 每个批量入口先预检本组全部待训练行，再顺序训练并自动评测最终模型的 BRIGHT，失败即停止。
 不会重训已有 0.530237 点，也不会自动覆盖输出。若 MRRSmall 已运行，直接用
 `scripts/experiment.py train RUN --gpus 8` 启动其余四行并复用其结果。
-当前共 43 个逻辑行（41 次训练、2 次评测）；下文预算为历史记录。
+当前共 44 个逻辑行（42 次训练、2 次评测）；下文预算为历史记录。
 
 ## 第二轮：优先开发 BRIGHT 配置（2026-09-12）
 
@@ -139,7 +139,7 @@ projected-Gaussian 采样替代 vMF。
 - G2：`D` 从初始 LLM 训练；`W` 从 `G2-D-CL-s42/` 最终模型重新训练。
   D-CL 训练 1200 步，W-CL/LL/RL 各新建 optimizer/scheduler 和数据迭代，再训练 1200 步。
   W-CL 是独立训练行，不复用 D-CL；只加载模型权重，不恢复 trainer 状态。
-- G3：从 E0 开始，比较 CL、检索 RL、答案 RL；不自动采用其他组的最优 checkpoint。
+- G3：从 E0 开始，比较 CL、MRR/nDCG 两种检索 RL 与答案 RL；不自动采用其他组的最优 checkpoint。
 
 当前 G1 joint CL / RN / LL / RL、八个核心 RL 消融和四个可选 RL 消融均已注册。
 LL 固定为 LambdaRank variant：pairwise logistic 乘当前排序交换产生的 `|ΔnDCG@10|`，
@@ -153,7 +153,11 @@ teacher grades 的 nDCG@10；不在已知 qrels 中的检索结果 gain 为 0。
 G2 使用预处理生成的固定训练文件，采用固定预算和最终 checkpoint，不要求 manifest loader 或 dev 选模。
 模型协议和预算已填写；第二阶段只需先完成 D-CL 以提供初始化权重。
 G3 的监督 CL 使用离线候选；RL action 动态检索冻结的完整 corpus，不设置共享候选控制。
-当前仍需接入答案 F1 选模；检索 RL 需要 nDCG，不能用 source-aware MRR 代替。
+G3 固定训练预算并直接评测最终 checkpoint，不保留 dev 或按 test 结果选模。训练 query 由
+DPR NQ labeled train subset 与 FlashRAG HotpotQA train 构成；预处理分别使用 DPR 人工 positive
+context 和 HotpotQA supporting facts，映射到同一个冻结 corpus。候选挖掘只读取该固定 binary
+qrels，并强制保留所有已知正例。MRR/nDCG 与 generator 统一使用 top-10；缺少或哈希不一致的
+qrels、candidate manifest、corpus 或 index 都作为运行时 artifact blocker 报告。
 
 运行时以 `check RUN` 为准。只有 `G1-DR` 加载冻结索引；缺少时 `check` 会提示先运行
 `python scripts/experiment.py encode G1 --gpus N`。
@@ -172,7 +176,7 @@ G3 的监督 CL 使用离线候选；RL action 动态检索冻结的完整 corpu
 | 3 | G1-A-Paired → G1-A-QPolicy → G1-A-DPolicy → G1-A-Cal → G1-A-Binary | 5 |
 | 4 | G2-D-CL → D-LL / D-RL / W-LL / W-RL / W-CL | 6 |
 | 5 | 索引就绪后 G1-DR | 1 |
-| 6 | G3-E0 → G3-CL → G3-AnsRL → G3-RetRL；先解决对应 blocker | 3 |
+| 6 | G3-E0 → G3-CL → G3-AnsRL → G3-RetRL-MRR → G3-RetRL-NDCG | 4 |
 | 7 | 可选：Anneal + FixedSmall，然后 Gaussian mismatch / MRR | 0（另计最多 4） |
 
 第一批优先完成 stage 1–2 共 7 次训练，得到同标签主对照与完整 2×2。

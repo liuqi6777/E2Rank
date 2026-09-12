@@ -54,9 +54,19 @@ def map_hotpot_evidence(
 
 
 def force_evidence_into_candidates(candidates: list[int], evidence_groups: list[list[int]]) -> list[int]:
+    required = [group[0] for group in evidence_groups if group]
+    return force_passages_into_candidates(candidates, required)
+
+
+def force_passages_into_candidates(
+    candidates: list[int], required_passage_ids: Iterable[int]
+) -> list[int]:
+    """Keep every known positive in a fixed-depth candidate list."""
     depth = len(candidates)
     result = list(dict.fromkeys(candidates))
-    required = [group[0] for group in evidence_groups if group]
+    required = list(dict.fromkeys(int(ordinal) for ordinal in required_passage_ids))
+    if len(required) > depth:
+        raise ValueError("More required passages than candidate depth")
     for ordinal in required:
         if ordinal not in result:
             result.append(ordinal)
@@ -71,6 +81,47 @@ def force_evidence_into_candidates(candidates: list[int], evidence_groups: list[
     if len(result) != depth:
         raise ValueError("Could not preserve candidate depth while inserting evidence")
     return result
+
+
+def build_qrel_candidate_record(
+    record: dict[str, Any],
+    candidate_ids: list[int],
+    candidate_contents: list[str],
+) -> dict[str, Any]:
+    """Attach fixed binary qrels to an immutable retrieval candidate pool."""
+    qrel_ids = record.get("qrel_passage_ids")
+    relevance = record.get("qrel_relevance")
+    if (
+        not isinstance(qrel_ids, list)
+        or not qrel_ids
+        or not all(isinstance(ordinal, int) and ordinal >= 0 for ordinal in qrel_ids)
+    ):
+        raise ValueError("qrel_passage_ids must contain non-negative corpus ordinals")
+    if relevance != [1] * len(qrel_ids):
+        raise ValueError("RAG candidate mining requires binary qrel_relevance")
+    qrel_set = set(qrel_ids)
+    training_mask = [ordinal in qrel_set for ordinal in candidate_ids]
+    if sum(training_mask) != len(qrel_set):
+        raise ValueError("Candidate pool does not contain every fixed qrel passage")
+    answers = record["golden_answers"]
+    answer_mask = [
+        passage_contains_answer(contents, answers) for contents in candidate_contents
+    ]
+    evidence_groups = record.get("evidence_passage_groups") or []
+    return {
+        "query_id": record["query_id"],
+        "source": record["source"],
+        "question": record["question"],
+        "golden_answers": answers,
+        "candidate_passage_ids": candidate_ids,
+        "answer_positive_mask": answer_mask,
+        "training_positive_mask": training_mask,
+        "evidence_group_ids": evidence_group_memberships_for_results(
+            candidate_ids, evidence_groups
+        ),
+        "evidence_passage_groups": evidence_groups,
+        "label_origin": record.get("label_origin"),
+    }
 
 
 def evidence_group_ids_for_results(result_ids: list[int], evidence_groups: list[list[int]]) -> list[int]:

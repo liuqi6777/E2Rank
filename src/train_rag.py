@@ -53,7 +53,12 @@ class RAGTrainer(EmbeddingTrainerMixin, HFTrainer):
     }
 
 
-def _validate_protocol(lora_args: LoraArguments, data_args: RAGDatasetArguments) -> None:
+def _validate_protocol(
+    lora_args: LoraArguments,
+    data_args: RAGDatasetArguments,
+    reward_args: RAGRewardArguments,
+    generator_args: RAGGeneratorArguments,
+) -> None:
     if lora_args.lora_enabled:
         raise ValueError("RAG training uses full query-encoder fine-tuning; set lora_enabled=false")
     if lora_args.lora_path:
@@ -62,6 +67,11 @@ def _validate_protocol(lora_args: LoraArguments, data_args: RAGDatasetArguments)
         )
     if not data_args.rag_candidate_manifest:
         raise ValueError("rag_candidate_manifest is required")
+    if generator_args.rag_generator_top_k != reward_args.rag_retrieval_k:
+        raise ValueError(
+            "G3 training requires rag_generator_top_k == rag_retrieval_k so all "
+            "rewarded passages are visible to the generator"
+        )
 
 
 def _assert_full_backbone_trainable(backbone) -> None:
@@ -91,6 +101,31 @@ def _validate_candidate_manifest(data_args: RAGDatasetArguments, index: FrozenDi
         raise ValueError("Candidate pool was mined against a different frozen index")
     if metadata.get("source_manifest_sha256") != index.manifest.get("source_manifest_sha256"):
         raise ValueError("Candidate pool and frozen index use different FlashRAG source manifests")
+    label_protocol = metadata.get("training_label_protocol", {})
+    if label_protocol.get("type") != "external_binary_passage_qrels":
+        raise ValueError("Candidate pool does not use the fixed binary passage qrels protocol")
+    qrels_path = Path(metadata.get("qrels", ""))
+    if not qrels_path.is_absolute():
+        qrels_path = metadata_path.parent / qrels_path
+    qrels_manifest_path = Path(metadata.get("qrels_manifest", ""))
+    if not qrels_manifest_path.is_absolute():
+        qrels_manifest_path = metadata_path.parent / qrels_manifest_path
+    if not qrels_path.is_file() or metadata.get("qrels_sha256") != sha256_file(qrels_path):
+        raise ValueError("Candidate pool references missing or changed qrels")
+    if (
+        not qrels_manifest_path.is_file()
+        or metadata.get("qrels_manifest_sha256") != sha256_file(qrels_manifest_path)
+    ):
+        raise ValueError("Candidate pool references a missing or changed qrels manifest")
+    with qrels_manifest_path.open("r", encoding="utf-8") as handle:
+        qrels_manifest = json.load(handle)
+    if qrels_manifest.get("qrels_sha256") != metadata.get("qrels_sha256"):
+        raise ValueError("Candidate pool and qrels manifest disagree on qrels contents")
+    if (
+        qrels_manifest.get("inputs", {}).get("corpus", {}).get("sha256")
+        != index.manifest.get("corpus_sha256")
+    ):
+        raise ValueError("Candidate qrels and frozen index use different corpus contents")
     if int(metadata.get("depth", -1)) != data_args.rag_candidate_depth:
         raise ValueError("Candidate manifest depth does not match rag_candidate_depth")
     if set(metadata.get("statistics", {})) != set(data_args.train_sources):
@@ -157,7 +192,7 @@ def main() -> None:
         reward_args,
         generator_args,
     ) = parse_arguments(parser, base_slots=RAG_CONFIG_SLOTS)
-    _validate_protocol(lora_args, data_args)
+    _validate_protocol(lora_args, data_args, reward_args, generator_args)
     training_args.remove_unused_columns = False
     guard_output_dir(training_args)
     setup_logging(training_args, {

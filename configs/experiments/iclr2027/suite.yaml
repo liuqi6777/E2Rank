@@ -4,11 +4,8 @@ plan: paper/EXPERIMENT_PLAN.md
 seed: 42
 output_root: checkpoints/iclr2027
 
-# Pending implementations are explicit, source-audited blockers. Remove a requirement
-# only with its implementation and corresponding validation; there is no bypass flag.
-pending:
-  rag_ndcg: "RAG nDCG reward not implemented; source_aware_mrr is not an equivalent substitution"
-  rag_selection: "Answer-F1 checkpoint selection needs integration with the training schedule"
+# Missing generated files are checked as artifact prerequisites, not implementation blockers.
+pending: {}
 
 profiles:
   G1:
@@ -41,11 +38,11 @@ profiles:
   G3:
     config: g3.yaml
     dataset_manifest: data/protocols/g3_qa.json
-    selection: qa_dev_answer_f1
+    selection: fixed_budget_final_checkpoint
     final_evaluation: [qa_test_answer_f1, qa_test_retrieval]
-    requirements: [rag_selection]
+    requirements: []
     protocol:
-      labels: qa_retrieval_relevance
+      labels: preconstructed_binary_passage_qrels_aligned_to_frozen_corpus
       candidate_access: supervised_offline_candidates_rl_dynamic_full_corpus
       max_steps: null
       learning_rate: null
@@ -75,7 +72,7 @@ execution_stages:
   - name: G1 fixed-index deployment
     runs: [G1-DR]
   - name: G3 answer feedback
-    runs: [G3-E0, G3-CL, G3-AnsRL, G3-RetRL]
+    runs: [G3-E0, G3-CL, G3-AnsRL, G3-RetRL-MRR, G3-RetRL-NDCG]
   - name: Optional exploration and reward diagnostics
     runs: [G1-A-Anneal, G1-A-FixedSmall, G1-A-Gaussion, G1-A-MRR]
 
@@ -298,12 +295,30 @@ runs:
     scope: joint
     init_from: G2-D-CL
   G3-E0: {group: G3, kind: evaluation, scope: reference}
-  G3-CL: {group: G3, objective: infonce, scope: query_only}
-  G3-RetRL:
+  G3-CL:
+    group: G3
+    objective: infonce
+    scope: query_only
+    protocol:
+      training_relevance: external_binary_passage_qrels_aligned_to_frozen_corpus
+  G3-RetRL-MRR:
     group: G3
     objective: rl
     scope: query_only
-    requirements: [rag_ndcg]
+    protocol:
+      retrieval_reward: binary_mrr_at_10
+      retrieval_relevance: external_binary_passage_qrels_aligned_to_frozen_corpus
+      unjudged_documents: zero_gain
+    overrides: {rag_retrieval_reward: mrr}
+  G3-RetRL-NDCG:
+    group: G3
+    objective: rl
+    scope: query_only
+    control: G3-RetRL-MRR
+    protocol:
+      retrieval_reward: binary_ndcg_at_10
+      retrieval_relevance: external_binary_passage_qrels_aligned_to_frozen_corpus
+      unjudged_documents: zero_gain
     overrides: {rag_retrieval_reward: ndcg}
   G3-AnsRL:
     group: G3

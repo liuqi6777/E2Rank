@@ -14,6 +14,9 @@ case "$command_name" in
   candidates)
     PYTHONPATH=src python -m rag.mine_candidates "$@"
     ;;
+  qrels)
+    PYTHONPATH=src python -m rag.build_qrels "$@"
+    ;;
   train)
     config="${1:?usage: scripts/rag_pipeline.sh train CONFIG [overrides]}"
     shift
@@ -26,7 +29,7 @@ case "$command_name" in
     PYTHONPATH=src python src/eval_rag_tuning.py "$@"
     ;;
   *)
-    echo "usage: scripts/rag_pipeline.sh {prepare|encode|candidates|train|tune-eval|eval} ..." >&2
+    echo "usage: scripts/rag_pipeline.sh {prepare|encode|qrels|candidates|train|tune-eval|eval} ..." >&2
     exit 2
     ;;
 esac

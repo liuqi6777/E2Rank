@@ -10,7 +10,7 @@
 | `audit_reasonrank_bright.py` | 检查数据来源、标签和 BRIGHT 重叠，产出审计记录 |
 | `prepare_reasonrank.py` | 多正例保留、去污染与 ready 数据编译，也提供审计共用的原始格式解析函数 |
 | `run.sh` / `run_baseline.sh` | 通用 RL / supervised torchrun 包装器，显式指定 `NPROC_PER_NODE` |
-| `rag_pipeline.sh` | RAG 数据准备、编码、候选挖掘、底层训练与评测 |
+| `rag_pipeline.sh` | RAG 数据准备、编码、NQ/HotpotQA qrels 构造、候选挖掘、底层训练与评测 |
 | `rag_acceptance.sh` / `rag_toy_distributed.py` | RAG 分布式索引和端到端验收 |
 | `measure_score_gaps.py` | embedding 分数间隔诊断 |
 | `merge_lora.py` | 显式 LoRA 实验的 adapter 合并；当前 full FT 主实验不需要 |
@@ -58,3 +58,22 @@ python scripts/prepare_reasonrank.py --data-dir data/audit_reasonrank_bright --o
 映射。G1 主对照和 RL 消融不需要冻结索引；`G1-DR` 运行前必须执行 `encode G1`，为每个训练
 source 构建 `<G1.data>/reasonrank_frozen_document_indices/<source>/` 和路由 manifest。
 索引、corpus、offset、document-ID 映射及 vector shards 均带 SHA256。
+
+## RAG train qrels
+
+先用 `prepare` 冻结 FlashRAG `wiki18_100w` corpus，随后一条命令同时构造 NQ 和
+HotpotQA train 的二值 passage qrels：
+
+```bash
+scripts/rag_pipeline.sh qrels
+```
+
+该命令会复用 `data/rag/flashrag_manifest.json` 中的 HotpotQA train，缺少时自动下载；
+也会在缺少时下载 DPR `biencoder-nq-train.json.gz`。NQ 只保留 DPR `score == 1000`
+的人工 positive context，HotpotQA 则要求所有标注 supporting facts 都映射到冻结 corpus。
+主产物是 `data/rag/qrels/nq_hotpotqa_train.jsonl`，同时写出带输入哈希和覆盖率的
+manifest，以及未能完整映射的 query 清单。脚本不会在检索时重新构造正例。
+训练时检索 reward type 只保留 `mrr` 和 `ndcg`；两者读取同一份固定二值 qrels，
+并与 generator 统一使用 top-10。
+冻结 E0 index 后运行 `scripts/rag_pipeline.sh candidates`，候选挖掘会读取上述 qrels、
+插入全部已知正例，并校验 qrels、corpus、FlashRAG source manifest 与 index 的哈希关系。

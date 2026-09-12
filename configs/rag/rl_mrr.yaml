@@ -1,0 +1,6 @@
+_base_: base.yaml
+rag_objective: rl
+rag_retrieval_reward: mrr
+rag_group_size: 32
+run_name: rag-rl-mrr
+output_dir: checkpoints/rag-rl-mrr

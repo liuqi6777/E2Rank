@@ -1,11 +1,13 @@
 _base_:
   - ../../rag/base.yaml
-# One QA source first; data/index manifests must agree with this resolved setting.
-rag_train_sources: nq
-rag_candidate_manifest: data/rag/candidates/nq_train.jsonl
+# NQ follows the DPR labeled train subset; HotpotQA uses mapped supporting facts.
+rag_train_sources: nq,hotpotqa
+rag_candidate_manifest: data/rag/candidates/nq_hotpotqa_train.jsonl
+# G3 uses the complete prepared training set. There is no held-out tuning split:
+# the fixed final checkpoint is evaluated once on the QA test set.
+rag_split: full
 max_steps: -1
 save_steps: 100
-save_total_limit: null
 overwrite_output_dir: false
 report_to: wandb
 lora_enabled: false

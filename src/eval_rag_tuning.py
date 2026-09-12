@@ -33,7 +33,7 @@ def main() -> None:
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--index-backend", choices=("faiss", "torch"), default="faiss")
     parser.add_argument("--batch-size", type=int, default=256)
-    parser.add_argument("--retrieval-k", type=int, default=20)
+    parser.add_argument("--retrieval-k", type=int, default=10)
     parser.add_argument("--tuning-fraction", type=float, default=0.05)
     parser.add_argument("--tuning-seed", type=int, default=20260909)
     parser.add_argument("--query-max-length", type=int, default=128)

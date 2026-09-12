@@ -1,6 +1,0 @@
-_base_: base.yaml
-rag_objective: rl
-rag_retrieval_reward: source_aware_mrr
-rag_group_size: 32
-run_name: rag-rl-source-aware-mrr
-output_dir: checkpoints/rag-rl-source-aware-mrr

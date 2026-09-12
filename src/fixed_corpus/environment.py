@@ -125,3 +125,47 @@ class KnownQrelsNDCGRewardProvider:
             dcg / idcg.clamp_min(torch.finfo(torch.float32).eps)[:, None],
             torch.zeros_like(dcg),
         )
+
+
+class KnownQrelsMRRRewardProvider:
+    """MRR@k for live results using the same fixed qrels contract as nDCG."""
+
+    def __init__(self, k: int) -> None:
+        if k <= 0:
+            raise ValueError("MRR cutoff must be positive")
+        self.k = int(k)
+
+    def __call__(
+        self,
+        *,
+        result_ids: torch.Tensor,
+        result_scores: torch.Tensor,
+        candidate_ordinals: torch.Tensor,
+        relevance_labels: torch.Tensor,
+        candidate_mask: torch.Tensor | None = None,
+        **_: Any,
+    ) -> torch.Tensor:
+        if result_ids.shape != result_scores.shape or result_ids.dim() != 3:
+            raise ValueError("Retrieval IDs and scores must be [batch, group, depth]")
+        if candidate_ordinals.shape != relevance_labels.shape or candidate_ordinals.dim() != 2:
+            raise ValueError("Qrel ordinals and relevance labels must be [batch, candidates]")
+        if candidate_ordinals.size(0) != result_ids.size(0):
+            raise ValueError("Retrieval results and qrels must share their batch size")
+        if candidate_mask is None:
+            candidate_mask = candidate_ordinals >= 0
+        elif candidate_mask.shape != candidate_ordinals.shape:
+            raise ValueError("candidate_mask must match qrel ordinals")
+
+        positive_qrels = candidate_mask.bool() & (relevance_labels > 0)
+        relevant = (
+            (result_ids.unsqueeze(-1) == candidate_ordinals[:, None, None, :])
+            & positive_qrels[:, None, None, :]
+        ).any(dim=-1)
+        cutoff = min(self.k, result_ids.size(-1))
+        ranks = torch.arange(
+            1, cutoff + 1, device=result_ids.device, dtype=torch.float32
+        )
+        reciprocal = torch.where(
+            relevant[..., :cutoff], ranks.reciprocal(), torch.zeros_like(ranks)
+        )
+        return reciprocal.max(dim=-1).values

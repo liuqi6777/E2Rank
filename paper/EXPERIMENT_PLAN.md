@@ -42,7 +42,7 @@ graded nDCG 与 binary MRR 的直接比较同时包含标签和指标变化。
 只训练四个缺失点，不重复默认强度与 FixedSmall。
 binary nDCG 入口为 `bash scripts/run_g1_binary_ndcg_exploration.sh check 8` / `train 8`，
 只训练五个缺失点，复用 G1-A-Binary。相较两条曲线新增 5 行；
-当前共 43 行（41 次训练、2 次评测），其中 37 个核心训练、4 个可选训练。
+当前共 44 行（42 次训练、2 次评测），其中 38 个核心训练、4 个可选训练。
 三组共待执行 14 次训练；LL-Scaled 独立，不计入探索曲线。
 用户将在其他训练平台运行，目前无法登录；本次只准备配置与批量入口，没有启动训练。
 
@@ -114,7 +114,8 @@ leave-one-out baseline 的 2×2 对照；Gaussian mismatch 与 MRR 降为可选�
 
 本轮验证：25 项 CPU 数学/接口检查通过，包含确定性球面积分、完整离散组枚举、维度反解、
 两路径 baseline 一致性、padding 梯度、固定候选封装、动态检索、Trainer 累积/恢复和配置传递。
-12 条已实现 RL 配方完成参数解析；未实现的 G3-RetRL 保留原 blocker。论文全量 LaTeX 编译通过，
+12 条已实现 RL 配方完成参数解析；G3-RetRL-MRR/NDCG 已统一接入预构造 binary passage qrels，
+并提供 DPR NQ 与 HotpotQA 到冻结 corpus 的构造脚本。正式 run 仍需先生成并核验数据 artifacts。论文全量 LaTeX 编译通过，
 无未定义引用或 overfull box；未启动模型训练、语料编码、生成器调用或检索基准实验。
 旧测试套件存在两个独立失效点：`test_frozen_corpus.py` 导入当前及 HEAD 均不存在的
 `validate_training_against_bright_documents`；`test_g1_dynamic_retrieval.py` 的 suite 测试把根目录
@@ -211,9 +212,8 @@ G2 直接训练和 warm-up 后训练可以有各自的网格，但每个对照�
 
 ### 1.3 评测与模型选择
 
-G1/G2 提前固定配置与训练预算，报告最终 checkpoint，不使用 dev 选模。
-G3 使用独立 QA dev 选模；并列时按更早 step、预先固定的 config 顺序处理。
-外部最终评测不用于选配置或挑任务。
+G1/G2/G3 均提前固定配置与训练预算，报告最终 checkpoint，不使用 dev 选模。
+G3 直接在固定 QA test 上评测最终 checkpoint；test 结果不用于回选 checkpoint、超参、配置或任务。
 
 以确定性均值 embedding 的检索结果为主。采样 reward 上升不能替代确定性质量提升。
 固定评测数据 revision、task list、候选、检索协议与聚合权重，输出逐任务分数。
@@ -441,21 +441,34 @@ Phase 0 固定一组外部检索任务，可选自 MTEB retrieval；包含任务
 ## 4. G3：固定索引的 RAG 优化
 
 默认初始化 E0，所有方法 full FT query encoder，冻结 document encoder、corpus vectors、
-index 和 generator。独立 QA train/dev/test，不能用 ReasonRank listwise 标签替代答案监督。
-现有 NQ/HotpotQA、wiki18、Qwen2.5 generator 配置只是候选方案；Phase 0 验证实际
-数据、答案/证据映射和版本后固定。优先完整完成一个 QA 任务，第二个作为扩展。
+index 和 generator。独立 QA train/test，不能用 ReasonRank listwise 标签替代答案监督。
+训练数据固定为 DPR NQ labeled train subset 与 FlashRAG HotpotQA train，并对齐到同一个
+FlashRAG `wiki18_100w` frozen corpus。NQ 只取 DPR `positive_ctxs.score == 1000` 的人工正例；
+HotpotQA 使用全部 annotated supporting facts。两者预先生成 binary passage qrels，不在检索时重标。
 
 | ID | Query 训练 | 角色 |
 |---|---|---|
 | G3-E0 | 无 | 原始检索器 |
-| G3-CL | InfoNCE（多正例按实际标注处理） | 检索监督适配 |
-| G3-RetRL | Retrieval nDCG reward | 与下游答案 reward 区分 |
+| G3-CL | InfoNCE（固定 binary passage qrels） | 监督检索适配 |
+| G3-RetRL-MRR | Binary qrels MRR@10 reward | 强调首个相关 passage 的位置 |
+| G3-RetRL-NDCG | Binary nDCG@10 reward | 衡量整个 top-10 相关 passage 排序 |
 | G3-AnsRL | Generated-answer F1 reward | 直接下游反馈的核心证据 |
 
-主指标和选模指标为固定 QA dev/test 的 answer F1；EM、Recall@5/20、MRR 为辅助。
+主指标为固定 QA test 的 answer F1；EM、Recall@5/20、MRR 为辅助。所有方法使用预先固定
+的训练预算和最终 checkpoint，不保留内部 dev、不按 test 结果选择 checkpoint 或修改配置。
 固定 generator、prompt、top-k、context budget、decoding、答案归一化和聚合方式。
 所有行使用同一套答案评测，不能把 answer-containing passage MRR 当作生成答案 F1。
 报告训练 GPU-hours、index searches、generator calls/tokens、cache reuse 与实际 group sizes。
+
+两个 retrieval-RL 对照必须使用同一套固定 binary passage qrels 和 cutoff 10，且与 generator
+看到的 top-10 context 对齐，其他训练设置完全一致。MRR 只奖励首个相关 passage 的排名；
+nDCG 累计 top-10 内全部相关 passage 的折扣增益，并以
+固定 qrels 的 IDCG 归一化，未标注文档按 zero gain 处理。二者都与 AnsRL 的生成答案 F1 区分。
+
+`build_qrels.py` 在检索前一次性构造 NQ/HotpotQA qrels，并记录输入、corpus 与产物哈希；
+无法完整映射的 query 单独写入 unresolved 清单。`mine_candidates.py` 只消费该 qrels artifact，
+把全部已知正例插入固定深度候选，并记录 qrels/corpus/index 的哈希关系。答案字符串包含关系
+仅保留为诊断字段，不再决定训练 relevance。
 
 监督训练使用离线候选；RL 不使用 CL 意义上的正负候选，action 直接动态检索冻结的完整
 corpus，再由检索或答案 reward 评分。candidate manifest 在 RL 中只承载 query、答案和证据
@@ -485,6 +498,7 @@ corpus，再由检索或答案 reward 评分。candidate manifest 在 RL 中只�
 - [ ] 核对固定 LR/主训练预算和 G2 两阶段预算；G1/G2 不使用 dev 网格选模。
 - [ ] G3 QA、index、generator manifests；验证 RL action 动态检索完整冻结 corpus，且训练
       不消费离线 candidate IDs。
+- [x] G3 NQ/HotpotQA binary qrels 构造、固定标签 candidate mining、统一 MRR/nDCG reward 接口。
 - [ ] 所有命令 dry-run，检查 resolved configs，再提交 GPU；尚无已完成结果。
 
 ### Phase 1 — 数值检查、协议固定与短运行准备
@@ -529,9 +543,10 @@ W 系列只有对 D-CL 最终权重的真实依赖，无需等待 D-LL 或 D-RL�
 
 1. 准备并核验 G1 分领域 E0 索引后，执行 `G1-DR`（1 次）。它与 QPolicy 不同的 candidate access
    和文档更新范围必须同时注明，不按单因素消融解释。
-2. G3 的 QA/index/generator 协议和 answer-F1 选模能力接入后，先得到 `G3-E0`，再安排
-   `G3-CL → G3-AnsRL → G3-RetRL`（3 次）。优先完成答案反馈问题；RetRL 还需 nDCG 实现。
-   现有 `rag_selection` / `rag_ndcg` blockers 保留，不用 source-aware MRR 顶替 nDCG。
+2. G3 的 QA/index/generator 协议固定后，先得到 `G3-E0`，再安排
+   `G3-CL → G3-AnsRL → G3-RetRL-MRR → G3-RetRL-NDCG`（4 次）。优先完成答案反馈问题；
+   MRR 与 nDCG 均已接入同一套 RAG qrels，但后两条需先生成与冻结 corpus 对齐的数据 artifacts；
+   二者必须作为独立 run，不互相顶替结果。
 
 G1-DR 的索引准备可提前进行，但不是 G1 joint 或 G2 的前置依赖。
 G3 与前两组无 checkpoint 依赖；其准备完成后可与其他独立运行重叠。

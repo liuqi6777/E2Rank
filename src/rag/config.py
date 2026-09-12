@@ -5,7 +5,11 @@ from typing import Optional
 
 
 SUPPORTED_RAG_OBJECTIVES = ("infonce", "ranknet", "rl")
-SUPPORTED_RAG_REWARDS = ("source_aware_mrr", "answer_mrr", "answer_f1")
+SUPPORTED_RAG_REWARDS = (
+    "mrr",
+    "ndcg",
+    "answer_f1",
+)
 
 
 @dataclass
@@ -82,8 +86,8 @@ class RAGIndexArguments:
 
 @dataclass
 class RAGRewardArguments:
-    rag_retrieval_reward: str = field(default="source_aware_mrr")
-    rag_retrieval_k: int = field(default=20)
+    rag_retrieval_reward: str = field(default="mrr")
+    rag_retrieval_k: int = field(default=10)
     rag_group_size: int = field(default=32)
     rag_kappa: float = field(default=755.0)
     rag_advantage_normalize: Optional[bool] = field(default=None)
@@ -125,7 +129,7 @@ class RAGGeneratorArguments:
     )
     rag_generator_endpoint: Optional[str] = field(default=None)
     rag_generator_cache: str = field(default="data/rag/generator_cache.sqlite3")
-    rag_generator_top_k: int = field(default=5)
+    rag_generator_top_k: int = field(default=10)
     rag_generator_max_input_length: int = field(default=2048)
     rag_generator_max_new_tokens: int = field(default=32)
     rag_generator_timeout_seconds: int = field(default=600)

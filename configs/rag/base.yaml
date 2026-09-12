@@ -32,8 +32,8 @@ rag_index_shard_assignment: round_robin
 rag_index_search_batch_size: 1024
 rag_index_verify_hashes: true
 
-rag_retrieval_reward: source_aware_mrr
-rag_retrieval_k: 20
+rag_retrieval_reward: mrr
+rag_retrieval_k: 10
 rag_group_size: 32
 rag_kappa: 755
 rag_advantage_normalize: null
@@ -47,7 +47,7 @@ rag_generator_model: Qwen/Qwen2.5-7B-Instruct
 rag_generator_system_prompt: "Answer the question based on the given documents. Only give me the answer and do not output any other words."
 rag_generator_endpoint: null
 rag_generator_cache: data/rag/generator_cache.sqlite3
-rag_generator_top_k: 5
+rag_generator_top_k: 10
 rag_generator_max_input_length: 2048
 rag_generator_max_new_tokens: 32
 rag_generator_timeout_seconds: 600
