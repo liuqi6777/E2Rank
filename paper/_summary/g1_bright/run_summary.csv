@@ -1,0 +1,17 @@
+run,tasks_found,tasks_missing,types_found,mean_task_score,mean_type_score,retrieval,retrieval_ood,errors,result_dir
+G1-A-MRR-s42,1,0,1,19.21,19.21,19.21,19.21,0,/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027/G1-A-MRR-s42/mteb_eval/bright/iclr2027__G1-A-MRR-s42/no_revision_available
+G1-A-FixedSmall-s42,1,0,1,18.98,18.98,18.98,18.98,0,/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027/G1-A-FixedSmall-s42/mteb_eval/bright/iclr2027__G1-A-FixedSmall-s42/no_revision_available
+G1-A-Gaussion-s42,1,0,1,18.45,18.45,18.45,18.45,0,/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027/G1-A-Gaussion-s42/mteb_eval/bright/iclr2027__G1-A-Gaussion-s42/no_revision_available
+G1-A-Binary-s42,1,0,1,18.42,18.42,18.42,18.42,0,/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027/G1-A-Binary-s42/mteb_eval/bright/iclr2027__G1-A-Binary-s42/no_revision_available
+G1-A-Norm-s42,1,0,1,18.2,18.2,18.2,18.2,0,/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027/G1-A-Norm-s42/mteb_eval/bright/iclr2027__G1-A-Norm-s42/no_revision_available
+G1-J-RL-s42,1,0,1,18.14,18.14,18.14,18.14,0,/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027/G1-J-RL-s42/mteb_eval/bright/iclr2027__G1-J-RL-s42/no_revision_available
+G1-J-RN-s42,1,0,1,17.96,17.96,17.96,17.96,0,/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027/G1-J-RN-s42/mteb_eval/bright/iclr2027__G1-J-RN-s42/no_revision_available
+G1-A-Anneal-s42,1,0,1,17.88,17.88,17.88,17.88,0,/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027/G1-A-Anneal-s42/mteb_eval/bright/iclr2027__G1-A-Anneal-s42/no_revision_available
+G1-J-CL-s42,1,0,1,16.96,16.96,16.96,16.96,0,/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027/G1-J-CL-s42/mteb_eval/bright/iclr2027__G1-J-CL-s42/no_revision_available
+G1-A-DocMean-s42,1,0,1,16.6,16.6,16.6,16.6,0,/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027/G1-A-DocMean-s42/mteb_eval/bright/iclr2027__G1-A-DocMean-s42/no_revision_available
+G1-A-Paired-s42,1,0,1,16.57,16.57,16.57,16.57,0,/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027/G1-A-Paired-s42/mteb_eval/bright/iclr2027__G1-A-Paired-s42/no_revision_available
+G1-A-NormDocMean-s42,1,0,1,16.51,16.51,16.51,16.51,0,/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027/G1-A-NormDocMean-s42/mteb_eval/bright/iclr2027__G1-A-NormDocMean-s42/no_revision_available
+G1-A-DPolicy-s42,1,0,1,16.25,16.25,16.25,16.25,0,/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027/G1-A-DPolicy-s42/mteb_eval/bright/iclr2027__G1-A-DPolicy-s42/no_revision_available
+G1-A-Cal-s42,1,0,1,16.04,16.04,16.04,16.04,0,/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027/G1-A-Cal-s42/mteb_eval/bright/iclr2027__G1-A-Cal-s42/no_revision_available
+G1-A-QPolicy-s42,1,0,1,16.01,16.01,16.01,16.01,0,/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027/G1-A-QPolicy-s42/mteb_eval/bright/iclr2027__G1-A-QPolicy-s42/no_revision_available
+G1-J-LL-s42,1,0,1,10.53,10.53,10.53,10.53,0,/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027/G1-J-LL-s42/mteb_eval/bright/iclr2027__G1-J-LL-s42/no_revision_available
