@@ -63,6 +63,8 @@ profiles:
 # Advisory order only: launch still requires one explicit run ID.
 # Round 2 explicitly develops configurations using the first-round BRIGHT results.
 execution_stages:
+  - name: G1 MRR group-size x alignment grid
+    runs: [G1-A-MRRG16Align090, G1-A-MRRG64Align090, G1-A-MRRG16Align080, G1-A-MRRG16Align095, G1-A-MRRG64Align080, G1-A-MRRG64Align095]
   - name: G1 binary supervised control
     runs: [G1-J-LL-Binary-Scaled]
   - name: G1 MRR 0.90 mechanisms
@@ -99,6 +101,51 @@ execution_stages:
     runs: [G1-A-Anneal, G1-A-FixedSmall, G1-A-Gaussion, G1-A-MRR]
 
 runs:
+  # Round 4: narrow interaction grid around the selected MRRAlign090 recipe.
+  # The G=32 row reuses MRRSmall / MRRAlign090 / MRRAlign095; only the six
+  # off-center cells below require new training.
+  G1-A-MRRG16Align080:
+    group: G1
+    objective: rl
+    scope: joint
+    control: G1-A-MRRAlign090
+    protocol: {labels: all_known_positives_binary}
+    overrides: {reward_type: mrr_in_batch, relevance_scheme: binary, group_size: 16, target_alignment: 0.80, final_alignment: null, exploration_schedule: fixed}
+  G1-A-MRRG16Align090:
+    group: G1
+    objective: rl
+    scope: joint
+    control: G1-A-MRRAlign090
+    protocol: {labels: all_known_positives_binary}
+    overrides: {reward_type: mrr_in_batch, relevance_scheme: binary, group_size: 16, target_alignment: 0.90, final_alignment: null, exploration_schedule: fixed}
+  G1-A-MRRG16Align095:
+    group: G1
+    objective: rl
+    scope: joint
+    control: G1-A-MRRAlign090
+    protocol: {labels: all_known_positives_binary}
+    overrides: {reward_type: mrr_in_batch, relevance_scheme: binary, group_size: 16, target_alignment: 0.95, final_alignment: null, exploration_schedule: fixed}
+  G1-A-MRRG64Align080:
+    group: G1
+    objective: rl
+    scope: joint
+    control: G1-A-MRRAlign090
+    protocol: {labels: all_known_positives_binary}
+    overrides: {reward_type: mrr_in_batch, relevance_scheme: binary, group_size: 64, target_alignment: 0.80, final_alignment: null, exploration_schedule: fixed}
+  G1-A-MRRG64Align090:
+    group: G1
+    objective: rl
+    scope: joint
+    control: G1-A-MRRAlign090
+    protocol: {labels: all_known_positives_binary}
+    overrides: {reward_type: mrr_in_batch, relevance_scheme: binary, group_size: 64, target_alignment: 0.90, final_alignment: null, exploration_schedule: fixed}
+  G1-A-MRRG64Align095:
+    group: G1
+    objective: rl
+    scope: joint
+    control: G1-A-MRRAlign090
+    protocol: {labels: all_known_positives_binary}
+    overrides: {reward_type: mrr_in_batch, relevance_scheme: binary, group_size: 64, target_alignment: 0.95, final_alignment: null, exploration_schedule: fixed}
   # Round 3: reuse MRRAlign090 as the control, initialize every new run from E0.
   G1-J-LL-Binary-Scaled:
     group: G1

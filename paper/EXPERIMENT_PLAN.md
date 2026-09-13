@@ -1,5 +1,47 @@
 # Experiment Plan: Reward-Based Optimization of Embedding Retrievers
 
+## 2026-09-13：G1 group size × target alignment 局部交互网格（当前生效）
+
+G1 核心消融已在外部训练平台完成，当前配方确定为 `G1-A-MRRAlign090`：binary
+MRR@10、双侧 vMF product、leave-one-out、无 advantage normalization、document
+log-prob sum、保留 frozen-candidate rescaling。消融结果尚未同步到本地
+`_summary/g1_bright`，本节只记录据此作出的配方决定，不补写未导入的数值。
+
+新增一个围绕已选配方的 **3 × 3 局部交互网格**：
+
+| group size | alignment 0.80 | alignment 0.90 | alignment 0.95 |
+|---:|---|---|---|
+| 16 | G1-A-MRRG16Align080，新训练 | G1-A-MRRG16Align090，新训练 | G1-A-MRRG16Align095，新训练 |
+| 32 | G1-J-RL-MRRSmall，复用 19.14 | G1-A-MRRAlign090，复用 22.01 | G1-A-MRRAlign095，复用 19.88 |
+| 64 | G1-A-MRRG64Align080，新训练 | G1-A-MRRG64Align090，新训练 | G1-A-MRRG64Align095，新训练 |
+
+只新增 6 次训练；不重新扫描 0.40 / 0.530237 / 0.65。0.80 与 0.95 是现有峰值
+0.90 两侧已经实测的邻近配置，复用三条 G=32 结果可将新增预算集中到 group-size
+主效应与交互。所有新行从原始 E0 独立启动，不从 `G1-A-MRRAlign090` checkpoint
+续训；除了 `group_size` 和 `target_alignment` 两个因子，其余设置与该控制完全一致。
+
+训练预算固定为 113 optimizer steps、global batch 128 / microbatch 16、LR 5e-6、
+full FT、seed/data seed 42，并评测最终 checkpoint 的 BRIGHT 12 领域宏平均 nDCG@10。
+不按 group size 平衡 wall-clock 或 reward evaluation 次数：product rollout 每个 query
+形成 G² 个 query-document 组合，三个水平分别为 256 / 1024 / 4096。因此本实验回答
+固定数据暴露和 optimizer-update 预算下的效果与质量—成本关系，不把差异解释为等算力
+条件下的纯估计器效应。共同报告 wall time、peak GPU memory、训练 reward、
+`reward/mrr_in_batch/n_distinct`、query/document `group_std` 与 `degenerate_frac`。
+
+主要分析先报告每个 alignment 下相对 G=32 的简单效应
+`S(G,a)-S(32,a)`，再报告 group-size 对比是否随 alignment 改变，例如
+`[S(64,0.90)-S(16,0.90)]-[S(64,0.80)-S(16,0.80)]`。最终分数与交互均为
+单 seed 的配置开发证据，不作显著性主张；逐领域结果用于判断均值变化是否由少数领域驱动。
+
+```bash
+bash scripts/run_g1_mrr_group_alignment_grid.sh check 8
+bash scripts/run_g1_mrr_group_alignment_grid.sh train 8
+```
+
+脚本先预检全部六行；训练时先执行 alignment 0.90 的 G=16 / 64 两个锚点，再补齐
+四个边缘格。任一步失败即停止，不覆盖、跳过或自动重试已有输出。Suite 现有 64 行：
+62 次训练、2 次评测；本轮仅新增上述 6 次。
+
 ## 2026-09-13：G2 两种数据 × 三种初始化 × CL/RL（当前生效）
 
 G2 在 E2Rank 和 BGE-M3 上各运行六次训练：B0、同数据共同 CL warm-up 的 W0、原始

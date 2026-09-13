@@ -1,5 +1,22 @@
 # 三组实验配置指南
 
+## G1 MRR group size × alignment 局部网格（当前执行批次）
+
+核心消融后固定采用 `G1-A-MRRAlign090` 的 binary MRR@10、双侧 product 与更新规则。
+局部网格为 `group_size={16,32,64}` × `target_alignment={0.80,0.90,0.95}`。
+G=32 的三格复用 `G1-J-RL-MRRSmall`、`G1-A-MRRAlign090` 和
+`G1-A-MRRAlign095`；只新增另外 6 次训练。
+
+```bash
+bash scripts/run_g1_mrr_group_alignment_grid.sh check 8
+bash scripts/run_g1_mrr_group_alignment_grid.sh train 8
+```
+
+新行保持 113 steps、global batch 128 / microbatch 16、LR 5e-6、full FT、seed 42，
+并从 E0 独立训练。固定 update/query-exposure 预算，不等算力：product score grid 随 G²
+变化，因此同时记录最终 BRIGHT、wall time、peak memory 和 reward degeneracy 诊断。
+当前 suite 共 64 行（62 次训练、2 次评测）；下文更早批次的计数由本节覆盖。
+
 ## G2：CL 可启动，RL 暂停（当前生效）
 
 当前 G2 在 E2Rank 和 BGE-M3 上各有六行 D/E/W × CL/RL；旧 D-LL/W-LL 已退出 suite。
