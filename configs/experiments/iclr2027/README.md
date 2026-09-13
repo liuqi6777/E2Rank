@@ -1,6 +1,32 @@
 # 三组实验配置指南
 
-## 固定探索强度扫描（最新）
+## MRR 0.90 核心消融（2026-09-13，当前执行批次）
+
+新增 8 行：`G1-J-LL-Binary-Scaled`，以及 `G1-A-MRR090-` 前缀的
+`QPolicy`、`DPolicy`、`Paired`、`Cal`、`Norm`、`DocMean`、`NormDocMean`。
+七个 RL 消融固定 binary MRR@10 与 alignment 0.90，每行只改变命名组件。
+全部从 E0 独立训练；复用 `G1-A-MRRAlign090` 的 22.01，不从该 checkpoint 续训。
+Binary LL 使用 sigma=33.333333333333336，直接同标签同指标 RL 对照为
+`G1-A-BinaryNDCGAlign090`，不是 MRR 的完全同目标控制。
+
+```bash
+# Seven RL ablations only.
+bash scripts/run_g1_mrr090_ablations.sh check 8
+bash scripts/run_g1_mrr090_ablations.sh train 8
+
+# Run the supervised control separately.
+python scripts/experiment.py check G1-J-LL-Binary-Scaled --gpus 8
+python scripts/experiment.py train G1-J-LL-Binary-Scaled --gpus 8
+```
+
+消融脚本只预检七个 RL 消融，再依次训练并自动评测最终模型的 BRIGHT，失败即停，不自动覆盖或跳过。
+Binary LL-Scaled 单独运行，不是消融脚本的启动依赖。
+部分完成后使用 `python scripts/experiment.py train RUN --gpus 8` 执行剩余行。
+保持 113 steps、LR 5e-6、global batch 128 / microbatch 16、full FT、seed 42。
+当前累计注册 52 行（50 次训练、2 次评测），本轮新增八次尚未运行。
+此前三条探索曲线已完成；下文待训练状态与预算为历史记录，最新决定以实验计划顶部为准。
+
+## 固定探索强度扫描（已完成）
 
 分别使用 binary MRR@10、teacher-graded nDCG@10 和 binary nDCG@10，比较期望余弦
 **0.40、0.530237、0.65、0.80、0.90、0.95**；

@@ -1,5 +1,68 @@
 # Experiment Plan: Reward-Based Optimization of Embedding Retrievers
 
+## 2026-09-13：MRR 0.90 完整核心消融与 binary 监督对照（当前生效）
+
+本节覆盖下文冲突的待运行状态、执行顺序和预算。`_summary/g1_bright` 已收录
+31 次训练与 E0 的 BRIGHT 结果，每行均有 12 个领域；三条六点探索曲线已完成。
+E0 为 15.07；`G1-A-MRRAlign090` 为 22.01，作为本轮配置开发候选及复用控制。
+MRR alignment 0.80 / 0.95 为 19.14 / 19.88；binary nDCG alignment 0.90 为 19.84。
+graded LL-Scaled 为 19.50，超过最佳 graded RL（FixedSmall，18.98），因此不能使用
+原 LL 的 10.53 继续支撑 RL 优于强 metric-aware 监督的主张。
+MRR 0.90 相对 E0 在 11/12 个领域提升，相对 LL-Scaled 在 8/12 个领域提升；
+LeetCode 相对 E0 下降 4.37。完整领域结果和历史配置均保留。
+
+下一批新增 **8 次独立训练：1 个单独运行的监督对照 + 7 个核心消融**。监督对照不进入
+消融脚本，也不是消融的启动依赖；消融按 policy / rollout / calibration、更新规则 2×2
+的顺序执行。所有新行从原始 E0 初始化，不从 MRR 0.90 checkpoint
+续训，不重训已完成的控制行。所有新结果均待测，本次仅准备计划、配置和运行脚本。
+
+| ID | 相对控制的变化 | 对照与目的 |
+|---|---|---|
+| G1-J-LL-Binary-Scaled | graded LL-Scaled 改为全部已知正例 binary 标签；sigma=1/0.03 | 与 graded LL-Scaled 比较标签；与 G1-A-BinaryNDCGAlign090 比较同标签、同 nDCG@10 的监督与 RL |
+| G1-A-MRR090-QPolicy | 仅保留 query action | 移除 document policy；仍更新共享 encoder |
+| G1-A-MRR090-DPolicy | 仅保留 document action | 移除 query policy；仍更新共享 encoder |
+| G1-A-MRR090-Paired | product 改为 diagonal/paired，G=32 | 检验 rollout 组合方式，不据此主张成本效率优势 |
+| G1-A-MRR090-Cal | 关闭 frozen-candidate mean-score rescaling | 检验弱探索时校准的贡献 |
+| G1-A-MRR090-Norm | 恢复 per-component advantage 标准化，文档仍 sum | 更新规则 2×2 |
+| G1-A-MRR090-DocMean | 文档改为 mean，不标准化 | 更新规则 2×2 |
+| G1-A-MRR090-NormDocMean | 同时恢复标准化与文档 mean | 更新规则 2×2 |
+
+七个 RL 消融的直接控制均为 `G1-A-MRRAlign090`（22.01）：binary MRR@10、
+固定 target_alignment=0.90、双侧 vMF product、G=32、leave-one-out、无标准化、
+文档 sum、保留校准；每行仅改变表中组件。target_alignment 优先于继承的 kappa=755，
+按实际 embedding 维度反解 κ，不启用退火。QPolicy/DPolicy 均为 joint encoder，
+不等同于冻结文档索引。NormDocMean 保持 leave-one-out，不是旧 group-baseline 配方复现。
+
+2×2 的第四格复用 MRR 0.90。报告标准化在 sum/mean 下的简单效应及交互差分
+`(S_norm,mean - S_none,mean) - (S_norm,sum - S_none,sum)`；仅作单 seed 描述。
+Binary LL 使用全部已知正例、与 binary RL 相同候选及 nDCG cutoff 10；它不是 MRR 的
+完全同目标监督控制。结合已有同 alignment 的 binary nDCG/MRR 对照区分奖励指标影响，
+不把跨标签、跨目标的最佳分数差单独归因于 RL 估计器。
+
+八行共同固定清理后的 4,963 条训练数据、E0、full FT、seed/data seed 42、LR 5e-6、
+113 optimizer steps、global batch 128 / microbatch 16、原有优化器和最终 checkpoint 协议。
+每行训练后自动评测最终模型的 BRIGHT。G1 继续属于 BRIGHT 配置开发，不要求额外
+multi-seed、bootstrap、MTEB retention 或成本测量作为本轮前置条件。已有日志/诊断可以
+辅助解释探索与梯度尺度，但未测量的诊断不得写成已有证据。
+
+```bash
+# Seven RL ablations only.
+bash scripts/run_g1_mrr090_ablations.sh check 8
+bash scripts/run_g1_mrr090_ablations.sh train 8
+
+# Independent supervised control; launch separately.
+python scripts/experiment.py check G1-J-LL-Binary-Scaled --gpus 8
+python scripts/experiment.py train G1-J-LL-Binary-Scaled --gpus 8
+```
+
+消融脚本只预检七个 RL 消融，再依次训练与评测；任一步失败即停止，不自动重试、跳过或覆盖既有
+输出。部分完成后用 `python scripts/experiment.py train RUN --gpus 8` 单独执行剩余行。
+新目录使用各自 ID 加 `-s42`，不覆盖旧配置结果。
+Suite 现有 **52 行：50 次训练、2 次评测**，其中 46 个核心训练、4 个历史可选训练。
+这是累计注册数，不代表本轮待运行数；本轮只新增上述八次。`G1-DR` 未出现在当前汇总，
+仍属独立实验；G2/G3 维持各自研究问题与初始化协议。本轮不新增退火、Gaussian、Own/G
+或 alignment 加密扫描；下文旧预算和待训练标记作为历史安排保留。
+
 ## 2026-09-12：固定探索强度趋势实验（最新安排）
 
 围绕 **binary MRR@10、teacher-graded nDCG@10 与 binary nDCG@10 三种 reward 配方**，

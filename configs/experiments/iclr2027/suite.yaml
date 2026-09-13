@@ -51,6 +51,10 @@ profiles:
 # Advisory order only: launch still requires one explicit run ID.
 # Round 2 explicitly develops configurations using the first-round BRIGHT results.
 execution_stages:
+  - name: G1 binary supervised control
+    runs: [G1-J-LL-Binary-Scaled]
+  - name: G1 MRR 0.90 mechanisms
+    runs: [G1-A-MRR090-QPolicy, G1-A-MRR090-DPolicy, G1-A-MRR090-Paired, G1-A-MRR090-Cal, G1-A-MRR090-Norm, G1-A-MRR090-DocMean, G1-A-MRR090-NormDocMean]
   - name: G1 reference
     runs: [G1-E0]
   - name: G1 round 2 configuration development
@@ -77,6 +81,63 @@ execution_stages:
     runs: [G1-A-Anneal, G1-A-FixedSmall, G1-A-Gaussion, G1-A-MRR]
 
 runs:
+  # Round 3: reuse MRRAlign090 as the control, initialize every new run from E0.
+  G1-J-LL-Binary-Scaled:
+    group: G1
+    objective: lambdaloss
+    scope: joint
+    control: G1-J-LL-Scaled
+    protocol: {labels: all_known_positives_binary}
+    overrides: {relevance_scheme: binary, lambdaloss_sigma: 33.333333333333336}
+  G1-A-MRR090-QPolicy:
+    group: G1
+    objective: rl
+    scope: joint
+    control: G1-A-MRRAlign090
+    protocol: {labels: all_known_positives_binary}
+    overrides: {reward_type: mrr_in_batch, relevance_scheme: binary, target_alignment: 0.90, final_alignment: null, exploration_schedule: fixed, action_components: [[query]]}
+  G1-A-MRR090-DPolicy:
+    group: G1
+    objective: rl
+    scope: joint
+    control: G1-A-MRRAlign090
+    protocol: {labels: all_known_positives_binary}
+    overrides: {reward_type: mrr_in_batch, relevance_scheme: binary, target_alignment: 0.90, final_alignment: null, exploration_schedule: fixed, action_components: [[positive, negative]]}
+  G1-A-MRR090-Paired:
+    group: G1
+    objective: rl
+    scope: joint
+    control: G1-A-MRRAlign090
+    protocol: {labels: all_known_positives_binary}
+    overrides: {reward_type: mrr_in_batch, relevance_scheme: binary, target_alignment: 0.90, final_alignment: null, exploration_schedule: fixed, rollout: diagonal}
+  G1-A-MRR090-Cal:
+    group: G1
+    objective: rl
+    scope: joint
+    control: G1-A-MRRAlign090
+    protocol: {labels: all_known_positives_binary}
+    overrides: {reward_type: mrr_in_batch, relevance_scheme: binary, target_alignment: 0.90, final_alignment: null, exploration_schedule: fixed, frozen_doc_rescale: false}
+  G1-A-MRR090-Norm:
+    group: G1
+    objective: rl
+    scope: joint
+    control: G1-A-MRRAlign090
+    protocol: {labels: all_known_positives_binary}
+    overrides: {reward_type: mrr_in_batch, relevance_scheme: binary, target_alignment: 0.90, final_alignment: null, exploration_schedule: fixed, advantage_norm: per_component}
+  G1-A-MRR090-DocMean:
+    group: G1
+    objective: rl
+    scope: joint
+    control: G1-A-MRRAlign090
+    protocol: {labels: all_known_positives_binary}
+    overrides: {reward_type: mrr_in_batch, relevance_scheme: binary, target_alignment: 0.90, final_alignment: null, exploration_schedule: fixed, document_log_prob_reduction: mean}
+  G1-A-MRR090-NormDocMean:
+    group: G1
+    objective: rl
+    scope: joint
+    control: G1-A-MRRAlign090
+    protocol: {labels: all_known_positives_binary}
+    overrides: {reward_type: mrr_in_batch, relevance_scheme: binary, target_alignment: 0.90, final_alignment: null, exploration_schedule: fixed, advantage_norm: per_component, document_log_prob_reduction: mean}
   G1-E0: {group: G1, kind: evaluation, scope: reference}
   G1-J-CL: {group: G1, objective: infonce, scope: joint}
   G1-J-RN: {group: G1, objective: ranknet, scope: joint}
