@@ -1,5 +1,23 @@
 # Experiment Plan: Reward-Based Optimization of Embedding Retrievers
 
+## 2026-09-13：G2 三种初始化 × CL/RL（当前生效）
+
+G2 主实验改为 E2Rank 数据上的六次训练：B0、共同 CL warm-up 的 W0、原始 embedding
+模型 E0，各比较 CL 与 RL。移除主计划中的 G2 LL/RankNet 和 graded 监督扩展。
+研究问题是 RL 相对 CL 的效果如何依赖初始化，不主张优于所有 metric-aware 监督方法。
+完整协议见第 3 节；本节覆盖下文旧的 LL/RL 对照、统一九点调参及旧 G2 执行顺序。
+
+**CL 先行，RL 配方待定。** D-CL 和 E-CL 无权重依赖，可先运行；W-CL 仅等待 D-CL
+最终权重，不等待 G1 消融或 G2 RL 决策。CL 沿用既定 1200 steps、LR 5e-6、
+global batch 128 / microbatch 16、temperature 0.03、full FT、seed 42。
+Binary MRR@10 + alignment 0.90 是 RL 的首选待评估配方，不是已经冻结的 G2 参数；
+是否追加探索或 reward 消融，在 G1 新消融结果与 G2 训练信号诊断后决定，暂不追加训练预算。
+
+本次仅更新实验计划，不修改配置/runner、不启动训练。`G2-E-CL/RL` 是新规划 ID，
+尚未注册；现有 G2 RL 配置仍属旧 graded 协议，不能直接作为新计划启动。
+“CL 先行”表示实验设计无需等待 RL，不代表新增 E0 行已经可由现有 runner 执行。
+下一次配置同步需注册 E0 分支、统一 pos_index 标签/候选协议，并将旧 G2 LL 行退出当前执行批次。
+
 ## 2026-09-13：BGE-M3 relevance 与无 ID 候选过滤修复
 
 BGE-M3 pos/neg 转换继续每次选择一个标注正例与 slate_size−1 个负例，保留全部
@@ -257,11 +275,11 @@ G3 的无检索 generator 基线和答案/证据变化联合诊断后移，不�
 | 组别 | 初始化与数据 | 核心问题 | 主要评测 |
 |---|---|---|---|
 | G1：Reasoning adaptation（主实验） | 现有开放权重 embedding model；清理后的 ReasonRank | 相同数据下，RL 是否优于监督适配？document policy/exploration 是否必要？ | BRIGHT；MTEB retrieval 作为能力保持检查 |
-| G2：General-LLM embedding training | 未经 embedding 专项训练的通用 LLM；E2Rank listwise，约 156k，实际规模待审计 | RL 能否直接学习检索表示？共同 warm-up 后是否仍有收益？ | 固定的外部检索任务集与学习曲线 |
+| G2：初始化与 CL/RL 比较 | B0 / 共同 CL 初始化 W0 / 原始 embedding E0；E2Rank 约 156k，实际规模待审计 | RL 相对 CL 的收益是否依赖已有检索表示？ | 固定的外部检索任务集与学习曲线 |
 | G3：RAG optimization | 预先固定的 embedding checkpoint；独立 QA 数据 | 固定索引时，答案反馈能否改善检索和生成质量？ | Answer EM/F1；检索指标辅助 |
 
 三组共同支持 embedding-space reward optimization，分别覆盖初始化、更新约束和反馈类型。
-G1/G3 属于后训练和任务适配；G2 检验更早的表示学习阶段。不能预先宣称 RL 可以替代
+G1/G3 属于后训练和任务适配；G2 对比表示建立与已有表示上的训练。不能预先宣称 RL 可以替代
 对比学习建立初始空间，也不能因为共同对比学习 warm-up 使用了 156k 数据，就声称 RL
 本身已在这个规模得到验证。G2 的 RL 阶段必须实际使用并记录较大规模的数据预算。
 
@@ -278,7 +296,7 @@ BRIGHT 提升不单独证明学会推理。G1 full-corpus 动态检索作为独�
 - G2 使用未经 embedding 专项训练的通用 LLM，记为 B0；当前为 `Qwen/Qwen3-0.6B`。
   允许通用语言模型后训练，不将 B0 描述为纯预训练 checkpoint。
   优先选择规模相近、便于控制架构差异的模型，不能直接把 E0 当作 B0。
-  同一组内严格同初始化；不同模型组之间不作只归因于目标函数的比较。
+  G2 另设 W0 和 E0 分支；每对 CL/RL 内严格同初始化，跨初始化不作只归因于目标函数的比较。
 - G3 默认从原始 E0 开始，不自动继承 G1 或 G2 的最佳模型，避免引入额外训练混杂。
 - Joint 默认一个共享 encoder，通过 query/document 两种角色更新全部参数；
   最终评测必须用当前 document encoder 重新生成文档向量。
@@ -473,12 +491,20 @@ own-list 边界翻转率。还需补充的观察项如下，不能把计划中�
 旧版 per-component normalization 和 document-role `1/n_valid` 权重不等于未加权联合
 目标的无偏梯度；新版默认已移除这两项。Mean-score calibration 仍只匹配一阶分数矩，不是期望 ranking reward。
 
-## 3. G2：从通用 LLM 开始的较大规模 embedding 训练
+## 3. G2：三种初始化下的 CL 与 RL 比较
 
-G2 初始运行参数沿用旧 scratch 的 `Qwen/Qwen3-0.6B` 表示协议与 full FT 配方：
-LR 5e-6、global batch 128、microbatch 16、linear schedule、warmup ratio 0.03。
-每次独立运行训练 1200 步，每 200 步保存。第二阶段统一从 G2-D-CL 的最终模型初始化，
-新建 optimizer、scheduler、step counter 和数据迭代，各训练 1200 步。
+本组固定 E2Rank 数据，比较三种初始化各自的 CL/RL 差值；BGE-M3 留作后续跨数据扩展，
+不计入本组六次训练。B0 为 `Qwen/Qwen3-0.6B`，W0 为 G2-D-CL 的最终模型，
+E0 与 G1 的原始 E0 完全一致，即未经 G1 适配的 `Qwen/Qwen3-Embedding-0.6B`；
+复用同一原始权重与 `configs/model/qwen3_embedding_0.6b.yaml` 表示配置，不另选模型版本。
+Tokenizer、pooling、padding、append token、query/document prompt 模板及归一化/scoring
+均沿用 G1 E0 协议；训练数据与步数仍按本节 G2 设置。
+
+CL 参数已定：full FT、joint encoder、seed/data seed 42、AdamW、LR 5e-6、
+global batch 128、microbatch 16、temperature 0.03、linear schedule、warmup ratio 0.03。
+每次独立运行 1200 optimizer steps（153,600 query exposures），每 200 步保存，
+报告最终 checkpoint。三种初始化均沿用该 CL 预算，不根据 RL 结果回选 CL checkpoint。
+RL 的训练预算同样为每行 1200 步；优化及策略参数在正式训练前另行冻结，见 3.3。
 
 ### 3.1 数据、表示与标签
 
@@ -487,51 +513,76 @@ LR 5e-6、global batch 128、microbatch 16、linear schedule、warmup ratio 0.03
 不默认使用混入 ReasonRank 的 `train_v2`；审计来源与外部评测 overlap，固定所有方法的训练文件。
 不需要 ReasonRank 预处理或专门的 manifest loader。
 
-固定 B0 的 pooling、retrieval prompts、归一化与 scoring；这些在所有目标间保持相同。
-所有路线均 full FT、joint query/document。B0 直接评测仅作初始化诊断，不假定已有检索能力。
+每个初始化内部固定 pooling、retrieval prompts、归一化与 scoring，CL/RL 完全一致。
+B0/W0 沿用通用 LLM 表示协议，E0 沿用 G1 原始 embedding 表示协议；明确记录跨初始化
+差异，不把 E0 与 W0 当作只差表示质量的严格控制。所有路线均 full FT、joint query/document。
 
-保留完整 teacher order，并为 metric-aware 目标定义 teacher-derived grades：
-rank 1 / 2–5 / 6–10 / 其余对应 3 / 2 / 1 / 0；主 RL 优化 nDCG@10。
-CL 使用 pos_index 标注正例和相同候选池；LL 使用与 RL 完全相同的 grades/cutoff。
-跨 query 候选构造保持一致，明确其近似负例属性。
-CL 与 RL 使用的监督信息粒度不同，因此 **LL 是必需的同标签强对照**。
-可选 RankNet 补充 full-order 控制；不能只比较单正例 CL 就归因于 RL 估计器。
-此处 grades 是 teacher 目标，不是人工相关性；MRR 若报告，明确 grade ≥2 的定义，
-G1/G2 graded 均采用相同 teacher 排名分段；已知正例身份另行保存。
+CL 和 RL 均使用 `pos_index` 指向的唯一标注正例（1-based document 位置），
+其余候选为 binary 0；MRR 若采用，相关性判定为 binary > 0，不使用 teacher 前五名。
+完整 teacher permutation 仍保存在原始数据中，但不作为本组主实验的 graded reward。
+候选列表、in-batch 代表正例、数据顺序、device-local microbatch 和跨 query detach/mask
+规则在 CL/RL 间一致。统一使用修复后的无 ID 过滤逻辑，不混用旧候选池失效的运行。
+先核验训练文件中的 pos_index 覆盖与范围；不使用缺标注时的 teacher-rank-1 兼容路径。
 
-### 3.2 两个问题、两组对照
+### 3.2 六个训练执行与权重依赖
 
 | ID | 路线 | 目的 |
 |---|---|---|
 | G2-D-CL | B0 → CL | 直接 embedding 训练基线 |
-| G2-D-LL | B0 → LambdaLoss | 同 grades 的监督对照 |
 | G2-D-RL | B0 → RL | 检验直接从未经 embedding 专项训练的通用 LLM 启动 |
 | G2-W-CL | B0 → CL 最终模型 W0 → 重新训练 CL | 后续训练对照 |
-| G2-W-LL | B0 → 同一个 W0 → LL | 排除切换到 metric-aware 目标本身的收益 |
 | G2-W-RL | B0 → 同一个 W0 → RL | 检验已有初始空间后的 RL 收益 |
+| G2-E-CL | 原始 E0 → CL | 成熟 embedding 的 E2Rank 适配基线；新规划 ID |
+| G2-E-RL | 同一个原始 E0 → RL | 检验 G1 配方能否迁移至 E2Rank；新规划 ID |
 
-W0 为 G2-D-CL 完成 1200 步后的最终模型，只训练一次，三条第二阶段分支共享该权重。
-G2-W-CL/LL/RL 均为独立运行：重置 optimizer、scheduler、step counter 和数据迭代，
+W0 为 G2-D-CL 完成 1200 步后的最终模型，只训练一次，两条第二阶段分支共享该权重。
+G2-W-CL/RL 均为独立运行：重置 optimizer、scheduler、step counter 和数据迭代，
 各重新训练 1200 步。W-CL 不复用 D-CL 的后半段，入口不恢复 trainer 状态。
 
-共 6 个训练执行：3 个直接训练和 3 个从 CL 最终权重初始化的第二阶段训练。
-直接路线预算 1200 步；两阶段路线计入共同前缀后为 2400 步，不能称为等总预算对比。
-第二阶段 CL/LL/RL 的起点、候选、优化设置及新增预算一致，可用于比较后训练目标。
+共 6 个训练执行：B0 两次、W0 两次、E0 两次。D/E 每条新增预算 1200 步，
+W 每条计入共同 CL 前缀后为 2400 步，不能与 D/E 称为等总预算对比；E0 的既有训练
+历史也不能视为零成本。实际本组六次执行共 7,200 optimizer steps，共同 D-CL 前缀只计一次。
+移除 G2 LL/RankNet 主对照；旧注册行不是本组当前执行清单，不据配置列表直接批量启动。
 
-### 3.3 评测、失败情形与结论
+### 3.3 CL 先行与 RL 待决策项
+
+先运行 D-CL 与 E-CL；D-CL 完成后即可运行 W-CL。三条 CL 不等待 G1 新消融结果，
+也不等待 RL 配方确定。E-CL 正式启动前只需完成新增初始化分支的配置映射及常规预检。
+
+RL 首选候选来自 G1 的 binary MRR@10 + target_alignment=0.90：双侧 vMF product、
+G=32、leave-one-out、无标准化、文档 sum、保留 calibration。它尚不是 G2 最终配置，
+不能由 G1 22.01 推定适合 B0、W0 和 E0 的全部初始化。以下事项在 RL 正式启动前决定：
+
+| 待决策项 | 依据与安排 |
+|---|---|
+| Reward 与探索 | 优先评估 MRR@10 / alignment 0.90；是否增加 binary nDCG 或少量 alignment 控制尚未决定 |
+| Policy / rollout / calibration / 更新规则 | 结合 G1 MRR 0.90 七项消融，决定沿用或修订；不自动把每项收益叠加 |
+| LR 与梯度尺度 | 先以 CL 的 LR 5e-6 为候选；检查 reward spread、退化组及可获得的梯度/裁剪诊断，κ 改变不能只解释为采样半径变化 |
+| 初始化间是否共用配方 | 优先共用以便比较；若需要分起点开发，事先记录范围与新增预算，降低跨初始化差值的因果解释强度 |
+| 是否追加 G2 消融 | 不复制整套 G1 消融；仅对 G1 无法回答或 G2 诊断暴露的问题追加最小对照，需另行确定清单与预算 |
+
+短诊断用于理解训练信号及发现数值/接口问题，不使用最终外部检索分数调参或选 checkpoint。
+没有观测到梯度、边界翻转或 deterministic reward 时，不把这些计划项当作已完成证据。
+本次没有注册额外 RL 搜索/消融行；主实验仍为六次训练。RL 方案后续单独更新，不阻塞 CL。
+
+### 3.4 评测、失败情形与结论
 
 Phase 0 固定一组外部检索任务，可选自 MTEB retrieval；包含任务与 aggregation 必须
 在看到目标间效果差异前冻结。报告逐任务结果、宏平均及随处理样本数/时间的学习曲线。
 提前固定训练预算并评测最终 checkpoint，不做内部 dev/test 划分或选模，外部任务检验迁移。
-训练集 teacher-target 指标仅作训练诊断，不作为 held-out 测试结果。BRIGHT 可补充，但不能
-替代本组通用检索证据。不得只凭同分布 teacher-target 改善宣称通用能力提高。
+训练集 binary reward/排序指标仅作训练诊断，不作为 held-out 测试结果。BRIGHT 可补充，
+但不能替代本组通用检索证据。不得只凭训练 reward 改善宣称通用能力提高。
+主要报告同初始化内的 RL−CL 差值，再并列比较三个差值；W-RL vs W-CL 是共同起点
+后训练的主要比较，D 分支检验直接学习，E 分支连接 G1 并检验成熟表示上的跨训练数据适配。
+本组只支持 RL 配方相对 CL 的结论，不支持优于所有 metric-aware 监督方法的主张。
 
 与强 embedding 初始化相比，base 可能留出更大改善空间，但不能保证 MTEB 可区分。
 若各方法外部效果接近，如实呈现，并根据预算/效率和学习曲线限定结论，不事后挑任务。
 
 直接 RL 的稀疏信号、退化 group、低 reward variance 和检索空间形成速度是本组要测的
 问题。使用预先统一的非有限值/数值失效规则中止并保存失败运行；不要隐藏不收敛结果。
-若直接 RL 无效而 W-RL 有效，应将贡献定位为已有检索表示上的 post-training。
+若直接 RL 无效而 W/E-RL 有效，支持已有检索表示上的 post-training；单一候选配方在
+B0 失败不能证明直接 RL 原理上不可行，需要区分策略参数不适配与初始化本身的限制。
 若直接 RL 同时在外部检索有效，才扩展对早期 embedding 训练适用性的主张。
 
 ## 4. G3：固定索引的 RAG 优化
@@ -588,7 +639,7 @@ corpus，再由检索或答案 reward 评分。candidate manifest 在 RL 中只�
 - [ ] G2 E2Rank 版本与规模、外部 overlap 审计、固定全量 train 文件。
 - [ ] 固定 E0、B0、pooling/prompts 和各组评测协议；校验 full FT 与冻结分支。
 - [x] G1 接入逐正例独立分母的 multi-positive CL、teacher-order RankNet 和可变长 RL；G2 CL 已改为读取 pos_index 标注（见顶部修订）。
-- [x] 实现指定 LambdaLoss variant；G1/G2 使用 teacher grades 3/2/1/0，padding 不参与 loss。
+- [x] 已实现指定 LambdaLoss variant 与 teacher grades 3/2/1/0；G2 当前主计划已移除 LL，历史实现保留，padding 不参与 loss。
 - [ ] 明确两套标签的 MRR 阈值，确保 padding 不参与 reward。
 - [ ] 接入最终 checkpoint 的固定候选排序评测与全 corpus 检索。
 - [ ] 核对固定 LR/主训练预算和 G2 两阶段预算；G1/G2 不使用 dev 网格选模。
@@ -628,11 +679,12 @@ Paired/product 继续报告相同 query exposure 的结果及单列的质量/时
 
 ### Phase 4 — G2 初始化与共同 warm-up（第三批）
 
-先执行 `G2-D-CL`，其最终模型就是 W0；随后安排 `G2-D-LL / G2-D-RL` 与
-`G2-W-LL / G2-W-RL / G2-W-CL`，合计 6 次。
-W 系列只有对 D-CL 最终权重的真实依赖，无需等待 D-LL 或 D-RL；各自新建 optimizer、scheduler 和数据迭代。
-不把 D-CL 再训练一遍当作 warm-up，也不从 G1 最优消融继承模型或配方。
-数据准备就绪、资源允许时，G2-D-CL 可与 G1 后续机制运行重叠；顺序不构成额外阻塞条件。
+先执行 `G2-D-CL` 和 `G2-E-CL`，D-CL 的最终模型为 W0，完成后执行 `G2-W-CL`。
+三条 CL 不等待 RL 参数选择；RL 三行在第 3.3 节决策完成后单独安排。当前合计 6 次，
+不包含 LL/RankNet 或额外 RL 消融。W 系列只依赖 D-CL 最终权重，各自新建 optimizer、
+scheduler 和数据迭代。E 系列使用原始 E0，不继承任何 G1 微调权重。
+G1 结果用于提出 G2 RL 候选配方，但不自动视为已验证配置。数据准备就绪、资源允许时，
+G2 CL 可与 G1 后续机制运行重叠；新增 E0 ID 的配置映射尚待同步。
 保留直接 RL 不收敛或无收益的结果，用于界定初始化条件。
 
 ### Phase 5 — 固定索引部署与下游反馈（第四批）
@@ -662,7 +714,7 @@ MRR 的直接控制为已经完成的 Binary。无需为了可选行重训主方
 | G1：Norm / DocMean / NormDocMean | 3 |
 | G1：Paired / QPolicy / DPolicy / Cal / Binary | 5 |
 | G1：full-corpus 动态检索 | 1 |
-| G2：三个直接训练 + 三个共同 CL 初始化 | 6 |
+| G2：B0 / W0 / E0 各 CL 与 RL | 6 |
 | G3：CL / AnsRL / RetRL | 3 |
 | **核心合计** | **22** |
 | 可选：Anneal + FixedSmall（成对） | +2 |
@@ -688,8 +740,9 @@ G3 监督对照为 CL，不运行 RAG LambdaLoss。
 新增 logical IDs 需要显式 config/runner mapping；不要使用旧 `all` 模式代替新核心集合。
 保证 checkpoint 复用、训练数和实际预算可追踪，旧运行目录不覆盖。
 
-下一次正文同步需修改：整体定位、三组实验结构、G1/G2 teacher-grade 监督及 CL 正例身份、
-base 初始化与共同 warm-up、MTEB 辅助/外部评测角色、RAG 答案指标，以及对应表格。
+下一次正文同步需修改：整体定位、三组实验结构、G1 两套监督来源、G2 pos_index 同标注的
+三种初始化 × CL/RL 对照、CL 先行与 RL 配方待定状态、MTEB 辅助/外部评测角色、
+RAG 答案指标，以及对应表格。
 未经测量的结果保持 TBD；full-FT 不能通过禁用 adapter 得到初始参考策略。
 
 
