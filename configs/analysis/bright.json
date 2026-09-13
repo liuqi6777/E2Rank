@@ -1,0 +1,29 @@
+{
+  "output_dir": "outputs/embedding_analysis/bright_v1",
+  "reference": "E0",
+  "seed": 42,
+  "data": {
+    "kind": "bright",
+    "query_set": "original",
+    "revision": "3066d29c9651a576c8aba4832d249807b181ecae",
+    "subsets": ["biology", "earth_science", "economics", "psychology", "robotics", "stackoverflow", "sustainable_living", "pony", "leetcode", "aops", "theoremqa_theorems", "theoremqa_questions"]
+  },
+  "models": {
+    "E0": {
+      "path": "Qwen3-Embedding-0.6B",
+      "model_config": "configs/model/qwen3_embedding_0.6b.yaml"
+    },
+    "CL": {
+      "path": "checkpoints/iclr2027/G1-J-CL-s42",
+      "model_config": "configs/model/qwen3_embedding_0.6b.yaml"
+    },
+    "RL": {
+      "path": "checkpoints/iclr2027/G1-A-MRRAlign090-s42",
+      "model_config": "configs/model/qwen3_embedding_0.6b.yaml"
+    }
+  },
+  "encoding": {"device": "cuda", "precision": "fp32", "batch_size": 16},
+  "retrieval": {"k": 10, "top_k": 1000, "block_size": 8192},
+  "geometry": {"pairs": 100000, "anchors": 2000, "neighbor_k": 10, "candidate_k": 100, "procrustes": false},
+  "perturb": {"scope": "candidates", "alignments": [0.99, 0.95, 0.9, 0.8], "samples": 32, "candidate_k": 100, "max_queries": 200}
+}

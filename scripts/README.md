@@ -14,6 +14,7 @@
 | `rag_pipeline.sh` | RAG 数据准备、编码、NQ/HotpotQA qrels 构造、候选挖掘、底层训练与评测 |
 | `rag_acceptance.sh` / `rag_toy_distributed.py` | RAG 分布式索引和端到端验收 |
 | `measure_score_gaps.py` | embedding 分数间隔诊断 |
+| `analyze_embeddings.py` | 缓存编码、全库排序、几何、query vMF 扰动与报告；见 [分析指南](../docs/embedding_analysis.md) |
 | `merge_lora.py` | 显式 LoRA 实验的 adapter 合并；当前 full FT 主实验不需要 |
 | `zero3.json` | 模型配置共用的 DeepSpeed ZeRO-3 参数 |
 | `tests/` | CPU 数据、mask 和实验解析测试 |

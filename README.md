@@ -141,6 +141,12 @@ bash eval_mteb/scripts/run_mteb.sh CHECKPOINT BRIGHT \
 python eval_mteb/summary.py results/mteb BRIGHT --views run,subset
 ```
 
+## 表示空间离线分析
+
+使用 `scripts/analyze_embeddings.py` 对 E0 / CL / RL 做编码缓存、全库排序诊断、
+几何统计和 query vMF 扰动实验。配置示例在 `configs/analysis/bright.json`，需先填写
+实际 checkpoint 路径；命令、输出和指标定义见 [分析指南](docs/embedding_analysis.md)。
+
 ## 目录
 
 - `configs/experiments.yaml`：日常参数。
