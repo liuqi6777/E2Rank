@@ -116,9 +116,11 @@ def main():
             parser.error('show requires an explicit run ID, e.g. G1-J-RL')
         resolved = iclr2027.resolve_run(suite, iclr2027.DEFAULT_SUITE, args.run, nproc=args.gpus)
         config = resolved['config']
-        summary = {key: resolved[key] for key in ['run_id', 'scope', 'objective', 'selection', 'priority', 'execution_stage', 'execution_stage_name']}
+        summary = {key: resolved[key] for key in ['run_id', 'dataset', 'scope', 'objective', 'selection', 'priority', 'execution_stage', 'execution_stage_name']}
         summary.update(model=config.get('model_name_or_path'), data=config.get('data_path', config.get('rag_dataset_root')),
-                       steps=resolved['protocol'].get('max_steps'), learning_rate=resolved['protocol'].get('learning_rate'),
+                       training_budget=resolved['protocol'].get('training_budget', 'fixed_steps'),
+                       steps=resolved['protocol'].get('max_steps'), epochs=config.get('num_train_epochs'),
+                       learning_rate=resolved['protocol'].get('learning_rate'),
                        micro_batch_size=config.get('per_device_train_batch_size'),
                        gradient_accumulation=config.get('gradient_accumulation_steps'),
                        global_batch_size=config.get('per_device_train_batch_size', 0)*config.get('gradient_accumulation_steps', 1)*args.gpus,

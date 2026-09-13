@@ -1,25 +1,31 @@
 # Experiment Plan: Reward-Based Optimization of Embedding Retrievers
 
-## 2026-09-13：G2 三种初始化 × CL/RL（当前生效）
+## 2026-09-13：G2 两种数据 × 三种初始化 × CL/RL（当前生效）
 
-G2 主实验改为 E2Rank 数据上的六次训练：B0、共同 CL warm-up 的 W0、原始 embedding
-模型 E0，各比较 CL 与 RL。移除主计划中的 G2 LL/RankNet 和 graded 监督扩展。
-研究问题是 RL 相对 CL 的效果如何依赖初始化，不主张优于所有 metric-aware 监督方法。
+G2 在 E2Rank 和 BGE-M3 上各运行六次训练：B0、同数据共同 CL warm-up 的 W0、原始
+embedding 模型 E0，各比较 CL 与 RL。移除主计划中的 G2 LL/RankNet 和 graded 监督扩展。
+研究问题是 RL 相对 CL 的效果如何依赖初始化，以及结论能否跨训练数据复现；不主张优于
+所有 metric-aware 监督方法。
 完整协议见第 3 节；本节覆盖下文旧的 LL/RL 对照、统一九点调参及旧 G2 执行顺序。
 
-**CL 先行，RL 配方待定。** D-CL 和 E-CL 无权重依赖，可先运行；W-CL 仅等待 D-CL
-最终权重，不等待 G1 消融或 G2 RL 决策。CL 沿用既定 1200 steps、LR 5e-6、
-global batch 128 / microbatch 16、temperature 0.03、full FT、seed 42。
+**CL 先行，RL 配方待定。** 每套数据的 D-CL 和 E-CL 无权重依赖，可先运行；W-CL 仅等待
+同数据 D-CL 的最终权重，不等待 G1 消融或 G2 RL 决策。E2Rank 沿用既定 1200 steps；
+BGE-M3 训练 1 epoch。其余 CL 配置均为 LR 5e-6、global batch 128 / microbatch 16、
+temperature 0.03、full FT、seed 42。
+两套数据的全部 G2 运行均在 `checkpoint-0` 与每次 checkpoint 保存后执行
+`MTEB(eng, v1, subset)` callback；E2Rank 间隔为 200 steps，BGE-M3 间隔为 1000 steps。
+这些结果用于记录同一外部子集上的学习曲线，不据此选 checkpoint。
 Binary MRR@10 + alignment 0.90 是 RL 的首选待评估配方，不是已经冻结的 G2 参数；
 是否追加探索或 reward 消融，在 G1 新消融结果与 G2 训练信号诊断后决定，暂不追加训练预算。
 
-配置/runner 已同步：注册 `G2-E-CL/RL`，E0 直接复用 G1 模型 preset；G2 统一 binary
-标签，旧 D-LL/W-LL 已退出 suite。三条 RL 均带 `g2_rl_recipe` 启动阻塞，参数待定期间
+配置/runner 已同步：E2Rank 保留原 ID，BGE-M3 使用 `G2-BGE-*`；E0 直接复用 G1 模型
+preset。G2 统一 binary 标签，旧 D-LL/W-LL 已退出 suite。六条 RL 均带 `g2_rl_recipe` 启动阻塞，参数待定期间
 即使数据和权重齐全也不允许启动。解析出的 RL 参数仅为占位，不代表已冻结方案。
-`bash scripts/run_g2_cl.sh check 8` 预检独立 CL 并展示 W-CL 依赖；
-`bash scripts/run_g2_cl.sh train 8` 依次运行 D-CL、E-CL、W-CL，每行训练后沿用现有
-最终 MTEB 评测。W-CL 的完整启动检查延后到 D-CL 权重就绪，失败即停，不覆盖旧输出。
-本地缺少 E2Rank train.jsonl；启动平台仍需提供数据并通过运行时预检。本次未启动训练。
+`scripts/run_g2_cl.sh` 只处理 E2Rank，`scripts/run_g2_bge_cl.sh` 只处理 BGE-M3；二者的
+`check` 模式预检各自独立 CL 并展示 W-CL 依赖，`train` 模式依次运行 D-CL、E-CL、W-CL，
+每行训练后沿用现有最终 MTEB 评测。W-CL 的完整启动检查延后到对应 D-CL 权重就绪，
+失败即停，不覆盖旧输出。
+本地缺少两套 G2 数据；启动平台仍需提供数据并通过运行时预检。本次未启动训练。
 
 ## 2026-09-13：BGE-M3 relevance 与无 ID 候选过滤修复
 
@@ -494,40 +500,45 @@ own-list 边界翻转率。还需补充的观察项如下，不能把计划中�
 旧版 per-component normalization 和 document-role `1/n_valid` 权重不等于未加权联合
 目标的无偏梯度；新版默认已移除这两项。Mean-score calibration 仍只匹配一阶分数矩，不是期望 ranking reward。
 
-## 3. G2：三种初始化下的 CL 与 RL 比较
+## 3. G2：两种训练数据、三种初始化下的 CL 与 RL 比较
 
-本组固定 E2Rank 数据，比较三种初始化各自的 CL/RL 差值；BGE-M3 留作后续跨数据扩展，
-不计入本组六次训练。B0 为 `Qwen/Qwen3-0.6B`，W0 为 G2-D-CL 的最终模型，
+本组在 E2Rank 与 BGE-M3 上分别比较三种初始化各自的 CL/RL 差值。B0 为
+`Qwen/Qwen3-0.6B`，W0 为对应数据集 D-CL 的最终模型，
 E0 与 G1 的原始 E0 完全一致，即未经 G1 适配的 `Qwen/Qwen3-Embedding-0.6B`；
 复用同一原始权重与 `configs/model/qwen3_embedding_0.6b.yaml` 表示配置，不另选模型版本。
 Tokenizer、pooling、padding、append token、query/document prompt 模板及归一化/scoring
-均沿用 G1 E0 协议；训练数据与步数仍按本节 G2 设置。
+均沿用 G1 E0 协议；训练预算按数据集分别固定。
 
 CL 参数已定：full FT、joint encoder、seed/data seed 42、AdamW、LR 5e-6、
 global batch 128、microbatch 16、temperature 0.03、linear schedule、warmup ratio 0.03。
-每次独立运行 1200 optimizer steps（153,600 query exposures），每 200 步保存，
-报告最终 checkpoint。三种初始化均沿用该 CL 预算，不根据 RL 结果回选 CL checkpoint。
-RL 的训练预算同样为每行 1200 步；优化及策略参数在正式训练前另行冻结，见 3.3。
+E2Rank 每次独立运行 1200 optimizer steps（153,600 query exposures）；BGE-M3 每次独立
+运行 1 epoch（`max_steps=-1`）。E2Rank 每 200 步、BGE-M3 每 1000 步保存，并在初始权重及
+每个已保存 checkpoint 上运行 `MTEB(eng, v1, subset)`；报告最终 checkpoint，同一数据集的
+三种初始化及 CL/RL 使用相同预算，不根据 callback 结果回选 checkpoint。RL 优化及策略参数
+在正式训练前另行冻结，见 3.3。
 
 ### 3.1 数据、表示与标签
 
-使用原始 E2Rank listwise artifact（约 156k，须核实实际版本、规模和候选长度）。
-直接读取原始 `data/train.jsonl`，全量用于训练，不另留内部 dev/test。
-不默认使用混入 ReasonRank 的 `train_v2`；审计来源与外部评测 overlap，固定所有方法的训练文件。
-不需要 ReasonRank 预处理或专门的 manifest loader。
+E2Rank 使用原始 listwise artifact（约 156k，须核实实际版本、规模和候选长度），直接读取
+`data/train.jsonl`。BGE-M3 使用原始多 source `query/pos/neg` 目录，按同一 G2 配置在线构造
+16-document slate；`per_dataset_max_samples=null`、`file_glob=*.jsonl`，不做人为 source cap。
+两套数据均不另留内部 dev/test。不默认使用混入 ReasonRank 的 `train_v2`；分别审计来源与
+外部评测 overlap，并在同一数据集内固定所有方法的训练 artifact。
 
 每个初始化内部固定 pooling、retrieval prompts、归一化与 scoring，CL/RL 完全一致。
 B0/W0 沿用通用 LLM 表示协议，E0 沿用 G1 原始 embedding 表示协议；明确记录跨初始化
 差异，不把 E0 与 W0 当作只差表示质量的严格控制。所有路线均 full FT、joint query/document。
 
-CL 和 RL 均使用 `pos_index` 指向的唯一标注正例（1-based document 位置），
-其余候选为 binary 0；MRR 若采用，相关性判定为 binary > 0，不使用 teacher 前五名。
-完整 teacher permutation 仍保存在原始数据中，但不作为本组主实验的 graded reward。
+E2Rank 的 CL 和 RL 均使用 `pos_index` 指向的唯一标注正例（1-based document 位置）；
+BGE-M3 每条记录从 `pos` 选择一个标注正例，其余从 `neg` 选择，转换后显式生成
+`pos_index=1`。两者其余候选均为 binary 0；MRR 若采用，相关性判定为 binary > 0。
+E2Rank 的完整 teacher permutation 与 BGE-M3 的 `pos_scores/neg_scores` 均不转换成 graded reward。
 候选列表、in-batch 代表正例、数据顺序、device-local microbatch 和跨 query detach/mask
 规则在 CL/RL 间一致。统一使用修复后的无 ID 过滤逻辑，不混用旧候选池失效的运行。
-先核验训练文件中的 pos_index 覆盖与范围；不使用缺标注时的 teacher-rank-1 兼容路径。
+先核验 E2Rank 的 pos_index 覆盖与范围，以及 BGE-M3 各 source 的文件数、记录数和有效
+pos/neg 覆盖；不使用 E2Rank 缺标注时的 teacher-rank-1 兼容路径。
 
-### 3.2 六个训练执行与权重依赖
+### 3.2 十二个训练执行与权重依赖
 
 | ID | 路线 | 目的 |
 |---|---|---|
@@ -537,20 +548,28 @@ CL 和 RL 均使用 `pos_index` 指向的唯一标注正例（1-based document �
 | G2-W-RL | B0 → 同一个 W0 → RL | 检验已有初始空间后的 RL 收益 |
 | G2-E-CL | 原始 E0 → CL | 成熟 embedding 的 E2Rank 适配基线；已注册 |
 | G2-E-RL | 同一个原始 E0 → RL | 检验 G1 配方能否迁移至 E2Rank；已注册、配方阻塞 |
+| G2-BGE-D-CL | B0 → CL | 在 BGE-M3 上直接学习 embedding |
+| G2-BGE-D-RL | B0 → RL | BGE-M3 的直接 RL 分支；配方阻塞 |
+| G2-BGE-W-CL | B0 → CL 最终模型 W0 → 重新训练 CL | BGE-M3 的后续训练对照 |
+| G2-BGE-W-RL | B0 → 同一个 W0 → RL | BGE-M3 的 warm-up 后 RL；配方阻塞 |
+| G2-BGE-E-CL | 原始 E0 → CL | 成熟 embedding 的 BGE-M3 适配基线 |
+| G2-BGE-E-RL | 同一个原始 E0 → RL | 检验 RL 结论能否跨训练数据复现；配方阻塞 |
 
-W0 为 G2-D-CL 完成 1200 步后的最终模型，只训练一次，两条第二阶段分支共享该权重。
-G2-W-CL/RL 均为独立运行：重置 optimizer、scheduler、step counter 和数据迭代，
-各重新训练 1200 步。W-CL 不复用 D-CL 的后半段，入口不恢复 trainer 状态。
+每套数据各自产生一个 W0：E2Rank 使用 `G2-D-CL` 的 1200-step 最终模型，BGE-M3 使用
+`G2-BGE-D-CL` 的 1-epoch 最终模型。对应 W-CL/RL 共享该权重，但均为独立运行：重置
+optimizer、scheduler、step counter 和数据迭代，再按该数据集预算完整训练，不恢复 trainer 状态。
 
-共 6 个训练执行：B0 两次、W0 两次、E0 两次。D/E 每条新增预算 1200 步，
-W 每条计入共同 CL 前缀后为 2400 步，不能与 D/E 称为等总预算对比；E0 的既有训练
-历史也不能视为零成本。实际本组六次执行共 7,200 optimizer steps，共同 D-CL 前缀只计一次。
+共 12 个训练执行，每套数据各含 B0、W0、E0 两次。E2Rank 六行合计 7,200 optimizer steps；
+BGE-M3 六行各训练 1 epoch，实际 optimizer steps 随冻结后的数据规模和分布式 sampler 决定。
+W 分支均额外包含一次同数据 D-CL 前缀，不能与 D/E 称为等总训练量；E0 的既有训练历史也
+不能视为零成本。BGE-M3 扩展用于检查跨数据复现，不与 E2Rank 作等 step、等 epoch 或
+等样本规模的性能归因。
 移除 G2 LL/RankNet 主对照；旧注册行不是本组当前执行清单，不据配置列表直接批量启动。
 
 ### 3.3 CL 先行与 RL 待决策项
 
-先运行 D-CL 与 E-CL；D-CL 完成后即可运行 W-CL。三条 CL 不等待 G1 新消融结果，
-也不等待 RL 配方确定。E-CL 初始化分支已完成配置映射，正式启动前执行常规预检。
+每套数据先运行 D-CL 与 E-CL；对应 D-CL 完成后即可运行 W-CL。六条 CL 不等待 G1 新
+消融结果，也不等待 RL 配方确定。E-CL 初始化分支已完成配置映射，正式启动前执行常规预检。
 
 RL 首选候选来自 G1 的 binary MRR@10 + target_alignment=0.90：双侧 vMF product、
 G=32、leave-one-out、无标准化、文档 sum、保留 calibration。它尚不是 G2 最终配置，
@@ -566,7 +585,8 @@ G=32、leave-one-out、无标准化、文档 sum、保留 calibration。它尚�
 
 短诊断用于理解训练信号及发现数值/接口问题，不使用最终外部检索分数调参或选 checkpoint。
 没有观测到梯度、边界翻转或 deterministic reward 时，不把这些计划项当作已完成证据。
-本次没有注册额外 RL 搜索/消融行；主实验仍为六次训练。RL 方案后续单独更新，不阻塞 CL。
+本次没有注册额外 RL 搜索/消融行；主实验为两套数据共十二次训练。RL 方案后续单独更新，
+不阻塞 CL。
 
 ### 3.4 评测、失败情形与结论
 
@@ -682,10 +702,10 @@ Paired/product 继续报告相同 query exposure 的结果及单列的质量/时
 
 ### Phase 4 — G2 初始化与共同 warm-up（第三批）
 
-先执行 `G2-D-CL` 和 `G2-E-CL`，D-CL 的最终模型为 W0，完成后执行 `G2-W-CL`。
-三条 CL 不等待 RL 参数选择；RL 三行在第 3.3 节决策完成后单独安排。当前合计 6 次，
-不包含 LL/RankNet 或额外 RL 消融。W 系列只依赖 D-CL 最终权重，各自新建 optimizer、
-scheduler 和数据迭代。E 系列使用原始 E0，不继承任何 G1 微调权重。
+分别执行 E2Rank 与 BGE-M3 的 D-CL 和 E-CL，对应 D-CL 的最终模型作为该数据集 W0，
+完成后执行对应 W-CL。六条 CL 不等待 RL 参数选择；RL 六行在第 3.3 节决策完成后单独安排。
+当前合计 12 次，不包含 LL/RankNet 或额外 RL 消融。W 系列只依赖同数据 D-CL 最终权重，
+各自新建 optimizer、scheduler 和数据迭代。E 系列使用原始 E0，不继承任何 G1 微调权重。
 G1 结果用于提出 G2 RL 候选配方，但不自动视为已验证配置。数据准备就绪、资源允许时，
 G2 CL 可与 G1 后续机制运行重叠；E0 ID 配置映射已同步，RL 保持显式启动阻塞。
 保留直接 RL 不收敛或无收益的结果，用于界定初始化条件。
@@ -717,14 +737,15 @@ MRR 的直接控制为已经完成的 Binary。无需为了可选行重训主方
 | G1：Norm / DocMean / NormDocMean | 3 |
 | G1：Paired / QPolicy / DPolicy / Cal / Binary | 5 |
 | G1：full-corpus 动态检索 | 1 |
-| G2：B0 / W0 / E0 各 CL 与 RL | 6 |
+| G2：两套数据上 B0 / W0 / E0 各 CL 与 RL | 12 |
 | G3：CL / AnsRL / RetRL | 3 |
-| **核心合计** | **22** |
+| **核心合计** | **28** |
 | 可选：Anneal + FixedSmall（成对） | +2 |
 | 可选：Gaussian mismatch + MRR | +2 |
-| **核心 + 探索对照 / 全部已注册训练** | **24 / 26** |
+| **核心 + 探索对照 / 全部已注册训练** | **30 / 32** |
 
-Suite 共 28 行：22 个核心训练、4 个可选训练、2 个 E0 评测。Own/G 尚未注册，不计入上述预算。
+本表对应本节原始核心范围；顶部后续新增的 G1 配置开发行另计。加入 BGE-M3 后，该范围共
+34 行：28 个核心训练、4 个可选训练、2 个 E0 评测。Own/G 尚未注册，不计入上述预算。
 训练执行数不等于 GPU-hour；原始 checkpoint 评测、完整检索评测、索引编码、generator 调用、
 paired/product 时间诊断和 smoke 单列成本。共享 CL 前缀只计算一次。
 

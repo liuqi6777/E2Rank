@@ -56,7 +56,13 @@ hf download Alibaba-NLP/E2Rank_ranking_datasets train.jsonl --local-dir data --r
 ```
 
 原始格式是 `{query, document, ranking, source}`，`ranking` 为从 1 开始的 teacher permutation。
-G2 直接读取 `data/train.jsonl`，全量训练，不另留内部 dev/test；最终评测使用固定的外部检索任务。
+G2 同时注册 E2Rank 与 BGE-M3 两套 D/W/E × CL/RL 实验。E2Rank 直接读取
+`data/train.jsonl` 并训练 1200 steps；BGE-M3 从 `configs/experiments.yaml` 的
+`G2.bge_m3_data` 目录读取各 source 数据并训练 1 epoch。两套实验除数据路径与训练预算外一致，
+都不另留内部 dev/test，最终评测使用同一组固定外部检索任务。
+全部 G2 训练会在 `checkpoint-0` 及每次 checkpoint 保存后运行
+`MTEB(eng, v1, subset)` callback，用于记录训练曲线；E2Rank 每 200 steps、BGE-M3
+每 1000 steps 保存并评测，该结果不用于选模。
 通过 `python scripts/experiment.py train G2-* --gpus N` 启动的 G2 训练在最终模型保存成功后，
 会自动用可见 GPU 跑一次完整的 `MTEB(eng, v2)`；结果写入
 `checkpoints/iclr2027/G2-*-s42/mteb_eval/final/`。任一任务失败会让评测阶段返回非零，

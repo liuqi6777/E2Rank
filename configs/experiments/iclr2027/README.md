@@ -2,26 +2,37 @@
 
 ## G2：CL 可启动，RL 暂停（当前生效）
 
-当前 G2 六行为 D/E/W 各 CL 与 RL；旧 D-LL/W-LL 已退出 suite。
+当前 G2 在 E2Rank 和 BGE-M3 上各有六行 D/E/W × CL/RL；旧 D-LL/W-LL 已退出 suite。
 E 分支直接读取与 G1 相同的 `qwen3_embedding_0.6b.yaml`，不受公共 `G2.model`（B0）覆盖。
-全部采用 `pos_index` binary 标签，CL 保持 1200 steps、LR 5e-6、temperature 0.03、
-global batch 128 / microbatch 16、full FT、seed 42。
+全部采用 binary 标签，保持 LR 5e-6、temperature 0.03、global batch 128 / microbatch 16、
+full FT、seed 42。E2Rank 每行固定 1200 steps；BGE-M3 每行固定 1 epoch，不做等 step 对照。
+全部 12 行在 `checkpoint-0` 和每次 checkpoint 保存后运行 `MTEB(eng, v1, subset)` callback；
+E2Rank 每 200 steps 保存和评测，BGE-M3 每 1000 steps 保存和评测。指标写入训练日志及
+`<output_dir>/mteb_eval/checkpoint-*/`，只用于学习曲线和训练诊断，不选模。
 
 ```bash
+# E2Rank CL
 bash scripts/run_g2_cl.sh check 8
 bash scripts/run_g2_cl.sh train 8
+
+# BGE-M3 CL
+bash scripts/run_g2_bge_cl.sh check 8
+bash scripts/run_g2_bge_cl.sh train 8
 ```
 
-将 E2Rank 文件放在 `configs/experiments.yaml` 的 G2.data 目录下，文件名为 train.jsonl。
-脚本先预检 D-CL/E-CL，再依次运行 D-CL、E-CL、W-CL；每次完成后沿用现有最终 MTEB
-评测。W-CL 使用 D-CL 最终权重并重新建立训练状态，不等待 RL。check 模式展示 W-CL
-配置及缺失依赖；其完整启动预检延后至 D-CL 完成。失败即停，不覆盖、不自动跳过旧输出。
+将 E2Rank 文件放在 `configs/experiments.yaml` 的 `G2.data` 目录下，文件名为 `train.jsonl`；
+`G2.bge_m3_data` 指向 BGE-M3 的多 source 数据目录。`run_g2_cl.sh` 只处理 E2Rank，
+`run_g2_bge_cl.sh` 只处理 BGE-M3；两个脚本分别预检 D-CL/E-CL，再运行 D-CL、E-CL、W-CL。
+每次完成后沿用现有最终 MTEB 评测。每个 W-CL 使用同一数据集 D-CL 的最终权重并重新建立
+训练状态，不等待 RL。check 模式展示对应 W-CL 配置及缺失依赖；其完整启动预检延后至
+对应 D-CL 完成。失败即停，不覆盖、不自动跳过旧输出。
 部分完成后使用 `python scripts/experiment.py train G2-E-CL --gpus 8` 或对应剩余 ID 单独运行。
 
-三条 G2 RL 通过 `g2_rl_recipe` requirement 阻止 check/train 放行，即使数据和初始化权重
+六条 G2 RL 通过 `g2_rl_recipe` requirement 阻止 check/train 放行，即使数据和初始化权重
 齐全也不能启动；待 reward、探索、优化器参数和消融范围确定后显式解除。
 当前解析出的 RL 数值只是被阻塞的占位配置，不代表已冻结方案。普通 CL 启动不检查 RL。
-本地缺少 E2Rank train.jsonl，因此当前只能验证配置和启动逻辑，不能报告本地训练就绪。
+本地缺少 E2Rank `train.jsonl`，且配置的 BGE-M3 目录不在本机，因此当前只能验证配置和
+启动逻辑，不能报告本地训练就绪。
 
 ## E2Rank 标签来源（2026-09-13）
 
@@ -57,7 +68,8 @@ python scripts/experiment.py train G1-J-LL-Binary-Scaled --gpus 8
 Binary LL-Scaled 单独运行，不是消融脚本的启动依赖。
 部分完成后使用 `python scripts/experiment.py train RUN --gpus 8` 执行剩余行。
 保持 113 steps、LR 5e-6、global batch 128 / microbatch 16、full FT、seed 42。
-当前累计注册 52 行（50 次训练、2 次评测），本轮新增八次尚未运行。
+当前累计注册 58 行（56 次训练、2 次评测），其中包括新增的 6 次 BGE-M3 G2 训练；
+本节所述八次 G1 运行尚未运行。
 此前三条探索曲线已完成；下文待训练状态与预算为历史记录，最新决定以实验计划顶部为准。
 
 ## 固定探索强度扫描（已完成）
@@ -196,8 +208,9 @@ projected-Gaussian 采样替代 vMF。
   `G1-DR` 是独立的 full-corpus 动态检索行。
   `A-Anneal` / `A-FixedSmall` 为成对可选对照；`A-Gaussion` / `A-MRR` 也为可选，
   MRR 直接比较 Binary，其余行复用主 RL 为控制。
-- G2：`D` 从初始 LLM 训练；`W` 从 `G2-D-CL-s42/` 最终模型重新训练。
-  D-CL 训练 1200 步，W-CL/LL/RL 各新建 optimizer/scheduler 和数据迭代，再训练 1200 步。
+- G2：`D` 从初始 LLM 训练；`W` 从同数据集 D-CL 最终模型重新训练。
+  E2Rank 每行训练 1200 步，BGE-M3 每行训练 1 epoch；W-CL/RL 各新建
+  optimizer/scheduler 和数据迭代，再按对应数据集预算训练。
   W-CL 是独立训练行，不复用 D-CL；只加载模型权重，不恢复 trainer 状态。
 - G3：从 E0 开始，比较 CL、MRR/nDCG 两种检索 RL 与答案 RL；不自动采用其他组的最优 checkpoint。
 
@@ -234,7 +247,7 @@ qrels、candidate manifest、corpus 或 index 都作为运行时 artifact blocke
 | 1 | G1-J-LL → G1-J-RL → G1-J-CL → G1-J-RN | 4 |
 | 2 | G1-A-Norm → G1-A-DocMean → G1-A-NormDocMean | 3 |
 | 3 | G1-A-Paired → G1-A-QPolicy → G1-A-DPolicy → G1-A-Cal → G1-A-Binary | 5 |
-| 4 | G2-D-CL → D-LL / D-RL / W-LL / W-RL / W-CL | 6 |
+| 4 | E2Rank 与 BGE-M3 各自 D-CL / E-CL → W-CL，RL 待配方冻结 | 12 |
 | 5 | 索引就绪后 G1-DR | 1 |
 | 6 | G3-E0 → G3-CL → G3-AnsRL → G3-RetRL-MRR → G3-RetRL-NDCG | 4 |
 | 7 | 可选：Anneal + FixedSmall，然后 Gaussian mismatch / MRR | 0（另计最多 4） |
@@ -283,16 +296,17 @@ G2 定位为从未经 embedding 专项训练的通用 LLM 学习检索表示；�
 不据此声称它是纯预训练 checkpoint。
 
 全局 batch 128、每卡 microbatch 16；1/2/4/8 卡 accumulation 为 8/4/2/1。
-每次运行 1200 步，约 153,600 query exposures，每 200 步保存。
-D-CL 最终权重保存在 `checkpoints/iclr2027/G2-D-CL-s42/`。
-W-CL/LL/RL 从此目录初始化，各独立运行 1200 步，不读取 optimizer/scheduler 或数据游标。
-两阶段路线计入 CL 前缀后为 2400 步；直接路线为 1200 步，不作为等总预算比较。
-不沿用旧数据配置的 per-source cap 或自动 dev 划分。
+E2Rank 每次运行 1200 步，约 153,600 query exposures，每 200 步保存和评测；BGE-M3
+每次运行 1 epoch，每 1000 步保存和评测。两套数据的 D-CL 最终权重分别保存在 `G2-D-CL-s42/` 与
+`G2-BGE-D-CL-s42/`，对应 W-CL/RL 从各自目录初始化，不读取 optimizer/scheduler 或数据游标。
+E2Rank 两阶段路线合计 2400 步；BGE-M3 两阶段路线合计 2 epochs。W 与 D/E 的总训练量
+不同，BGE-M3 与 E2Rank 之间也不作等计算预算解释。BGE-M3 不设置 per-source cap 或内部 dev。
 
-G2 读取 `data/train.jsonl`，全量训练。每个 G2 训练行成功保存最终模型后，实验入口自动运行一次
-完整的 `MTEB(eng, v2)`，输出到该模型目录的 `mteb_eval/final/`；不会在训练前或中间 checkpoint
-重复运行，任一 MTEB 任务失败则整个命令返回失败。当前本地尚缺该文件。
-先运行 D-CL，再分别启动 W-CL/LL/RL；入口不会隐式训练依赖。
+E2Rank 读取 `data/train.jsonl`，BGE-M3 读取 `G2.bge_m3_data` 指向的多 source 目录。
+每个 G2 训练行成功保存最终模型后，实验入口自动运行一次完整的 `MTEB(eng, v2)`，输出到
+该模型目录的 `mteb_eval/final/`；不会在训练前或中间 checkpoint 重复运行，任一 MTEB
+任务失败则整个命令返回失败。当前本地缺少两套数据。每套数据先运行 D-CL，再启动对应
+W-CL/RL；入口不会隐式训练依赖。
 
 
 ## 第一轮方法修订（2026-09-12）

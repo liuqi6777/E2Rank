@@ -15,6 +15,7 @@ G1:
 
 G2:
   data: data
+  bge_m3_data: /mnt/tidal-alsh-share2/dataset/liuqi18/datasets/bge-m3-data
   model: Qwen/Qwen3-0.6B
   learning_rate: 0.000005
   steps: 1200

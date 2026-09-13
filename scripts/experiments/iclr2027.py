@@ -74,6 +74,10 @@ def load_suite(path=DEFAULT_SUITE):
     for run_id, run in runs.items():
         if run['group'] not in suite['profiles']:
             raise ValueError(f'{run_id}: unknown group')
+        profile = suite['profiles'][run['group']]
+        dataset = run.get('dataset', profile.get('dataset'))
+        if dataset is not None and dataset != profile.get('dataset') and dataset not in profile.get('datasets', {}):
+            raise ValueError(f'{run_id}: unknown dataset {dataset!r}')
         if run.get('kind', 'train') not in {'train', 'reuse', 'evaluation'}:
             raise ValueError(f'{run_id}: invalid run kind')
         if run.get('kind', 'train') == 'train' and run.get('objective') not in {'infonce', 'ranknet', 'lambdaloss', 'rl'}:
@@ -138,7 +142,8 @@ def apply_settings(suite, path):
                    exploration_schedule='exploration_schedule')
     for group in ('G1', 'G2', 'G3'):
         values = settings.get(group, {})
-        unknown = set(values) - set(mapping) - {'data'}
+        allowed_data_keys = {'data', 'bge_m3_data'} if group == 'G2' else {'data'}
+        unknown = set(values) - set(mapping) - allowed_data_keys
         if unknown:
             raise ValueError(f'{group}: unknown settings {sorted(unknown)}')
         profile = suite['profiles'][group]
@@ -148,6 +153,10 @@ def apply_settings(suite, path):
                     raise ValueError('G3 corpus/index/QA settings must use the advanced profile')
                 profile['dataset_manifest'] = str(Path(value) / 'manifest.json')
                 profile.setdefault('runtime_overrides', {})['data_path'] = str(Path(value) / ('train.ready.jsonl' if group == 'G1' else 'train.jsonl'))
+            elif key == 'bge_m3_data':
+                dataset = profile['datasets']['bge_m3']
+                dataset['dataset_manifest'] = str(Path(value) / 'manifest.json')
+                dataset.setdefault('runtime_overrides', {})['data_path'] = str(Path(value))
             elif value is not None:
                 if key == 'learning_rate':
                     value = float(value)
@@ -179,8 +188,12 @@ def validate_g1_rl_ablation_contract(run_id, config):
 def resolve_run(suite, suite_path, run_id, root=ROOT, nproc=1):
     run = suite['runs'][run_id]
     profile = suite['profiles'][run['group']]
-    protocol = merge(profile['protocol'], run.get('protocol', {}))
+    dataset_name = run.get('dataset', profile.get('dataset'))
+    dataset_profile = profile.get('datasets', {}).get(dataset_name, {})
+    protocol = merge(profile['protocol'], dataset_profile.get('protocol', {}))
+    protocol = merge(protocol, run.get('protocol', {}))
     config = merge(resolve_config(Path(suite_path).parent / profile['config']), profile.get('runtime_overrides', {}))
+    config = merge(config, dataset_profile.get('runtime_overrides', {}))
     kind = run.get('kind', 'train')
     objective = run.get('objective')
     group = run['group']
@@ -250,11 +263,11 @@ def resolve_run(suite, suite_path, run_id, root=ROOT, nproc=1):
     if run.get('init_from'):
         dependency = path_at_root(suite['output_root'], root) / f"{run['init_from']}-s42"
         config['model_name_or_path'] = str(dependency)
-    return dict(run_id=run_id, group=group, kind=kind, scope=run['scope'],
+    return dict(run_id=run_id, group=group, dataset=dataset_name, kind=kind, scope=run['scope'],
                 **execution_metadata(suite, run_id),
                 objective=objective, entrypoint=entrypoint, config=config, protocol=protocol,
                 selection=profile['selection'], final_evaluation=profile['final_evaluation'],
-                dataset_manifest=str(path_at_root(profile['dataset_manifest'], root)),
+                dataset_manifest=str(path_at_root(dataset_profile.get('dataset_manifest', profile['dataset_manifest']), root)),
                 dependency=str(dependency) if dependency else None,
                 reuse=run.get('reuse'), control=run.get('control'),
                 requirements=profile.get('requirements', []) + run.get('requirements', []))
@@ -308,16 +321,27 @@ def blockers(suite, resolved, root=ROOT):
         if value is None:
             errors.append(f'Unresolved protocol setting: {key}')
     cfg, protocol = resolved['config'], resolved['protocol']
-    if not isinstance(protocol.get('max_steps'), int) or protocol['max_steps'] <= 0:
-        errors.append('Freeze a positive total max_steps budget; one-epoch fallback is disabled')
+    training_budget = protocol.get('training_budget', 'fixed_steps')
+    if training_budget == 'one_epoch':
+        if protocol.get('max_steps') != -1 or cfg.get('num_train_epochs') != 1:
+            errors.append('one_epoch budget requires max_steps=-1 and num_train_epochs=1')
+    elif training_budget == 'fixed_steps':
+        if not isinstance(protocol.get('max_steps'), int) or protocol['max_steps'] <= 0:
+            errors.append('fixed_steps budget requires a positive total max_steps')
+    else:
+        errors.append(f'Unknown training_budget: {training_budget!r}')
     if protocol.get('learning_rate') is not None and protocol['learning_rate'] <= 0:
         errors.append('learning_rate must be positive')
     if protocol.get('eval_steps') is not None and (not isinstance(protocol['eval_steps'], int) or protocol['eval_steps'] <= 0):
         errors.append('eval_steps must be a positive integer')
     data_keys = ('rag_corpus_path', 'rag_candidate_manifest', 'rag_index_manifest') if resolved['group'] == 'G3' else ('data_path',)
     for key in data_keys:
-        if not cfg.get(key) or not path_at_root(cfg[key], root).is_file():
-            errors.append(f'Missing runtime input {key}: {cfg.get(key)}')
+        target = path_at_root(cfg[key], root) if cfg.get(key) else None
+        expects_directory = key == 'data_path' and resolved.get('dataset') == 'bge_m3'
+        exists = target.is_dir() if target and expects_directory else target.is_file() if target else False
+        if not exists:
+            kind = 'directory' if expects_directory else 'file'
+            errors.append(f'Missing runtime input {kind} {key}: {cfg.get(key)}')
     if resolved['group'] == 'G3':
         if cfg.get('rag_generator_top_k') != cfg.get('rag_retrieval_k'):
             errors.append(

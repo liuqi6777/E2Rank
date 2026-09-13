@@ -1,7 +1,7 @@
 _base_:
   - ../../train/posttrain.yaml
   - ../../model/qwen3_0.6b.yaml
-  - ../../eval/default.yaml
+  - ../../eval/mteb.yaml
 # Scratch initialization and representation protocol follow the former posttrain scratch recipe.
 data_path: data/train.jsonl
 per_dataset_max_samples: null

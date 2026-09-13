@@ -27,12 +27,23 @@ profiles:
       eval_steps: null
   G2:
     config: g2.yaml
+    dataset: e2rank
     dataset_manifest: data/protocols/g2_e2rank.json
+    datasets:
+      bge_m3:
+        dataset_manifest: /mnt/tidal-alsh-share2/dataset/liuqi18/datasets/bge-m3-data/manifest.json
+        runtime_overrides:
+          data_path: /mnt/tidal-alsh-share2/dataset/liuqi18/datasets/bge-m3-data
+        protocol:
+          training_budget: one_epoch
+          max_steps: -1
+          eval_steps: 1000
     selection: fixed_budget_final_checkpoint
     final_evaluation: [mteb_eng_v2]
     requirements: []
     protocol:
       labels: pos_index_binary
+      training_budget: fixed_steps
       max_steps: null          # T in optimizer steps; also declare/record actual examples/tokens.
       learning_rate: null
       eval_steps: null
@@ -72,10 +83,14 @@ execution_stages:
     runs: [G1-A-Norm, G1-A-DocMean, G1-A-NormDocMean]
   - name: G1 policy and reward mechanisms
     runs: [G1-A-Paired, G1-A-QPolicy, G1-A-DPolicy, G1-A-Cal, G1-A-Binary]
-  - name: G2 CL initialization and common warm-up
+  - name: G2 E2Rank CL initialization and common warm-up
     runs: [G2-D-CL, G2-E-CL, G2-W-CL]
-  - name: G2 RL awaiting recipe decisions
+  - name: G2 BGE-M3 CL initialization and common warm-up
+    runs: [G2-BGE-D-CL, G2-BGE-E-CL, G2-BGE-W-CL]
+  - name: G2 E2Rank RL awaiting recipe decisions
     runs: [G2-D-RL, G2-E-RL, G2-W-RL]
+  - name: G2 BGE-M3 RL awaiting recipe decisions
+    runs: [G2-BGE-D-RL, G2-BGE-E-RL, G2-BGE-W-RL]
   - name: G1 fixed-index deployment
     runs: [G1-DR]
   - name: G3 answer feedback
@@ -363,6 +378,29 @@ runs:
     objective: rl
     scope: joint
     init_from: G2-D-CL
+    requirements: [g2_rl_recipe]
+  G2-BGE-D-CL: {group: G2, dataset: bge_m3, objective: infonce, scope: joint}
+  G2-BGE-D-RL: {group: G2, dataset: bge_m3, objective: rl, scope: joint, requirements: [g2_rl_recipe]}
+  G2-BGE-W-CL: {group: G2, dataset: bge_m3, objective: infonce, scope: joint, init_from: G2-BGE-D-CL}
+  G2-BGE-E-CL:
+    group: G2
+    dataset: bge_m3
+    objective: infonce
+    scope: joint
+    model_config: ../../model/qwen3_embedding_0.6b.yaml
+  G2-BGE-E-RL:
+    group: G2
+    dataset: bge_m3
+    objective: rl
+    scope: joint
+    model_config: ../../model/qwen3_embedding_0.6b.yaml
+    requirements: [g2_rl_recipe]
+  G2-BGE-W-RL:
+    group: G2
+    dataset: bge_m3
+    objective: rl
+    scope: joint
+    init_from: G2-BGE-D-CL
     requirements: [g2_rl_recipe]
   G3-E0: {group: G3, kind: evaluation, scope: reference}
   G3-CL:
