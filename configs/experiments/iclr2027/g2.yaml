@@ -7,7 +7,7 @@ data_path: data/train.jsonl
 per_dataset_max_samples: null
 q_max_len: 512
 d_max_len: 1024
-relevance_scheme: graded
+relevance_scheme: binary
 slate_size: 16
 file_glob: '*.jsonl'
 batch_per_length_bucket: false

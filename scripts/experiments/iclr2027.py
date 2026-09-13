@@ -224,6 +224,14 @@ def resolve_run(suite, suite_path, run_id, root=ROOT, nproc=1):
             if key in protocol:
                 config[('rag_' if group == 'G3' else '') + key] = protocol[key]
     config = merge(config, run.get('overrides', {}))
+    if run.get('model_config'):
+        # E0 branches share the exact G1 model preset, independent of G2.model (B0).
+        model_config = resolve_config(Path(suite_path).parent / run['model_config'])
+        config = merge(config, model_config)
+        for key in ('model_name_or_path', 'pooling_method', 'append_token', 'padding_side',
+                    'query_prompt_template', 'document_prompt_template', 'embedding_max_length'):
+            if key in model_config:
+                protocol[key] = model_config[key]
     validate_g1_rl_ablation_contract(run_id, config)
     if protocol.get('global_batch_size') is not None:
         total = protocol['global_batch_size']

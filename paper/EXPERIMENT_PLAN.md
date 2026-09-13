@@ -13,10 +13,13 @@ global batch 128 / microbatch 16、temperature 0.03、full FT、seed 42。
 Binary MRR@10 + alignment 0.90 是 RL 的首选待评估配方，不是已经冻结的 G2 参数；
 是否追加探索或 reward 消融，在 G1 新消融结果与 G2 训练信号诊断后决定，暂不追加训练预算。
 
-本次仅更新实验计划，不修改配置/runner、不启动训练。`G2-E-CL/RL` 是新规划 ID，
-尚未注册；现有 G2 RL 配置仍属旧 graded 协议，不能直接作为新计划启动。
-“CL 先行”表示实验设计无需等待 RL，不代表新增 E0 行已经可由现有 runner 执行。
-下一次配置同步需注册 E0 分支、统一 pos_index 标签/候选协议，并将旧 G2 LL 行退出当前执行批次。
+配置/runner 已同步：注册 `G2-E-CL/RL`，E0 直接复用 G1 模型 preset；G2 统一 binary
+标签，旧 D-LL/W-LL 已退出 suite。三条 RL 均带 `g2_rl_recipe` 启动阻塞，参数待定期间
+即使数据和权重齐全也不允许启动。解析出的 RL 参数仅为占位，不代表已冻结方案。
+`bash scripts/run_g2_cl.sh check 8` 预检独立 CL 并展示 W-CL 依赖；
+`bash scripts/run_g2_cl.sh train 8` 依次运行 D-CL、E-CL、W-CL，每行训练后沿用现有
+最终 MTEB 评测。W-CL 的完整启动检查延后到 D-CL 权重就绪，失败即停，不覆盖旧输出。
+本地缺少 E2Rank train.jsonl；启动平台仍需提供数据并通过运行时预检。本次未启动训练。
 
 ## 2026-09-13：BGE-M3 relevance 与无 ID 候选过滤修复
 
@@ -532,8 +535,8 @@ CL 和 RL 均使用 `pos_index` 指向的唯一标注正例（1-based document �
 | G2-D-RL | B0 → RL | 检验直接从未经 embedding 专项训练的通用 LLM 启动 |
 | G2-W-CL | B0 → CL 最终模型 W0 → 重新训练 CL | 后续训练对照 |
 | G2-W-RL | B0 → 同一个 W0 → RL | 检验已有初始空间后的 RL 收益 |
-| G2-E-CL | 原始 E0 → CL | 成熟 embedding 的 E2Rank 适配基线；新规划 ID |
-| G2-E-RL | 同一个原始 E0 → RL | 检验 G1 配方能否迁移至 E2Rank；新规划 ID |
+| G2-E-CL | 原始 E0 → CL | 成熟 embedding 的 E2Rank 适配基线；已注册 |
+| G2-E-RL | 同一个原始 E0 → RL | 检验 G1 配方能否迁移至 E2Rank；已注册、配方阻塞 |
 
 W0 为 G2-D-CL 完成 1200 步后的最终模型，只训练一次，两条第二阶段分支共享该权重。
 G2-W-CL/RL 均为独立运行：重置 optimizer、scheduler、step counter 和数据迭代，
@@ -547,7 +550,7 @@ W 每条计入共同 CL 前缀后为 2400 步，不能与 D/E 称为等总预算
 ### 3.3 CL 先行与 RL 待决策项
 
 先运行 D-CL 与 E-CL；D-CL 完成后即可运行 W-CL。三条 CL 不等待 G1 新消融结果，
-也不等待 RL 配方确定。E-CL 正式启动前只需完成新增初始化分支的配置映射及常规预检。
+也不等待 RL 配方确定。E-CL 初始化分支已完成配置映射，正式启动前执行常规预检。
 
 RL 首选候选来自 G1 的 binary MRR@10 + target_alignment=0.90：双侧 vMF product、
 G=32、leave-one-out、无标准化、文档 sum、保留 calibration。它尚不是 G2 最终配置，
@@ -684,7 +687,7 @@ Paired/product 继续报告相同 query exposure 的结果及单列的质量/时
 不包含 LL/RankNet 或额外 RL 消融。W 系列只依赖 D-CL 最终权重，各自新建 optimizer、
 scheduler 和数据迭代。E 系列使用原始 E0，不继承任何 G1 微调权重。
 G1 结果用于提出 G2 RL 候选配方，但不自动视为已验证配置。数据准备就绪、资源允许时，
-G2 CL 可与 G1 后续机制运行重叠；新增 E0 ID 的配置映射尚待同步。
+G2 CL 可与 G1 后续机制运行重叠；E0 ID 配置映射已同步，RL 保持显式启动阻塞。
 保留直接 RL 不收敛或无收益的结果，用于界定初始化条件。
 
 ### Phase 5 — 固定索引部署与下游反馈（第四批）

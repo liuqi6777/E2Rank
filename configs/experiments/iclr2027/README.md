@@ -1,5 +1,28 @@
 # 三组实验配置指南
 
+## G2：CL 可启动，RL 暂停（当前生效）
+
+当前 G2 六行为 D/E/W 各 CL 与 RL；旧 D-LL/W-LL 已退出 suite。
+E 分支直接读取与 G1 相同的 `qwen3_embedding_0.6b.yaml`，不受公共 `G2.model`（B0）覆盖。
+全部采用 `pos_index` binary 标签，CL 保持 1200 steps、LR 5e-6、temperature 0.03、
+global batch 128 / microbatch 16、full FT、seed 42。
+
+```bash
+bash scripts/run_g2_cl.sh check 8
+bash scripts/run_g2_cl.sh train 8
+```
+
+将 E2Rank 文件放在 `configs/experiments.yaml` 的 G2.data 目录下，文件名为 train.jsonl。
+脚本先预检 D-CL/E-CL，再依次运行 D-CL、E-CL、W-CL；每次完成后沿用现有最终 MTEB
+评测。W-CL 使用 D-CL 最终权重并重新建立训练状态，不等待 RL。check 模式展示 W-CL
+配置及缺失依赖；其完整启动预检延后至 D-CL 完成。失败即停，不覆盖、不自动跳过旧输出。
+部分完成后使用 `python scripts/experiment.py train G2-E-CL --gpus 8` 或对应剩余 ID 单独运行。
+
+三条 G2 RL 通过 `g2_rl_recipe` requirement 阻止 check/train 放行，即使数据和初始化权重
+齐全也不能启动；待 reward、探索、优化器参数和消融范围确定后显式解除。
+当前解析出的 RL 数值只是被阻塞的占位配置，不代表已冻结方案。普通 CL 启动不检查 RL。
+本地缺少 E2Rank train.jsonl，因此当前只能验证配置和启动逻辑，不能报告本地训练就绪。
+
 ## E2Rank 标签来源（2026-09-13）
 
 E2Rank `{query, document, ranking, pos_index}` 中，`pos_index` 是从 1 开始的
