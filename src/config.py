@@ -234,8 +234,8 @@ class DataArguments:
         default=8,
         metadata={
             "help": (
-                "Number of candidate documents per sample (1 positive + slate_size-1 "
-                "negatives). Samples with fewer than slate_size-1 negatives are dropped."
+                "Maximum candidate documents per sample (1 positive + up to "
+                "slate_size-1 negatives). Shorter samples are padded and masked per batch."
             )
         },
     )

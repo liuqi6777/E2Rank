@@ -98,17 +98,17 @@ def record_to_slate(
     """Convert one BGE-M3 mining record into a project slate record.
 
     BGE-M3 records look like ``{query, pos, neg, [pos_scores], [neg_scores]}``. We take
-    one positive (highest ``pos_scores`` when present, else random) and
+    one positive (highest ``pos_scores`` when present, else random) and up to
     ``slate_size - 1`` negatives (top ``neg_scores`` when present, else shuffled).
     The positive is at index 0. ``ranking`` is only a layout placeholder, not teacher
     supervision. All positive text keys survive for cross-query filtering.
-    Returns ``None`` when the record cannot fill the slate.
+    Returns ``None`` when the record has no positive or no negative.
     """
     positives = record.get("pos") or []
     negatives = record.get("neg") or []
-    num_negatives = slate_size - 1
-    if not positives or len(negatives) < num_negatives:
+    if not positives or not negatives:
         return None
+    num_negatives = min(slate_size - 1, len(negatives))
 
     pos_scores = record.get("pos_scores")
     if pos_scores and len(pos_scores) == len(positives):
@@ -126,7 +126,7 @@ def record_to_slate(
         chosen = chosen[:num_negatives]
 
     documents = [positive, *chosen]
-    ranking = list(range(1, slate_size + 1))
+    ranking = list(range(1, len(documents) + 1))
     return {
         "query": record["query"], "document": documents, "ranking": ranking, "pos_index": 1,
         "ranking_source": "pos_neg_layout",
@@ -534,9 +534,9 @@ class EmbeddingDataset(Dataset):
         return converted
 
     def __getitem__(self, index: int) -> dict[str, Any]:
-        # Resolve within the same single-source batch so a dropped BGE-M3 record (too
-        # few negatives to fill the slate) is replaced by another sample sharing the
-        # batch's source, keeping the batch single-source and the slate length uniform.
+        # Resolve within the same single-source batch so an unusable BGE-M3 record (no
+        # positive or negative) is replaced by another sample sharing the batch's
+        # source. Variable slate lengths are padded and masked by the collator.
         batch_start = (index // self.batch_size) * self.batch_size
         batch_end = min(batch_start + self.batch_size, len(self.entries))
         order = [index] + [i for i in range(batch_start, batch_end) if i != index]
@@ -549,7 +549,7 @@ class EmbeddingDataset(Dataset):
                 return converted
         raise RuntimeError(
             f"No convertible sample in batch starting at {batch_start}; "
-            f"slate_size={self.slate_size} may exceed available negatives."
+            "records may be missing positives or negatives."
         )
 
 
