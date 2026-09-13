@@ -1,5 +1,16 @@
 # 三组实验配置指南
 
+## E2Rank 标签来源（2026-09-13）
+
+E2Rank `{query, document, ranking, pos_index}` 中，`pos_index` 是从 1 开始的
+document 数组位置。Binary reward、CL 正例与 in-batch 代表正例读取该标注；
+graded nDCG/LL 仍按 teacher ranking 分为 3/2/1/0，RankNet 仍学习完整 teacher 顺序。
+标注正例与 teacher 第一名可以不同。所有标签在文档重排后保持对应。
+Binary 输入缺少 pos_index 或提供非法索引会报错；历史不含该字段的 graded 输入
+仍兼容 teacher-rank-1 代表正例，但不属于新的 G2 标注协议。
+G2 新运行应统一使用含有效 pos_index 的数据，不能复用旧 teacher-rank-1 CL 的 W0
+作为新协议的共同初始化。当前本地无 data/train.jsonl，尚未核验全量字段覆盖。
+
 ## MRR 0.90 核心消融（2026-09-13，当前执行批次）
 
 新增 8 行：`G1-J-LL-Binary-Scaled`，以及 `G1-A-MRR090-` 前缀的

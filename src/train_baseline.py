@@ -320,7 +320,7 @@ class BaselineModel(nn.Module):
                 )
 
         if self.baseline_args.baseline_loss == "infonce":
-            # Binary identities remain independent of teacher grades. G2 keeps rank 1.
+            # Binary identities remain independent of teacher grades (E2Rank pos_index).
             positive_labels = torch.zeros_like(relevance_labels)
             if positive_mask is None:
                 positive_labels[:, 0] = 1

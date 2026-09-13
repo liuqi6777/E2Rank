@@ -1,5 +1,38 @@
 # Experiment Plan: Reward-Based Optimization of Embedding Retrievers
 
+## 2026-09-13：BGE-M3 relevance 与无 ID 候选过滤修复
+
+BGE-M3 pos/neg 转换继续每次选择一个标注正例与 slate_size−1 个负例，保留全部
+pos 文本的规范化去重标识，用于跨 query 已知正例过滤（包括未选中的正例）。
+Pos/neg scores 仅用于选样；转换后的候选排列明确标为非 teacher 顺序，graded
+relevance 配置直接报错。RankNet 标签使用正例 1、负例并列 0，不监督负例之间的
+临时顺序。没有有效 scores 时按既有 RNG 随机选择/打乱，负例不足仍按原逻辑处理。
+
+修复跨 query ID 过滤：None/空字符串不再进入已知 ID 集合，也不能匹配已知文档。
+无 ID 的同 source BGE-M3/E2Rank 输入因此恢复不重复且非已知正例的 in-batch 候选；
+有效 ID 的 source 隔离、文本去重及 prepared G1 正例过滤继续保留。
+这会改变受影响旧版训练的实际候选池，历史结果不追溯解释为修复后协议。
+本次用合成记录验证 loader/collator 与 loss 路径；本地没有 BGE-M3 全量数据，未启动训练。
+
+## 2026-09-13：E2Rank binary 改用 pos_index 标注（当前生效）
+
+E2Rank 原始 listwise 记录的 `pos_index` 是 **1-based 的 document 数组位置**，
+不是 teacher 排名位置。Loader 保留并校验该字段；binary 标签只将这一文档设为 1，
+其余为 0。CL 的 positive_mask 和所有目标共享的 in-batch 代表正例也使用该标注。
+Graded reward/LL 仍从独立 teacher permutation 构造 3/2/1/0，RankNet 保持 teacher 顺序；
+将标注正例移到编码槽位 0 时同步重排所有标签，不把 teacher 第一名改成标注正例。
+
+Binary 原始 listwise 记录缺少 `pos_index` 时直接报错；非整数（含 bool）、空值和越界值
+也报错。历史无标注的 teacher-only graded 输入保留 rank-1 代表正例的兼容行为，
+不得将其报告为本节的标注正例协议。BGE pos/neg 转换显式生成 `pos_index=1`。
+G1 prepared relevance 路径不变；旧结果不追溯改名为 pos_index 实验。
+
+本修改也改变带标注 E2Rank 的 graded 训练所使用的 in-batch 代表文档，以及 CL 正例，
+因此新旧运行不能只按 reward 名称视为相同配方。G2 新运行应统一使用含有效 pos_index 的
+数据，原有 teacher-rank-1 CL/W0 若已运行不得混入新的共同初始化对照。
+本地缺少 `data/train.jsonl`，全量字段覆盖和标注与 teacher 第一名的一致率尚未核验。
+没有启动训练，也没有修改已有训练产物。
+
 ## 2026-09-13：MRR 0.90 完整核心消融与 binary 监督对照（当前生效）
 
 本节覆盖下文冲突的待运行状态、执行顺序和预算。`_summary/g1_bright` 已收录
@@ -459,7 +492,7 @@ LR 5e-6、global batch 128、microbatch 16、linear schedule、warmup ratio 0.03
 
 保留完整 teacher order，并为 metric-aware 目标定义 teacher-derived grades：
 rank 1 / 2–5 / 6–10 / 其余对应 3 / 2 / 1 / 0；主 RL 优化 nDCG@10。
-CL 使用 rank-1 正例和相同候选池；LL 使用与 RL 完全相同的 grades/cutoff。
+CL 使用 pos_index 标注正例和相同候选池；LL 使用与 RL 完全相同的 grades/cutoff。
 跨 query 候选构造保持一致，明确其近似负例属性。
 CL 与 RL 使用的监督信息粒度不同，因此 **LL 是必需的同标签强对照**。
 可选 RankNet 补充 full-order 控制；不能只比较单正例 CL 就归因于 RL 估计器。
@@ -554,7 +587,7 @@ corpus，再由检索或答案 reward 评分。candidate manifest 在 RL 中只�
 - [x] G1 主对照与 DR 共享完整 teacher qrels 与全部已知正例；CPU 检查完整标注的 DR 奖励与 IDCG。
 - [ ] G2 E2Rank 版本与规模、外部 overlap 审计、固定全量 train 文件。
 - [ ] 固定 E0、B0、pooling/prompts 和各组评测协议；校验 full FT 与冻结分支。
-- [x] G1 接入逐正例独立分母的 multi-positive CL、teacher-order RankNet 和可变长 RL；G2 保留 rank-1 CL。
+- [x] G1 接入逐正例独立分母的 multi-positive CL、teacher-order RankNet 和可变长 RL；G2 CL 已改为读取 pos_index 标注（见顶部修订）。
 - [x] 实现指定 LambdaLoss variant；G1/G2 使用 teacher grades 3/2/1/0，padding 不参与 loss。
 - [ ] 明确两套标签的 MRR 阈值，确保 padding 不参与 reward。
 - [ ] 接入最终 checkpoint 的固定候选排序评测与全 corpus 检索。

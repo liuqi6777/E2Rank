@@ -98,10 +98,11 @@ def record_to_slate(
     """Convert one BGE-M3 mining record into a project slate record.
 
     BGE-M3 records look like ``{query, pos, neg, [pos_scores], [neg_scores]}``. We take
-    one positive (highest ``pos_scores`` when present, else the first) and
-    ``slate_size - 1`` negatives (top ``neg_scores`` when present, else the first ones),
-    place the positive at index 0, and emit ``ranking = [1, 2, ..., slate_size]`` so the
-    gold positive is rank 1. Returns ``None`` when the record cannot fill the slate.
+    one positive (highest ``pos_scores`` when present, else random) and
+    ``slate_size - 1`` negatives (top ``neg_scores`` when present, else shuffled).
+    The positive is at index 0. ``ranking`` is only a layout placeholder, not teacher
+    supervision. All positive text keys survive for cross-query filtering.
+    Returns ``None`` when the record cannot fill the slate.
     """
     positives = record.get("pos") or []
     negatives = record.get("neg") or []
@@ -126,7 +127,24 @@ def record_to_slate(
 
     documents = [positive, *chosen]
     ranking = list(range(1, slate_size + 1))
-    return {"query": record["query"], "document": documents, "ranking": ranking}
+    return {
+        "query": record["query"], "document": documents, "ranking": ranking, "pos_index": 1,
+        "ranking_source": "pos_neg_layout",
+        "known_positive_keys": sorted({document_key(text) for text in positives}),
+    }
+
+
+def listwise_positive_index(record: dict[str, Any], *, required: bool = False) -> int:
+    """Resolve the annotated 1-based document position, separately from teacher order."""
+    if "pos_index" not in record:
+        if required:
+            raise ValueError("Binary listwise relevance requires a 1-indexed 'pos_index'")
+        # Legacy teacher-only graded records remain readable.
+        return record["ranking"][0] - 1
+    index = record["pos_index"]
+    if isinstance(index, bool) or not isinstance(index, int) or not 1 <= index <= len(record["document"]):
+        raise ValueError("'pos_index' must be an integer in [1, len(document)]")
+    return index - 1
 
 
 def normalize_listwise_record(record: dict[str, Any]) -> dict[str, Any]:
@@ -134,8 +152,8 @@ def normalize_listwise_record(record: dict[str, Any]) -> dict[str, Any]:
 
     ``ranking`` is a 1-indexed permutation of document positions, ordered from most
     to least relevant. Unlike BGE-M3 conversion, the complete candidate list and its
-    teacher ordering are preserved so graded rewards and rank-based supervised losses
-    consume exactly the same supervision.
+    teacher ordering are preserved. Optional ``pos_index`` is the annotated 1-based
+    document position, independent of teacher order; binary collation requires it.
     """
     if record.get("schema") is not None or "relevance" in record:
         raise ValueError("Use the prepared candidate format for explicit relevance records")
@@ -161,7 +179,10 @@ def normalize_listwise_record(record: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(
             f"Listwise ranking must be a 1-indexed permutation of {expected}, got {ranking}"
         )
-    return {"query": query, "document": list(documents), "ranking": list(ranking)}
+    normalized = {"query": query, "document": list(documents), "ranking": list(ranking)}
+    if "pos_index" in record:
+        normalized["pos_index"] = listwise_positive_index(record) + 1
+    return normalized
 
 
 class EmbeddingDataset(Dataset):
@@ -732,7 +753,7 @@ class EmbeddingDataCollator:
         if width < 2:
             raise ValueError("At least two candidates are required")
         positive_documents, negative_documents = [], []
-        ordered_keys, known_id_sets = [], []
+        ordered_keys, known_id_sets, known_positive_key_sets = [], [], []
         relevance_labels, rank_labels, masks, ordered_ids, positive_masks = [], [], [], [], []
         for instance in instances:
             docs = instance["document"]
@@ -750,12 +771,24 @@ class EmbeddingDataCollator:
                         raise ValueError("Prepared grades must match candidates")
                 positive_index = 0
             else:
+                mined = instance.get("ranking_source") == "pos_neg_layout"
+                if mined and self.relevance_scheme != "binary":
+                    raise ValueError(
+                        "BGE-M3 pos/neg data requires binary relevance; candidate order "
+                        "is not a teacher ranking for graded supervision"
+                    )
                 ranking = torch.tensor([instance["ranking"]], dtype=torch.long) - 1
-                labels = build_relevance_labels(ranking, self.relevance_scheme)[0]
                 ranks = build_rank_labels(ranking)[0]
-                positive_index = int(ranking[0, 0])
+                positive_index = listwise_positive_index(
+                    instance, required=self.relevance_scheme == "binary"
+                )
                 binary_positive = torch.zeros(n, dtype=torch.bool)
                 binary_positive[positive_index] = True
+                labels = (binary_positive.float() if self.relevance_scheme == "binary"
+                          else build_relevance_labels(ranking, "graded")[0])
+                if mined:
+                    # No preference is annotated between mined negatives.
+                    ranks = binary_positive.float()
             order = list(range(n)) if ready else [positive_index] + [i for i in range(n) if i != positive_index]
             reordered = [docs[i] for i in order]
             positive_documents.append(reordered[0])
@@ -770,8 +803,10 @@ class EmbeddingDataCollator:
             if len(keys) != n or len(ids) != n:
                 raise ValueError("Candidate metadata must match document count")
             ordered_keys.append([keys[i] for i in order] + [None]*(width-n))
-            known_id_sets.append(set(instance["known_document_ids"]) if ready else
-                                 set(instance.get("original_relevant_docids", [])) | set(ids))
+            known_ids = (set(instance["known_document_ids"]) if ready else
+                         set(instance.get("original_relevant_docids", [])) | set(ids))
+            known_id_sets.append(known_ids - {None, ""})
+            known_positive_key_sets.append(set(instance.get("known_positive_keys", [])))
 
         # Separate duplicate filters for positive-only and all-document cross pools.
         batch_size = len(instances)
@@ -779,7 +814,7 @@ class EmbeddingDataCollator:
         for positive_only in (True, False):
             cross = torch.zeros(batch_size, batch_size, width, dtype=torch.bool)
             for i, instance in enumerate(instances):
-                seen = set(ordered_keys[i]) - {None}
+                seen = (set(ordered_keys[i]) - {None}) | known_positive_key_sets[i]
                 known_ids = known_id_sets[i]
                 for j, other in enumerate(instances):
                     if i == j:
@@ -788,7 +823,10 @@ class EmbeddingDataCollator:
                         if not masks[j][k]:
                             continue
                         key = ordered_keys[j][k]
-                        known = (instance.get("source") == other.get("source") and ordered_ids[j][k] in known_ids)
+                        candidate_id = ordered_ids[j][k]
+                        known = (candidate_id not in (None, "")
+                                 and instance.get("source") == other.get("source")
+                                 and candidate_id in known_ids)
                         if key not in seen and not known:
                             cross[i,j,k] = True
                             seen.add(key)

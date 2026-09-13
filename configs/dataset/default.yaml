@@ -11,8 +11,8 @@ per_dataset_max_samples: 50000
 q_max_len: 512
 d_max_len: 1024
 
-# Random mined negatives carry no graded relevance, so binary (rank-1 positive vs. the
-# rest) is the right label scheme; it also matches slate_size = 1 positive + N negatives.
+# Mined negatives carry no graded relevance. Binary uses the selected annotated pos;
+# all other pos texts remain available for cross-query filtering. Graded is rejected.
 relevance_scheme: binary
 
 # Slate construction: 1 positive + (slate_size - 1) negatives per sample.

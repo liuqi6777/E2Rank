@@ -31,7 +31,7 @@ profiles:
     final_evaluation: [mteb_eng_v2]
     requirements: []
     protocol:
-      labels: teacher_grades_3_2_1_0
+      labels: pos_index_for_binary_and_cl_teacher_grades_3_2_1_0_for_graded
       max_steps: null          # T in optimizer steps; also declare/record actual examples/tokens.
       learning_rate: null
       eval_steps: null

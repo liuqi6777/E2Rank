@@ -62,6 +62,10 @@ G2 直接读取 `data/train.jsonl`，全量训练，不另留内部 dev/test；�
 `checkpoints/iclr2027/G2-*-s42/mteb_eval/final/`。任一任务失败会让评测阶段返回非零，
 已经保存的训练模型不受影响；训练前和中间 checkpoint 不跑这项完整评测。
 通用 loader 仍支持 BGE-M3 的 `query/pos/neg` 格式。
+该路径只支持 binary relevance：每次选择一个标注正例和固定数量的负例，保留全部
+`pos` 的文本去重标识，过滤跨 query 的已知正例。`pos_scores/neg_scores` 只用于选样，
+不转换成 graded 等级；无 teacher 排序时负例的 RankNet 标签并列。
+无文档 ID 时按文本过滤，不把缺失 ID 当作相同文档。
 
 ## 通用工具
 
