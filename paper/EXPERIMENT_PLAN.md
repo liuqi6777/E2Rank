@@ -1,5 +1,18 @@
 # Experiment Plan: Reward-Based Optimization of Embedding Retrievers
 
+## 2026-09-14：G1 完成后的 G2 RL 计划
+
+用户确认 G1 已全部完成、E2Rank CL 已完成。最新本地 G1 汇总含 45 次训练和 E0，
+每行 12 个领域；MRR@10 / G=32 / alignment 0.90 仍为最佳配置（22.01）。
+此前“核心消融未同步”“局部网格待运行”等状态为历史记录。
+
+新的 [G2 RL 实验计划](G2_RL_PLAN.md) 建议六条 RL 统一沿用该配方、LR 5e-6 和既定
+数据预算；先执行 E2Rank E-RL → W-RL → D-RL，再完成 BGE-M3 复现，不新增主搜索/消融。
+W-RL 使用同数据 D-CL 最终权重。本计划覆盖下文第 3.3 节及 Phase 4 的旧待决策项与顺序。
+六条 RL 已通过共享 overrides 显式冻结配方，旧 `g2_rl_recipe` 启动阻塞已解除；
+新增 `scripts/run_g2_rl.sh` / `scripts/run_g2_bge_rl.sh`，分别预检三行（含 W0）后按
+E → W → D 训练与最终 MTEB 评测。当前未启动训练；下文 RL 阻塞状态为历史记录。
+
 ## 2026-09-13：G1 group size × target alignment 局部交互网格（当前生效）
 
 G1 核心消融已在外部训练平台完成，当前配方确定为 `G1-A-MRRAlign090`：binary

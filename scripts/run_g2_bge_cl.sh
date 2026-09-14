@@ -20,7 +20,7 @@ for run in G2-BGE-D-CL G2-BGE-E-CL; do
 done
 if [[ "$action" == check ]]; then
   python scripts/experiment.py show G2-BGE-W-CL --gpus "$gpus"
-  echo "BGE W-CL dependency check is deferred until BGE D-CL completes; G2 RL remains blocked."
+  echo "BGE W-CL dependency check is deferred until BGE D-CL completes; use run_g2_bge_rl.sh for RL."
 else
   for run in G2-BGE-D-CL G2-BGE-E-CL G2-BGE-W-CL; do
     python scripts/experiment.py check "$run" --gpus "$gpus"

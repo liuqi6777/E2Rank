@@ -11,6 +11,7 @@
 | `prepare_reasonrank.py` | 多正例保留、去污染与 ready 数据编译，也提供审计共用的原始格式解析函数 |
 | `run.sh` / `run_baseline.sh` | 通用 RL / supervised torchrun 包装器，显式指定 `NPROC_PER_NODE` |
 | `run_g2_cl.sh` / `run_g2_bge_cl.sh` | 分别串行预检并启动 E2Rank / BGE-M3 的三条 G2 CL |
+| `run_g2_rl.sh` / `run_g2_bge_rl.sh` | 分别预检 E2Rank / BGE-M3 的三条 RL（含 W0），再按 E → W → D 训练与最终 MTEB 评测 |
 | `rag_pipeline.sh` | RAG 数据准备、编码、NQ/HotpotQA qrels 构造、候选挖掘、底层训练与评测 |
 | `rag_acceptance.sh` / `rag_toy_distributed.py` | RAG 分布式索引和端到端验收 |
 | `measure_score_gaps.py` | embedding 分数间隔诊断 |
@@ -30,7 +31,7 @@ python scripts/experiment.py check G1-J-RL
 python -m unittest discover -s scripts/tests -v
 ```
 
-测试检查实现，不代表完成 GPU 训练。G2/G3 尚未实现的实验行仍会显示 BLOCKED。
+测试检查实现，不代表完成 GPU 训练。缺少数据、初始化权重或协议参数的实验行仍会显示 BLOCKED。
 
 ## ReasonRank 数据准备
 

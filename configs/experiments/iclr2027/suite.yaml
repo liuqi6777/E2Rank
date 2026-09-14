@@ -5,8 +5,7 @@ seed: 42
 output_root: checkpoints/iclr2027
 
 # Missing generated files are checked as artifact prerequisites, not implementation blockers.
-pending:
-  g2_rl_recipe: G2 RL is blocked until reward, exploration, optimizer settings and ablation scope are finalized from G1 results and G2 diagnostics.
+pending: {}
 
 profiles:
   G1:
@@ -87,12 +86,12 @@ execution_stages:
     runs: [G1-A-Paired, G1-A-QPolicy, G1-A-DPolicy, G1-A-Cal, G1-A-Binary]
   - name: G2 E2Rank CL initialization and common warm-up
     runs: [G2-D-CL, G2-E-CL, G2-W-CL]
+  - name: G2 E2Rank RL with fixed MRR recipe
+    runs: [G2-E-RL, G2-W-RL, G2-D-RL]
   - name: G2 BGE-M3 CL initialization and common warm-up
     runs: [G2-BGE-D-CL, G2-BGE-E-CL, G2-BGE-W-CL]
-  - name: G2 E2Rank RL awaiting recipe decisions
-    runs: [G2-D-RL, G2-E-RL, G2-W-RL]
-  - name: G2 BGE-M3 RL awaiting recipe decisions
-    runs: [G2-BGE-D-RL, G2-BGE-E-RL, G2-BGE-W-RL]
+  - name: G2 BGE-M3 RL with fixed MRR recipe
+    runs: [G2-BGE-E-RL, G2-BGE-W-RL, G2-BGE-D-RL]
   - name: G1 fixed-index deployment
     runs: [G1-DR]
   - name: G3 answer feedback
@@ -407,7 +406,32 @@ runs:
       reward_terms: ''
       reward_ndcg_k: 10
   G2-D-CL: {group: G2, objective: infonce, scope: joint}
-  G2-D-RL: {group: G2, objective: rl, scope: joint, requirements: [g2_rl_recipe]}
+  G2-D-RL:
+    group: G2
+    objective: rl
+    scope: joint
+    # Shared only by the six G2 RL rows; CL and historical G1 recipes stay independent.
+    # Budget and optimizer settings come from the same G2 profile/settings as CL.
+    overrides: &g2_rl_recipe
+      reward_type: mrr_in_batch
+      reward_terms: ''
+      reward_ndcg_k: 10
+      relevance_scheme: binary
+      ndcg_in_batch_include_negatives: false
+      action_components: [[query], [positive, negative]]
+      group_size: 32
+      sampling_law: vmf
+      rollout: product
+      target_alignment: 0.90
+      final_alignment: null
+      exploration_schedule: fixed
+      sigma_learnable: false
+      advantage_baseline: leave_one_out
+      advantage_norm: none
+      document_log_prob_reduction: sum
+      frozen_doc_rescale: true
+      in_batch_use_sampled_documents: false
+      kl_coef: 0
   G2-W-CL: {group: G2, objective: infonce, scope: joint, init_from: G2-D-CL}
   G2-E-CL:
     group: G2
@@ -419,15 +443,15 @@ runs:
     objective: rl
     scope: joint
     model_config: ../../model/qwen3_embedding_0.6b.yaml
-    requirements: [g2_rl_recipe]
+    overrides: *g2_rl_recipe
   G2-W-RL:
     group: G2
     objective: rl
     scope: joint
     init_from: G2-D-CL
-    requirements: [g2_rl_recipe]
+    overrides: *g2_rl_recipe
   G2-BGE-D-CL: {group: G2, dataset: bge_m3, objective: infonce, scope: joint}
-  G2-BGE-D-RL: {group: G2, dataset: bge_m3, objective: rl, scope: joint, requirements: [g2_rl_recipe]}
+  G2-BGE-D-RL: {group: G2, dataset: bge_m3, objective: rl, scope: joint, overrides: *g2_rl_recipe}
   G2-BGE-W-CL: {group: G2, dataset: bge_m3, objective: infonce, scope: joint, init_from: G2-BGE-D-CL}
   G2-BGE-E-CL:
     group: G2
@@ -441,14 +465,14 @@ runs:
     objective: rl
     scope: joint
     model_config: ../../model/qwen3_embedding_0.6b.yaml
-    requirements: [g2_rl_recipe]
+    overrides: *g2_rl_recipe
   G2-BGE-W-RL:
     group: G2
     dataset: bge_m3
     objective: rl
     scope: joint
     init_from: G2-BGE-D-CL
-    requirements: [g2_rl_recipe]
+    overrides: *g2_rl_recipe
   G3-E0: {group: G3, kind: evaluation, scope: reference}
   G3-CL:
     group: G3

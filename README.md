@@ -27,7 +27,7 @@ python scripts/experiment.py train G1-J-RL --gpus 8
 | 组 | 目的 | 当前状态 |
 |---|---|---|
 | G1 | 开源 embedding model → ReasonRank reasoning 训练，BRIGHT 主评测 | Joint CL / RankNet / LambdaLoss / RL 与 query-policy-only RL 消融已接入 |
-| G2 | Base LLM 上大规模 CL / RL，以及共同 CL warm-up 后的比较 | 预算、表示协议和部分训练能力待补齐 |
+| G2 | 两套数据上 B0 / CL warm-up W0 / 原始 embedding E0 的 CL/RL 比较 | E2Rank CL 已完成；六条 RL 配方和批量入口已接入 |
 | G3 | 固定索引 RAG 的检索与答案目标 | 保留现有 RAG 工具；论文实验的选模和奖励协议尚待接入 |
 
 `list` 展示 READY / BLOCKED / EVAL / REUSE；`check G1` 检查整组，因此包含未实现行时返回非零。
@@ -36,6 +36,17 @@ READY 表示启动前检查通过，不代表已完成 GPU 训练。入口只启
 
 详细参数、run IDs、预算与输出规则见 [实验配置指南](configs/experiments/iclr2027/README.md)。
 研究设计见 [实验计划](paper/EXPERIMENT_PLAN.md)。
+
+G2 RL 使用固定 MRR@10 / G=32 / alignment 0.90 配方，按 E → W → D 执行：
+
+```bash
+bash scripts/run_g2_rl.sh check 8
+bash scripts/run_g2_rl.sh train 8
+# BGE-M3 数据的对应入口：scripts/run_g2_bge_rl.sh
+```
+
+批量预检要求同数据 D-CL 的最终权重已就绪；W-RL 只从该权重初始化。
+完整矩阵与诊断安排见 [G2 RL 计划](paper/G2_RL_PLAN.md)。
 
 ## 数据
 

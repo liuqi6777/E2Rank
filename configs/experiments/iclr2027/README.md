@@ -17,11 +17,11 @@ bash scripts/run_g1_mrr_group_alignment_grid.sh train 8
 变化，因此同时记录最终 BRIGHT、wall time、peak memory 和 reward degeneracy 诊断。
 当前 suite 共 64 行（62 次训练、2 次评测）；下文更早批次的计数由本节覆盖。
 
-## G2：CL 可启动，RL 暂停（当前生效）
+## G2：CL / RL 配置与入口（2026-09-14，当前生效）
 
 当前 G2 在 E2Rank 和 BGE-M3 上各有六行 D/E/W × CL/RL；旧 D-LL/W-LL 已退出 suite。
 E 分支直接读取与 G1 相同的 `qwen3_embedding_0.6b.yaml`，不受公共 `G2.model`（B0）覆盖。
-全部采用 binary 标签，保持 LR 5e-6、temperature 0.03、global batch 128 / microbatch 16、
+全部采用 binary 标签，保持 LR 5e-6、CL temperature 0.03、global batch 128 / microbatch 16、
 full FT、seed 42。E2Rank 每行固定 1200 steps；BGE-M3 每行固定 1 epoch，不做等 step 对照。
 全部 12 行在 `checkpoint-0` 和每次 checkpoint 保存后运行 `MTEB(eng, v1, subset)` callback；
 E2Rank 每 200 steps 保存和评测，BGE-M3 每 1000 steps 保存和评测。指标写入训练日志及
@@ -45,9 +45,28 @@ bash scripts/run_g2_bge_cl.sh train 8
 对应 D-CL 完成。失败即停，不覆盖、不自动跳过旧输出。
 部分完成后使用 `python scripts/experiment.py train G2-E-CL --gpus 8` 或对应剩余 ID 单独运行。
 
-六条 G2 RL 通过 `g2_rl_recipe` requirement 阻止 check/train 放行，即使数据和初始化权重
-齐全也不能启动；待 reward、探索、优化器参数和消融范围确定后显式解除。
-当前解析出的 RL 数值只是被阻塞的占位配置，不代表已冻结方案。普通 CL 启动不检查 RL。
+六条 G2 RL 已冻结为 binary MRR@10、G=32、target_alignment=0.90、双侧 vMF product、
+leave-one-out、无 advantage normalization、document sum、保留 frozen-candidate rescaling；
+固定探索、KL=0，不混合 reward。`suite.yaml` 的 `&g2_rl_recipe` overrides 由六行共享，
+旧配方启动阻塞已解除。RL 与 CL 共用各数据集的预算和优化器设置，详见
+[G2 RL 计划](../../../paper/G2_RL_PLAN.md)。
+
+```bash
+# E2Rank CL 已完成；先执行这一批 RL。
+bash scripts/run_g2_rl.sh check 8
+bash scripts/run_g2_rl.sh train 8
+
+# BGE-M3；先准备好同数据 BGE-D-CL 的最终权重。
+bash scripts/run_g2_bge_rl.sh check 8
+bash scripts/run_g2_bge_rl.sh train 8
+```
+
+两个 RL 脚本分别先预检全部三行（包括 W0），再按 E-RL → W-RL → D-RL 训练，
+每行成功后自动评测最终 MTEB v2；任一步失败即停，不覆盖、跳过或自动重试已有输出。
+W0 分别来自 `G2-D-CL-s42` / `G2-BGE-D-CL-s42`，不是 W-CL 最终模型；只加载权重，
+不恢复训练状态。批量脚本不启动 CL。W0 未就绪时可单独检查/运行 E-RL 或 D-RL。
+部分完成后用 `python scripts/experiment.py train RUN --gpus 8` 执行剩余 ID。
+
 本地缺少 E2Rank `train.jsonl`，且配置的 BGE-M3 目录不在本机，因此当前只能验证配置和
 启动逻辑，不能报告本地训练就绪。
 
