@@ -4,6 +4,10 @@ G1 已完成实验的综合分析见 [G1_RESULTS.md](G1_RESULTS.md)，包括全�
 
 W&B 完整日志的后续诊断见 [G1_GRADIENT_ANALYSIS.md](G1_GRADIENT_ANALYSIS.md)，涵盖更新规则的梯度尺度、训练 reward 与 BRIGHT 差异，以及实际 clipping 配置的核查。
 
+Seed 重复后的最新机制讨论见 [rollout 方差复盘](../docs/rollout_variance_discussion.md)，区分已验证的 reward 分辨率、现有边际化实现、待检验的梯度信噪比假设和后续对照。
+
+当前 rollout seed 对照之后的工作见[后续实验计划](../docs/rollout_variance_experiment_plan.md)：先固定状态比较 reward 和逐文档反事实 baseline，再按诊断证据选择完整训练重复。
+
 ```text
 paper/
 ├── README.md                 # this guide

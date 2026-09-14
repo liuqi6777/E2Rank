@@ -1,5 +1,17 @@
 # Experiment Plan: Reward-Based Optimization of Embedding Retrievers
 
+## 2026-09-14：G1 rollout 方差验证与后续改进（最新补充）
+
+原始三个训练 seed 的重复已完成；固定训练/data seed 42、仅改变 rollout seed
+42/3407/2026 的完整对照按用户反馈正在运行。固定状态梯度诊断也已在训练机器执行，
+用户反馈支持高噪声怀疑，具体诊断 JSON 尚未导入本地核对。下文早期记录中的“新 seed
+没有结果”描述的是当时状态。
+
+后续按[rollout 方差实验计划](../docs/rollout_variance_experiment_plan.md)推进：先在
+相同模型与输入上比较 binary MRR / binary nDCG / graded nDCG，再比较当前 LOO 与
+逐文档反事实 baseline，仅为值得继续的条件新增完整训练重复。该计划目前为设计，
+反事实 baseline 尚未实现，未启动新的对比实验；既定 G2 配方保持原计划。
+
 ## 2026-09-14：G1 最终配方的训练随机性重复
 
 新增两次 RL 训练：`G1-A-MRRAlign090-Seed3407`、`G1-A-MRRAlign090-Seed2026`，

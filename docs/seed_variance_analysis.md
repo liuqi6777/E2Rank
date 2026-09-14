@@ -1,5 +1,7 @@
 # G1-A-MRRAlign090 三 Seed 方差分析报告
 
+> 本文保留训练机器上的原始分析记录。后续核对发现，“几何指标严格同序”“pooling 放大约 100 倍”和“已定位根因”等表述超出当前证据；修订后的结论及 rollout/reward 诊断汇总见 [讨论复盘](rollout_variance_discussion.md)。
+
 **日期**：2026-09-14
 **起因**：`G1-A-MRRAlign090-Seed3407-s3407` 与 `G1-A-MRRAlign090-s42` 除 seed 外配置相同，
 但 BRIGHT 评测差距接近一倍（ndcg@10 0.162 vs 0.220），需定位原因。
