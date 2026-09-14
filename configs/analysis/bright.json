@@ -10,8 +10,9 @@
   },
   "models": {
     "E0": {
-      "path": "Qwen3-Embedding-0.6B",
-      "model_config": "configs/model/qwen3_embedding_0.6b.yaml"
+      "path": "Qwen/Qwen3-Embedding-0.6B",
+      "model_config": "configs/model/qwen3_embedding_0.6b.yaml",
+      "revision": "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3"
     },
     "CL": {
       "path": "checkpoints/iclr2027/G1-J-CL-s42",
