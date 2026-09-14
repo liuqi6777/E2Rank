@@ -62,6 +62,8 @@ profiles:
 # Advisory order only: launch still requires one explicit run ID.
 # Round 2 explicitly develops configurations using the first-round BRIGHT results.
 execution_stages:
+  - name: G1 MRR isolated rollout seeds
+    runs: [G1-A-MRR090-Rollout42, G1-A-MRR090-Rollout3407, G1-A-MRR090-Rollout2026]
   - name: G1 selected MRR seed repeats
     runs: [G1-A-MRRAlign090-Seed3407, G1-A-MRRAlign090-Seed2026]
   - name: G1 MRR group-size x alignment grid
@@ -109,7 +111,21 @@ runs:
     objective: rl
     scope: joint
     control: G1-A-MRR
-    overrides: {reward_type: mrr_in_batch, relevance_scheme: binary, target_alignment: 0.90, final_alignment: null, exploration_schedule: fixed}
+    overrides: &g1_mrr090_overrides {reward_type: mrr_in_batch, relevance_scheme: binary, target_alignment: 0.90, final_alignment: null, exploration_schedule: fixed}
+  # New independent RNG experiment; all three keep training/data seed 42.
+  # Rollout42 is a new control, not a reuse of the historical global-RNG run.
+  G1-A-MRR090-Rollout42:
+    <<: *g1_mrr090
+    control: G1-A-MRRAlign090
+    overrides: {<<: *g1_mrr090_overrides, rollout_seed: 42}
+  G1-A-MRR090-Rollout3407:
+    <<: *g1_mrr090
+    control: G1-A-MRR090-Rollout42
+    overrides: {<<: *g1_mrr090_overrides, rollout_seed: 3407}
+  G1-A-MRR090-Rollout2026:
+    <<: *g1_mrr090
+    control: G1-A-MRR090-Rollout42
+    overrides: {<<: *g1_mrr090_overrides, rollout_seed: 2026}
   G1-A-MRRAlign090-Seed3407:
     <<: *g1_mrr090
     seed: 3407

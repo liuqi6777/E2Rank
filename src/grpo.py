@@ -11,6 +11,7 @@ from transformers import PreTrainedModel
 from transformers.file_utils import ModelOutput
 
 from policy_math import ExplorationSchedule, group_advantages, mean_alignment
+from rollout_rng import RolloutRNG
 
 from config import (
     SUPPORTED_ADVANTAGE_BASELINES,
@@ -221,8 +222,10 @@ class GRPO(nn.Module):
         target_alignment: float | None = None,
         final_alignment: float | None = None,
         exploration_schedule: str = "fixed",
+        rollout_seed: int | None = None,
     ):
         super().__init__()
+        self.rollout_rng = RolloutRNG(rollout_seed)
         reward_type = reward_type.lower()
         action_components = normalize_action_components(action_components)
         if advantage_baseline not in SUPPORTED_ADVANTAGE_BASELINES:
@@ -413,7 +416,15 @@ class GRPO(nn.Module):
         return group_advantages(component_rewards, self.advantage_baseline,
                                 self.advantage_norm, shared_std, baseline)
 
+    @property
+    def rollout_seed(self):
+        return self.rollout_rng.seed
+
     def _draw(self, mean_directions: torch.Tensor, kappa: torch.Tensor) -> torch.Tensor:
+        with self.rollout_rng.draw(mean_directions.device, self.exploration.step, self.training):
+            return self._draw_actions(mean_directions, kappa)
+
+    def _draw_actions(self, mean_directions: torch.Tensor, kappa: torch.Tensor) -> torch.Tensor:
         if self.sampling_law == "gaussian":
             return sample_projected_gaussian(
                 mean_directions,
@@ -1156,6 +1167,7 @@ class GRPOModel(nn.Module):
             target_alignment=rl_args.target_alignment,
             final_alignment=rl_args.final_alignment,
             exploration_schedule=rl_args.exploration_schedule,
+            rollout_seed=rl_args.rollout_seed,
             document_log_prob_reduction=rl_args.document_log_prob_reduction,
             sigma_learnable=rl_args.sigma_learnable,
             sigma_min=rl_args.sigma_min,

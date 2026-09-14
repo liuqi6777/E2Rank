@@ -1,5 +1,20 @@
 # 三组实验配置指南
 
+## G1 rollout 随机性隔离（2026-09-14）
+
+新增 `G1-A-MRR090-Rollout42/3407/2026` 三行：训练和数据 seed 全部固定 42，仅改变独立的
+`rollout_seed`。先运行固定状态梯度诊断，再决定是否启动完整对照。命令、统计口径及恢复约定见
+[rollout 诊断文档](../../../docs/rollout_rng_diagnostics.md)。
+
+```bash
+python scripts/diagnose_rollout_gradients.py --output outputs/rollout_gradients/e0.json
+bash scripts/run_g1_rollout_seed_repeats.sh check 8
+bash scripts/run_g1_rollout_seed_repeats.sh train 8
+```
+
+三个控制运行都需新跑，不能复用历史 seed 42 的分数；输出后缀均为 `-s42`，表示训练 seed。
+当前 suite 共 69 行；下文计数为历史批次记录。
+
 ## G1 最终 MRR 配方的 seed 重复（2026-09-14）
 
 新增 `G1-A-MRRAlign090-Seed3407` 与 `G1-A-MRRAlign090-Seed2026`，复用已完成的

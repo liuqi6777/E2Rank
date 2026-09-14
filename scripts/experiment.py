@@ -118,6 +118,7 @@ def main():
         config = resolved['config']
         summary = {key: resolved[key] for key in ['run_id', 'dataset', 'scope', 'objective', 'selection', 'priority', 'execution_stage', 'execution_stage_name']}
         summary.update(seed=config['seed'], data_seed=config['data_seed'],
+                       rollout_seed=config.get('rollout_seed'),
                        output_dir=config['output_dir'],
                        model=config.get('model_name_or_path'), data=config.get('data_path', config.get('rag_dataset_root')),
                        training_budget=resolved['protocol'].get('training_budget', 'fixed_steps'),

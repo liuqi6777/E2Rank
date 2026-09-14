@@ -326,6 +326,7 @@ class FixedCorpusGRPOModel(QueryEncoderMixin, nn.Module):
             target_alignment=rl_args.target_alignment,
             final_alignment=rl_args.final_alignment,
             exploration_schedule=rl_args.exploration_schedule,
+            rollout_seed=rl_args.rollout_seed,
             document_log_prob_reduction=rl_args.document_log_prob_reduction,
             sigma_learnable=rl_args.sigma_learnable,
             sigma_min=rl_args.sigma_min,

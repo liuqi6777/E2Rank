@@ -27,17 +27,27 @@ GRPO_STATE_FILENAME = "grpo_state.json"
 EXPLORATION_STATE_FILENAME = "exploration_state.json"
 
 
+def rollout_rng_contract(head):
+    if getattr(head, "rollout_seed", None) is None:
+        return None
+    world_size = torch.distributed.get_world_size() if torch.distributed.is_initialized() else 1
+    return dict(seed=head.rollout_seed, version=head.rollout_rng.version, world_size=world_size)
+
+
 def restore_exploration_state(model, checkpoint_dir):
     head = getattr(model, "grpo", None)
     if not checkpoint_dir or head is None or not hasattr(head, "exploration"):
         return
     path = os.path.join(checkpoint_dir, EXPLORATION_STATE_FILENAME)
     if not os.path.exists(path):
-        if head.exploration.target_alignment is not None or head.advantage_baseline == "leave_one_out":
+        if (head.exploration.target_alignment is not None or head.advantage_baseline == "leave_one_out"
+                or getattr(head, "rollout_seed", None) is not None):
             raise ValueError("Checkpoint lacks the new policy contract; use a fresh output directory")
         return
     with open(path, encoding="utf-8") as handle:
         payload = json.load(handle)
+    if payload.get("rollout_rng") != rollout_rng_contract(head):
+        raise ValueError("Checkpoint rollout RNG seed/version/world size differs; start a new run")
     for key, value in payload["estimator"].items():
         if getattr(head, key, None) != value:
             raise ValueError(f"Checkpoint estimator differs: {key}; start a new run")
@@ -277,6 +287,8 @@ class EmbeddingTrainerMixin:
             estimator = {key: getattr(head, key, None) for key in (
                 "advantage_baseline", "advantage_norm", "document_log_prob_reduction", "group_size")}
             payload = dict(exploration=exploration, estimator=estimator)
+            if getattr(head, "rollout_seed", None) is not None:
+                payload["rollout_rng"] = rollout_rng_contract(head)
             if head.advantage_baseline == "ema":
                 payload.update(reward_baseline=float(head.reward_baseline),
                                reward_baseline_initialized=bool(head.reward_baseline_initialized))

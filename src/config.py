@@ -414,6 +414,10 @@ class LoraArguments:
 
 @dataclass
 class RLArguments:
+    rollout_seed: Optional[int] = field(
+        default=None,
+        metadata={"help": "Independent action-sampling seed; None preserves the legacy global RNG"},
+    )
     dynamic_retrieval: bool = field(
         default=False,
         metadata={"help": "Retrieve candidates from the frozen full corpus for every query action"},
@@ -612,6 +616,10 @@ class RLArguments:
 
     def __post_init__(self) -> None:
         from policy_math import validate_exploration
+        from rollout_rng import validate_rollout_seed
+        validate_rollout_seed(self.rollout_seed)
+        if self.rollout_seed is not None and self.dynamic_retrieval:
+            raise ValueError("rollout_seed is currently supported for static-candidate GRPO only")
         validate_exploration(self.target_alignment, self.final_alignment, self.exploration_schedule)
         if self.document_log_prob_reduction not in {"sum", "mean"}:
             raise ValueError("document_log_prob_reduction must be sum or mean")
