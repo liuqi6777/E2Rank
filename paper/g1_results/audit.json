@@ -1,0 +1,197 @@
+{
+  "source_sha256": {
+    "run_summary.csv": "150748c0fdbdf9cd783d6c3da60c4c9fabcb3597641e20abb121d1416328e14c",
+    "subset_summary.csv": "ef99645574e5f9b1d1fd40b0204f33f54a318d40e12326970a55a09ac915680d"
+  },
+  "runs": 46,
+  "training_runs": 45,
+  "subset_rows": 552,
+  "max_macro_rounding_discrepancy": 0.005833333333335133,
+  "best_run": "G1-A-MRRAlign090",
+  "best_score": 22.01,
+  "comparisons": {
+    "G1-E0": {
+      "macro_delta": 6.94,
+      "relative_percent": 46.05175846051759,
+      "wins": 11,
+      "ties": 0,
+      "losses": 1,
+      "domain_deltas": {
+        "biology": 19.65,
+        "earth_science": 5.83,
+        "economics": 10.26,
+        "psychology": 12.47,
+        "robotics": 7.1,
+        "stackoverflow": 10.68,
+        "sustainable_living": 11.51,
+        "pony": 0.31,
+        "leetcode": -4.37,
+        "aops": 0.17,
+        "theoremqa_theorems": 6.56,
+        "theoremqa_questions": 3.13
+      },
+      "top3_gain_domains": [
+        "biology",
+        "psychology",
+        "sustainable_living"
+      ],
+      "top3_share_of_net_domain_gain": 0.5237695078031213,
+      "remaining9_mean_delta_descriptive_only": 4.407777777777778
+    },
+    "G1-J-LL-Scaled": {
+      "macro_delta": 2.51,
+      "relative_percent": 12.871794871794883,
+      "wins": 8,
+      "ties": 0,
+      "losses": 4,
+      "domain_deltas": {
+        "biology": 8.55,
+        "earth_science": 9.64,
+        "economics": 3.93,
+        "psychology": 0.64,
+        "robotics": -0.07,
+        "stackoverflow": 1.21,
+        "sustainable_living": 1.92,
+        "pony": -0.34,
+        "leetcode": -2.24,
+        "aops": 0.51,
+        "theoremqa_theorems": 6.7,
+        "theoremqa_questions": -0.31
+      },
+      "top3_gain_domains": [
+        "earth_science",
+        "biology",
+        "theoremqa_theorems"
+      ],
+      "top3_share_of_net_domain_gain": 0.8258128732581287,
+      "remaining9_mean_delta_descriptive_only": 0.5833333333333334
+    },
+    "G1-J-CL": {
+      "macro_delta": 5.05,
+      "relative_percent": 29.775943396226424,
+      "wins": 11,
+      "ties": 0,
+      "losses": 1,
+      "domain_deltas": {
+        "biology": 9.08,
+        "earth_science": 17.98,
+        "economics": 6.87,
+        "psychology": 6.14,
+        "robotics": 5.35,
+        "stackoverflow": 0.2,
+        "sustainable_living": 2.9,
+        "pony": 0.03,
+        "leetcode": 0.76,
+        "aops": 1.06,
+        "theoremqa_theorems": 10.72,
+        "theoremqa_questions": -0.39
+      },
+      "top3_gain_domains": [
+        "earth_science",
+        "theoremqa_theorems",
+        "biology"
+      ],
+      "top3_share_of_net_domain_gain": 0.6224052718286656,
+      "remaining9_mean_delta_descriptive_only": 2.5466666666666664
+    },
+    "G1-J-RN": {
+      "macro_delta": 4.05,
+      "relative_percent": 22.55011135857461,
+      "wins": 9,
+      "ties": 0,
+      "losses": 3,
+      "domain_deltas": {
+        "biology": 7.33,
+        "earth_science": 3.45,
+        "economics": 7.56,
+        "psychology": 4.97,
+        "robotics": 6.49,
+        "stackoverflow": 2.14,
+        "sustainable_living": 8.27,
+        "pony": -0.05,
+        "leetcode": -1.68,
+        "aops": 1.08,
+        "theoremqa_theorems": 9.61,
+        "theoremqa_questions": -0.5
+      },
+      "top3_gain_domains": [
+        "theoremqa_theorems",
+        "sustainable_living",
+        "economics"
+      ],
+      "top3_share_of_net_domain_gain": 0.5227039243887405,
+      "remaining9_mean_delta_descriptive_only": 2.5811111111111114
+    },
+    "G1-A-BinaryNDCGAlign090": {
+      "macro_delta": 2.17,
+      "relative_percent": 10.9375,
+      "wins": 10,
+      "ties": 0,
+      "losses": 2,
+      "domain_deltas": {
+        "biology": 11.34,
+        "earth_science": 6.15,
+        "economics": 3.9,
+        "psychology": -1.39,
+        "robotics": 0.64,
+        "stackoverflow": -2.17,
+        "sustainable_living": 1.17,
+        "pony": 0.19,
+        "leetcode": 0.04,
+        "aops": 1.04,
+        "theoremqa_theorems": 4.76,
+        "theoremqa_questions": 0.46
+      },
+      "top3_gain_domains": [
+        "biology",
+        "earth_science",
+        "theoremqa_theorems"
+      ],
+      "top3_share_of_net_domain_gain": 0.8515116724071947,
+      "remaining9_mean_delta_descriptive_only": 0.4311111111111111
+    }
+  },
+  "group_alignment_grid": {
+    "16": [
+      19.45,
+      17.46,
+      17.13
+    ],
+    "32": [
+      19.14,
+      22.01,
+      19.88
+    ],
+    "64": [
+      19.17,
+      20.04,
+      19.8
+    ]
+  },
+  "reward_alignment_sweeps": {
+    "Binary MRR@10": [
+      18.56,
+      19.21,
+      18.3,
+      19.14,
+      22.01,
+      19.88
+    ],
+    "Binary nDCG@10": [
+      18.13,
+      18.42,
+      18.39,
+      17.84,
+      19.84,
+      19.54
+    ],
+    "Graded nDCG@10": [
+      17.28,
+      18.14,
+      18.42,
+      18.98,
+      18.71,
+      18.9
+    ]
+  }
+}
