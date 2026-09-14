@@ -48,6 +48,11 @@ def restore_exploration_state(model, checkpoint_dir):
         payload = json.load(handle)
     if payload.get("rollout_rng") != rollout_rng_contract(head):
         raise ValueError("Checkpoint rollout RNG seed/version/world size differs; start a new run")
+    # Old checkpoints used the shared component advantage implicitly. Do not let
+    # a missing key silently resume them with a different document estimator.
+    saved_document_baseline = payload["estimator"].get("document_advantage_baseline", "shared")
+    if saved_document_baseline != getattr(head, "document_advantage_baseline", "shared"):
+        raise ValueError("Checkpoint estimator differs: document_advantage_baseline; start a new run")
     for key, value in payload["estimator"].items():
         if getattr(head, key, None) != value:
             raise ValueError(f"Checkpoint estimator differs: {key}; start a new run")
@@ -286,6 +291,8 @@ class EmbeddingTrainerMixin:
             exploration.update(step=self.state.global_step, total_steps=self.state.max_steps)
             estimator = {key: getattr(head, key, None) for key in (
                 "advantage_baseline", "advantage_norm", "document_log_prob_reduction", "group_size")}
+            if getattr(head, "document_advantage_baseline", "shared") != "shared":
+                estimator["document_advantage_baseline"] = head.document_advantage_baseline
             payload = dict(exploration=exploration, estimator=estimator)
             if getattr(head, "rollout_seed", None) is not None:
                 payload["rollout_rng"] = rollout_rng_contract(head)

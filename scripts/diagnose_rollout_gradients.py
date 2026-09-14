@@ -135,7 +135,7 @@ def probe_gradients(model, batches, seeds, device, dtype):
     for seed in seeds:
         model.zero_grad(set_to_none=True)
         model.grpo.rollout_rng.reset(seed)
-        rewards, losses = [], []
+        rewards, losses, metrics = [], [], {}
         for batch in batches:
             inputs = to_device(batch, device)
             context = torch.autocast(device_type=device.type, dtype=dtype) if dtype != torch.float32 else nullcontext()
@@ -145,10 +145,13 @@ def probe_gradients(model, batches, seeds, device, dtype):
             loss.backward()
             rewards.append(float(output.reward_mean.detach()))
             losses.append(float(output.loss.detach()))
+            for key, value in (output.reward_terms or {}).items():
+                metrics.setdefault(key, []).append(float(value.detach()))
             del output, loss, inputs
         norm = moments.update()
         row = dict(rollout_seed=seed, gradient_norm=norm,
-                   reward_mean=sum(rewards)/len(rewards), loss=sum(losses)/len(losses))
+                   reward_mean=sum(rewards)/len(rewards), loss=sum(losses)/len(losses),
+                   metrics={key: sum(values)/len(values) for key, values in metrics.items()})
         draws.append(row)
         print(json.dumps(row), flush=True)
     summary = moments.summary()
@@ -169,6 +172,8 @@ def parse_args():
                         default=[42, 3407, 2026, *range(13)])
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--precision", choices=["fp32", "bf16"], default="bf16")
+    parser.add_argument("--document-advantage-baseline", choices=["shared", "counterfactual"],
+                        help="Override only the document estimator for a fixed-state comparison")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if int(os.environ.get("WORLD_SIZE", "1")) != 1:
@@ -200,6 +205,8 @@ def main():
     suite = experiments.apply_settings(experiments.load_suite(), args.config)
     resolved = experiments.resolve_run(suite, experiments.DEFAULT_SUITE, args.run, nproc=8)
     config = resolved["config"].copy()
+    if args.document_advantage_baseline is not None:
+        config["document_advantage_baseline"] = args.document_advantage_baseline
     if resolved["objective"] != "rl" or config.get("document_encoder_mode") != "joint":
         raise ValueError("This probe supports joint static-candidate GRPO runs")
     if config.get("dynamic_retrieval") or config.get("kl_coef", 0) or config.get("sigma_learnable", False):

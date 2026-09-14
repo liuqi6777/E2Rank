@@ -1,5 +1,9 @@
 # 三组实验配置指南
 
+逐文档反事实 baseline 已提供配置字段 `document_advantage_baseline: counterfactual`，
+默认 `shared` 保持现有配方。当前先用诊断脚本的同名开关比较，不新增完整训练行；
+具体用法见[实现文档](../../../docs/document_counterfactual_baseline.md)。
+
 ## G1 rollout 随机性隔离（2026-09-14）
 
 新增 `G1-A-MRR090-Rollout42/3407/2026` 三行：训练和数据 seed 全部固定 42，仅改变独立的

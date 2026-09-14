@@ -19,6 +19,7 @@ from config import (
     SUPPORTED_SAMPLING_LAWS,
     RLArguments,
     normalize_action_components,
+    validate_document_advantage_baseline,
     normalize_advantage_norm_mode,
 )
 from embedding_data import build_slate_inputs
@@ -223,6 +224,7 @@ class GRPO(nn.Module):
         final_alignment: float | None = None,
         exploration_schedule: str = "fixed",
         rollout_seed: int | None = None,
+        document_advantage_baseline: str = "shared",
     ):
         super().__init__()
         self.rollout_rng = RolloutRNG(rollout_seed)
@@ -256,6 +258,14 @@ class GRPO(nn.Module):
         if not 0.0 <= reward_rbo_p < 1.0:
             raise ValueError(f"reward_rbo_p must lie in [0, 1), got {reward_rbo_p}")
         reward_combine = normalize_reward_combine_mode(reward_combine)
+        advantage_norm = normalize_advantage_norm_mode(advantage_norm)
+        validate_document_advantage_baseline(
+            document_advantage_baseline, action_components=action_components,
+            sampling_law=sampling_law, sigma_learnable=sigma_learnable, rollout=rollout,
+            advantage_baseline=advantage_baseline, advantage_norm=advantage_norm,
+            reward_combine=reward_combine,
+            in_batch_use_sampled_documents=in_batch_use_sampled_documents,
+        )
         reward_terms = normalize_reward_terms(
             reward_terms if reward_terms else reward_type,
             default_k=reward_ndcg_k,
@@ -288,6 +298,7 @@ class GRPO(nn.Module):
         if document_log_prob_reduction not in {"sum", "mean"}:
             raise ValueError("document_log_prob_reduction must be sum or mean")
         self.document_log_prob_reduction = document_log_prob_reduction
+        self.document_advantage_baseline = document_advantage_baseline
         self.action_components = action_components
         self.sample_query = any(group == ("query",) for group in action_components)
         self.sample_positive = any("positive" in group for group in action_components)
@@ -498,6 +509,50 @@ class GRPO(nn.Module):
         return log_prob.sum(dim=-1)
 
     @staticmethod
+    def _per_document_vmf_log_prob(component: _ActionComponent) -> torch.Tensor:
+        """Keep [batch, group, document] credit until after advantage weighting."""
+        cosine = (component.sampled_embeddings.detach().float()
+                  * component.policy_embeddings.float().unsqueeze(1)).sum(dim=-1)
+        log_prob = component.kappa.float() * cosine
+        if component.document_mask is not None:
+            log_prob = log_prob * component.document_mask.unsqueeze(1)
+        return log_prob
+
+    @torch.no_grad()
+    def _counterfactual_document_advantages(
+        self, *, scores, reference_scores, rewards, document_axis,
+        relevance_labels, rank_labels=None, candidate_mask=None,
+        in_batch_positive_scores=None, in_batch_candidate_scores=None,
+    ) -> torch.Tensor:
+        """Marginalize R - R(e_m <- mu_m) over every axis except the document axis.
+
+        reference_scores broadcasts onto scores but is independent of sampled document
+        actions. It uses the unit direction, WITHOUT frozen-document attenuation: this
+        replaces one sampled action with a unit reference, not the candidate's role.
+        Other scores (including frozen in-batch candidates) stay exactly as evaluated.
+        Stream one replacement slate at a time instead of materializing [B,G,G,M,M].
+        """
+        other_dims = tuple(dim for dim in range(1, rewards.ndim) if dim != document_axis)
+        marginal = rewards.mean(dim=other_dims) if other_dims else rewards
+        result = scores.new_zeros((*marginal.shape, scores.size(-1)), dtype=torch.float32)
+        replaced = scores.clone()
+        for m in range(scores.size(-1)):
+            replaced[..., m] = reference_scores[..., m]
+            term_rewards = compute_reward_terms(
+                self.reward_terms, scores=replaced, relevance_labels=relevance_labels,
+                rank_labels=rank_labels, candidate_mask=candidate_mask,
+                in_batch_positive_scores=in_batch_positive_scores,
+                in_batch_candidate_scores=in_batch_candidate_scores,
+            )
+            baseline = sum(term.weight * term_rewards[term.name].float() for term in self.reward_terms)
+            delta = rewards - baseline
+            result[..., m] = delta.mean(dim=other_dims) if other_dims else delta
+            replaced[..., m] = scores[..., m]
+        if candidate_mask is not None:
+            result.masked_fill_(~candidate_mask.unsqueeze(1), 0.0)
+        return result
+
+    @staticmethod
     def _resolve_group_size(active_components: Sequence[_ActionComponent]) -> int:
         if not active_components:
             raise ValueError("At least one action component is required")
@@ -674,14 +729,17 @@ class GRPO(nn.Module):
                     )
                 )
             elif component.role == "document":
-                log_probs.append(
-                    self._document_vmf_log_prob(
-                        policy_document_embeddings=component.policy_embeddings,
-                        sampled_document_embeddings=component.sampled_embeddings,
-                        kappa=component.kappa,
-                        document_mask=component.document_mask,
+                if self.document_advantage_baseline == "counterfactual":
+                    log_probs.append(self._per_document_vmf_log_prob(component))
+                else:
+                    log_probs.append(
+                        self._document_vmf_log_prob(
+                            policy_document_embeddings=component.policy_embeddings,
+                            sampled_document_embeddings=component.sampled_embeddings,
+                            kappa=component.kappa,
+                            document_mask=component.document_mask,
+                        )
                     )
-                )
             else:
                 raise ValueError(f"Unsupported action component role: {component.role}")
 
@@ -764,6 +822,27 @@ class GRPO(nn.Module):
             contribution = term_rewards[term.name] * term.weight
             rewards = contribution if rewards is None else rewards + contribution
 
+        document_advantages = None
+        if self.document_advantage_baseline == "counterfactual":
+            # Config validation guarantees one active document component containing
+            # the whole slate, with an optional independent query component.
+            document_component, = document_components
+            reference_component = _ActionComponent(
+                role="document", rollout_embeddings=document_component.rollout_embeddings,
+            )
+            reference_table = self._compute_score_table(query_component, reference_component)
+            reference_scores = self._expand_score_table(
+                reference_table, query_component, reference_component,
+                active_index_by_id, num_components, group_size,
+            )
+            document_advantages = self._counterfactual_document_advantages(
+                scores=scores, reference_scores=reference_scores, rewards=rewards,
+                document_axis=active_index_by_id[id(document_component)] + 1,
+                relevance_labels=relevance_labels, rank_labels=rank_labels,
+                candidate_mask=candidate_mask, in_batch_positive_scores=in_batch_positive_scores,
+                in_batch_candidate_scores=in_batch_candidate_scores,
+            )
+
         # 'sum' takes one advantage over the combined reward, so each term enters the gradient
         # in proportion to weight x its own within-group spread. 'normalized_sum' standardizes
         # every term's advantage on its own first; because the surrogate is linear in the
@@ -837,14 +916,28 @@ class GRPO(nn.Module):
                 axis_stats[f"{axis_prefix}/degenerate_frac"] = term_degenerate.detach().float().mean()
             weighted_log_prob = log_prob
             component = active_components[component_index]
+            if component.role == "document" and document_advantages is not None:
+                # Keep existing marginalized-reward diagnostics comparable, but use
+                # the uncentered, per-document differences for the actual estimator.
+                valid = (torch.ones_like(relevance_labels, dtype=torch.bool)
+                         if component.document_mask is None else component.document_mask)
+                valid_advantages = document_advantages[valid.unsqueeze(1).expand_as(document_advantages)]
+                prefix = f"baseline/{component.name}/counterfactual"
+                for name, value in self.summarize_tensor(valid_advantages, prefix=prefix, separator="/").items():
+                    axis_stats[name] = value
+                axis_stats[f"{prefix}/zero_frac"] = (valid_advantages == 0).float().mean()
+                component_advantages = document_advantages
             if component.role == "document" and self.document_log_prob_reduction == "mean":
                 if component.document_mask is None:
                     count = log_prob.new_full((batch_size, 1), component.policy_embeddings.size(1))
                 else:
                     count = component.document_mask.sum(-1, keepdim=True).clamp_min(1)
-                weighted_log_prob = log_prob / count
-            losses.append(-(component_advantages.detach() * weighted_log_prob).mean())
-            advantages.append(component_advantages)
+                weighted_log_prob = log_prob / (count.unsqueeze(-1) if log_prob.ndim == 3 else count)
+            weighted = component_advantages.detach() * weighted_log_prob
+            # Sum over documents, then average over batch and rollout samples. A
+            # plain mean over all three axes would silently divide the update by M.
+            losses.append(-(weighted.sum(-1) if weighted.ndim == 3 else weighted).mean())
+            advantages.append(component_advantages.reshape(batch_size, -1))
 
         # Fraction of (batch-element, component, reward-term) rows whose reward variance
         # is near zero. This diagnostic never thresholds an unnormalized advantage.
@@ -1169,6 +1262,7 @@ class GRPOModel(nn.Module):
             exploration_schedule=rl_args.exploration_schedule,
             rollout_seed=rl_args.rollout_seed,
             document_log_prob_reduction=rl_args.document_log_prob_reduction,
+            document_advantage_baseline=rl_args.document_advantage_baseline,
             sigma_learnable=rl_args.sigma_learnable,
             sigma_min=rl_args.sigma_min,
             sigma_max=rl_args.sigma_max,

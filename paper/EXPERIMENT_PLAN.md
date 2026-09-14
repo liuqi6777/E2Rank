@@ -9,8 +9,9 @@
 
 后续按[rollout 方差实验计划](../docs/rollout_variance_experiment_plan.md)推进：先在
 相同模型与输入上比较 binary MRR / binary nDCG / graded nDCG，再比较当前 LOO 与
-逐文档反事实 baseline，仅为值得继续的条件新增完整训练重复。该计划目前为设计，
-反事实 baseline 尚未实现，未启动新的对比实验；既定 G2 配方保持原计划。
+逐文档反事实 baseline，仅为值得继续的条件新增完整训练重复。反事实 baseline 已实现，
+使用方式见[实现文档](../docs/document_counterfactual_baseline.md)；尚未启动正式对比实验，
+既定 G2 配方保持原计划。
 
 ## 2026-09-14：G1 最终配方的训练随机性重复
 

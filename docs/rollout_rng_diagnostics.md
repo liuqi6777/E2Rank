@@ -2,6 +2,8 @@
 
 目的：固定模型与训练候选池，只改变动作采样，直接测量梯度估计的波动；再通过完整训练判断这种波动是否足以解释 BRIGHT 的 seed 差距。
 
+逐文档反事实 baseline 已可通过 `--document-advantage-baseline counterfactual` 做固定状态对比；默认保留原估计器。配置、命令和新增日志见[实现使用文档](document_counterfactual_baseline.md)。
+
 ## 1. 固定状态的梯度诊断
 
 在训练机器的项目根目录、原训练 Python 环境中运行。默认读取 `configs/experiments.yaml` 中的 G1 设置，并解析 `G1-A-MRRAlign090` 的完整配方。

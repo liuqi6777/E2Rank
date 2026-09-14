@@ -328,6 +328,7 @@ class FixedCorpusGRPOModel(QueryEncoderMixin, nn.Module):
             exploration_schedule=rl_args.exploration_schedule,
             rollout_seed=rl_args.rollout_seed,
             document_log_prob_reduction=rl_args.document_log_prob_reduction,
+            document_advantage_baseline=rl_args.document_advantage_baseline,
             sigma_learnable=rl_args.sigma_learnable,
             sigma_min=rl_args.sigma_min,
             sigma_max=rl_args.sigma_max,

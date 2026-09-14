@@ -89,3 +89,6 @@ manifest，以及未能完整映射的 query 清单。脚本不会在检索时�
 `diagnose_rollout_gradients.py` 在固定 checkpoint 和真实训练 batch 上重复 rollout，输出完整参数
 梯度的噪声、方向一致性和输入审计信息。`run_g1_rollout_seed_repeats.sh` 启动固定训练 seed 42、
 独立 rollout seed 42/3407/2026 的完整对照。用法见 [诊断文档](../docs/rollout_rng_diagnostics.md)。
+
+加 `--document-advantage-baseline counterfactual` 可比较逐文档反事实 baseline；默认保持原有
+共享文档 advantage。公式、支持范围和对比命令见[实现文档](../docs/document_counterfactual_baseline.md)。

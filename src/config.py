@@ -23,11 +23,43 @@ SUPPORTED_ADVANTAGE_NORM_MODES = ("per_component", "shared", "none")
 
 SUPPORTED_ADVANTAGE_BASELINES = ("group", "leave_one_out", "ema")
 
+SUPPORTED_DOCUMENT_ADVANTAGE_BASELINES = ("shared", "counterfactual")
+
 SUPPORTED_SAMPLING_LAWS = ("vmf", "gaussian")
 
 SUPPORTED_ROLLOUTS = ("product", "diagonal")
 
 SUPPORTED_BASELINE_LOSSES = ("infonce", "ranknet", "lambdaloss")
+
+
+def validate_document_advantage_baseline(
+    mode, *, action_components, sampling_law, sigma_learnable, rollout,
+    advantage_baseline, advantage_norm, reward_combine,
+    in_batch_use_sampled_documents, dynamic_retrieval=False,
+):
+    """Limit the first factorized baseline to the estimator it was derived for."""
+    if mode not in SUPPORTED_DOCUMENT_ADVANTAGE_BASELINES:
+        raise ValueError(f"Unsupported document_advantage_baseline: {mode!r}")
+    if mode == "shared":
+        return
+    requirements = {
+        "a joint positive/negative document action group": any(
+            set(group) == {"positive", "negative"} for group in action_components
+        ),
+        "sampling_law='vmf'": sampling_law == "vmf",
+        # Per-document differences do not sum to zero; the dropped vMF normalizer
+        # would then contribute a missing gradient if kappa were learnable.
+        "sigma_learnable=false": not sigma_learnable,
+        "rollout='product'": rollout == "product",
+        "advantage_baseline='leave_one_out'": advantage_baseline == "leave_one_out",
+        "advantage_norm='none'": advantage_norm == "none",
+        "reward_combine='sum'": reward_combine == "sum",
+        "in_batch_use_sampled_documents=false": not in_batch_use_sampled_documents,
+        "static candidates": not dynamic_retrieval,
+    }
+    missing = [name for name, valid in requirements.items() if not valid]
+    if missing:
+        raise ValueError("document_advantage_baseline='counterfactual' requires " + ", ".join(missing))
 
 
 def normalize_advantage_norm_mode(mode) -> str:
@@ -462,6 +494,10 @@ class RLArguments:
     final_alignment: Optional[float] = field(default=None, metadata={"help": "Final mean cosine for linear exploration shrinkage"})
     exploration_schedule: str = field(default="fixed", metadata={"help": "fixed or linear, indexed by optimizer steps"})
     document_log_prob_reduction: str = field(default="sum", metadata={"help": "sum is the joint policy density; mean applies legacy 1/n role weighting"})
+    document_advantage_baseline: str = field(
+        default="shared",
+        metadata={"help": "shared uses the component baseline; counterfactual replaces one document action with its unit mean direction"},
+    )
     sigma_learnable: bool = field(
         default=False,
         metadata={"help": "Learn a global sigma scalar for GRPO"},
@@ -669,6 +705,14 @@ class RLArguments:
                 f"reward_rbo_p must lie in [0, 1), got {self.reward_rbo_p}"
             )
         self.reward_combine = normalize_reward_combine_mode(self.reward_combine)
+        validate_document_advantage_baseline(
+            self.document_advantage_baseline, action_components=self.action_components,
+            sampling_law=self.sampling_law, sigma_learnable=self.sigma_learnable,
+            rollout=self.rollout, advantage_baseline=self.advantage_baseline,
+            advantage_norm=self.advantage_norm, reward_combine=self.reward_combine,
+            in_batch_use_sampled_documents=self.in_batch_use_sampled_documents,
+            dynamic_retrieval=self.dynamic_retrieval,
+        )
         # An empty spec means "single term from reward_type", which resolves to exactly the
         # arguments the pre-combination code passed, so legacy configs are untouched.
         self.reward_terms = normalize_reward_terms(
