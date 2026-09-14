@@ -62,6 +62,8 @@ profiles:
 # Advisory order only: launch still requires one explicit run ID.
 # Round 2 explicitly develops configurations using the first-round BRIGHT results.
 execution_stages:
+  - name: G1 overnight stability matrix
+    runs: [G1-S-MRR32-Seed42, G1-S-MRR32-Seed3407, G1-S-MRR32-Seed2026, G1-S-GradedNDCG64-Seed42, G1-S-GradedNDCG64-Seed3407, G1-S-GradedNDCG64-Seed2026, G1-S-MRR64-Seed42, G1-S-MRR64-Seed3407, G1-S-MRR64-Seed2026, G1-S-GradedNDCG32-Seed42, G1-S-GradedNDCG32-Seed3407, G1-S-GradedNDCG32-Seed2026, G1-S-BinaryNDCG32-Seed42, G1-S-BinaryNDCG32-Seed3407, G1-S-BinaryNDCG32-Seed2026, G1-S-GradedNDCG64LRHalf-Seed42, G1-S-GradedNDCG64LRHalf-Seed3407, G1-S-GradedNDCG64LRHalf-Seed2026, G1-S-MRR64LRHalf-Seed42, G1-S-MRR64LRHalf-Seed3407, G1-S-MRR64LRHalf-Seed2026]
   - name: G1 MRR isolated rollout seeds
     runs: [G1-A-MRR090-Rollout42, G1-A-MRR090-Rollout3407, G1-A-MRR090-Rollout2026]
   - name: G1 selected MRR seed repeats
@@ -134,6 +136,133 @@ runs:
     <<: *g1_mrr090
     seed: 2026
     control: G1-A-MRRAlign090
+  # Overnight stability matrix: vary training/data AND independent rollout seeds.
+  # All 21 cells start fresh, including MRR32 seed 42; no historical control reuse.
+  G1-S-MRR32-Seed3407: &g1_stability
+    <<: *g1_mrr090
+    seed: 3407
+    control: G1-S-MRR32-Seed42
+    protocol: {labels: all_known_positives_binary, learning_rate: 0.000005}
+    overrides: &g1_stability_overrides {<<: *g1_mrr090_overrides, reward_type: mrr_in_batch, relevance_scheme: binary, group_size: 32, learning_rate: 0.000005, document_advantage_baseline: shared, rollout_seed: 3407}
+  G1-S-MRR32-Seed42:
+    <<: *g1_stability
+    seed: 42
+    control: G1-A-MRR090-Rollout42
+    overrides: {<<: *g1_stability_overrides, rollout_seed: 42}
+  G1-S-MRR32-Seed2026:
+    <<: *g1_stability
+    seed: 2026
+    control: G1-S-MRR32-Seed42
+    protocol: {labels: all_known_positives_binary, learning_rate: 0.000005}
+    overrides: {<<: *g1_stability_overrides, reward_type: mrr_in_batch, relevance_scheme: binary, group_size: 32, learning_rate: 0.000005, document_advantage_baseline: shared, rollout_seed: 2026}
+  G1-S-GradedNDCG64-Seed42:
+    <<: *g1_stability
+    seed: 42
+    control: G1-S-MRR32-Seed42
+    protocol: {labels: teacher_grades_3_2_1_0, learning_rate: 0.000005}
+    overrides: {<<: *g1_stability_overrides, reward_type: ndcg_in_batch, relevance_scheme: graded, group_size: 64, learning_rate: 0.000005, document_advantage_baseline: shared, rollout_seed: 42}
+  G1-S-GradedNDCG64-Seed3407:
+    <<: *g1_stability
+    seed: 3407
+    control: G1-S-MRR32-Seed3407
+    protocol: {labels: teacher_grades_3_2_1_0, learning_rate: 0.000005}
+    overrides: {<<: *g1_stability_overrides, reward_type: ndcg_in_batch, relevance_scheme: graded, group_size: 64, learning_rate: 0.000005, document_advantage_baseline: shared, rollout_seed: 3407}
+  G1-S-GradedNDCG64-Seed2026:
+    <<: *g1_stability
+    seed: 2026
+    control: G1-S-MRR32-Seed2026
+    protocol: {labels: teacher_grades_3_2_1_0, learning_rate: 0.000005}
+    overrides: {<<: *g1_stability_overrides, reward_type: ndcg_in_batch, relevance_scheme: graded, group_size: 64, learning_rate: 0.000005, document_advantage_baseline: shared, rollout_seed: 2026}
+  G1-S-MRR64-Seed42:
+    <<: *g1_stability
+    seed: 42
+    control: G1-S-MRR32-Seed42
+    protocol: {labels: all_known_positives_binary, learning_rate: 0.000005}
+    overrides: {<<: *g1_stability_overrides, reward_type: mrr_in_batch, relevance_scheme: binary, group_size: 64, learning_rate: 0.000005, document_advantage_baseline: shared, rollout_seed: 42}
+  G1-S-MRR64-Seed3407:
+    <<: *g1_stability
+    seed: 3407
+    control: G1-S-MRR32-Seed3407
+    protocol: {labels: all_known_positives_binary, learning_rate: 0.000005}
+    overrides: {<<: *g1_stability_overrides, reward_type: mrr_in_batch, relevance_scheme: binary, group_size: 64, learning_rate: 0.000005, document_advantage_baseline: shared, rollout_seed: 3407}
+  G1-S-MRR64-Seed2026:
+    <<: *g1_stability
+    seed: 2026
+    control: G1-S-MRR32-Seed2026
+    protocol: {labels: all_known_positives_binary, learning_rate: 0.000005}
+    overrides: {<<: *g1_stability_overrides, reward_type: mrr_in_batch, relevance_scheme: binary, group_size: 64, learning_rate: 0.000005, document_advantage_baseline: shared, rollout_seed: 2026}
+  G1-S-GradedNDCG32-Seed42:
+    <<: *g1_stability
+    seed: 42
+    control: G1-S-MRR32-Seed42
+    protocol: {labels: teacher_grades_3_2_1_0, learning_rate: 0.000005}
+    overrides: {<<: *g1_stability_overrides, reward_type: ndcg_in_batch, relevance_scheme: graded, group_size: 32, learning_rate: 0.000005, document_advantage_baseline: shared, rollout_seed: 42}
+  G1-S-GradedNDCG32-Seed3407:
+    <<: *g1_stability
+    seed: 3407
+    control: G1-S-MRR32-Seed3407
+    protocol: {labels: teacher_grades_3_2_1_0, learning_rate: 0.000005}
+    overrides: {<<: *g1_stability_overrides, reward_type: ndcg_in_batch, relevance_scheme: graded, group_size: 32, learning_rate: 0.000005, document_advantage_baseline: shared, rollout_seed: 3407}
+  G1-S-GradedNDCG32-Seed2026:
+    <<: *g1_stability
+    seed: 2026
+    control: G1-S-MRR32-Seed2026
+    protocol: {labels: teacher_grades_3_2_1_0, learning_rate: 0.000005}
+    overrides: {<<: *g1_stability_overrides, reward_type: ndcg_in_batch, relevance_scheme: graded, group_size: 32, learning_rate: 0.000005, document_advantage_baseline: shared, rollout_seed: 2026}
+  G1-S-BinaryNDCG32-Seed42:
+    <<: *g1_stability
+    seed: 42
+    control: G1-S-MRR32-Seed42
+    protocol: {labels: all_known_positives_binary, learning_rate: 0.000005}
+    overrides: {<<: *g1_stability_overrides, reward_type: ndcg_in_batch, relevance_scheme: binary, group_size: 32, learning_rate: 0.000005, document_advantage_baseline: shared, rollout_seed: 42}
+  G1-S-BinaryNDCG32-Seed3407:
+    <<: *g1_stability
+    seed: 3407
+    control: G1-S-MRR32-Seed3407
+    protocol: {labels: all_known_positives_binary, learning_rate: 0.000005}
+    overrides: {<<: *g1_stability_overrides, reward_type: ndcg_in_batch, relevance_scheme: binary, group_size: 32, learning_rate: 0.000005, document_advantage_baseline: shared, rollout_seed: 3407}
+  G1-S-BinaryNDCG32-Seed2026:
+    <<: *g1_stability
+    seed: 2026
+    control: G1-S-MRR32-Seed2026
+    protocol: {labels: all_known_positives_binary, learning_rate: 0.000005}
+    overrides: {<<: *g1_stability_overrides, reward_type: ndcg_in_batch, relevance_scheme: binary, group_size: 32, learning_rate: 0.000005, document_advantage_baseline: shared, rollout_seed: 2026}
+  G1-S-GradedNDCG64LRHalf-Seed42:
+    <<: *g1_stability
+    seed: 42
+    control: G1-S-MRR32-Seed42
+    protocol: {labels: teacher_grades_3_2_1_0, learning_rate: 0.0000025}
+    overrides: {<<: *g1_stability_overrides, reward_type: ndcg_in_batch, relevance_scheme: graded, group_size: 64, learning_rate: 0.0000025, document_advantage_baseline: shared, rollout_seed: 42}
+  G1-S-GradedNDCG64LRHalf-Seed3407:
+    <<: *g1_stability
+    seed: 3407
+    control: G1-S-MRR32-Seed3407
+    protocol: {labels: teacher_grades_3_2_1_0, learning_rate: 0.0000025}
+    overrides: {<<: *g1_stability_overrides, reward_type: ndcg_in_batch, relevance_scheme: graded, group_size: 64, learning_rate: 0.0000025, document_advantage_baseline: shared, rollout_seed: 3407}
+  G1-S-GradedNDCG64LRHalf-Seed2026:
+    <<: *g1_stability
+    seed: 2026
+    control: G1-S-MRR32-Seed2026
+    protocol: {labels: teacher_grades_3_2_1_0, learning_rate: 0.0000025}
+    overrides: {<<: *g1_stability_overrides, reward_type: ndcg_in_batch, relevance_scheme: graded, group_size: 64, learning_rate: 0.0000025, document_advantage_baseline: shared, rollout_seed: 2026}
+  G1-S-MRR64LRHalf-Seed42:
+    <<: *g1_stability
+    seed: 42
+    control: G1-S-MRR32-Seed42
+    protocol: {labels: all_known_positives_binary, learning_rate: 0.0000025}
+    overrides: {<<: *g1_stability_overrides, reward_type: mrr_in_batch, relevance_scheme: binary, group_size: 64, learning_rate: 0.0000025, document_advantage_baseline: shared, rollout_seed: 42}
+  G1-S-MRR64LRHalf-Seed3407:
+    <<: *g1_stability
+    seed: 3407
+    control: G1-S-MRR32-Seed3407
+    protocol: {labels: all_known_positives_binary, learning_rate: 0.0000025}
+    overrides: {<<: *g1_stability_overrides, reward_type: mrr_in_batch, relevance_scheme: binary, group_size: 64, learning_rate: 0.0000025, document_advantage_baseline: shared, rollout_seed: 3407}
+  G1-S-MRR64LRHalf-Seed2026:
+    <<: *g1_stability
+    seed: 2026
+    control: G1-S-MRR32-Seed2026
+    protocol: {labels: all_known_positives_binary, learning_rate: 0.0000025}
+    overrides: {<<: *g1_stability_overrides, reward_type: mrr_in_batch, relevance_scheme: binary, group_size: 64, learning_rate: 0.0000025, document_advantage_baseline: shared, rollout_seed: 2026}
   # Round 4: narrow interaction grid around the selected MRRAlign090 recipe.
   # The G=32 row reuses MRRSmall / MRRAlign090 / MRRAlign095; only the six
   # off-center cells below require new training.

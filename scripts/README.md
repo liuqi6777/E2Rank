@@ -1,5 +1,12 @@
 # 脚本索引
 
+G1 稳定性过夜批次：`python scripts/run_g1_stability.py check` 预检，`train` 顺序完成 21 次训练与
+BRIGHT，`summary` 汇总三 seed 的均值/标准差/最差成绩。无时间自动停止，失败行记录后继续。
+矩阵与命令见[过夜实验计划](../docs/g1_stability_overnight_plan.md)。
+
+原始 rollout 梯度 JSON 的有限样本修正与配对核查使用 `python scripts/analyze_rollout_gradients.py`；
+统计含义和最新结论见[梯度重分析](../docs/rollout_gradient_reanalysis.md)。
+
 从仓库根目录运行。论文实验只使用 `experiment.py`，其余是明确用途的辅助工具。
 
 | 脚本 | 职责 |

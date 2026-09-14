@@ -1,5 +1,7 @@
 # G1 rollout 方差实验结果
 
+> **2026-09-15 原始 JSON 重分析订正：**下文保留首次报告。其“G 收益强烈次于 √G”“换 reward 没有改善”及“已定位为 vMF 固有噪声”等判断过强；实际 G 翻倍时噪声方差约减半，原 `noise/mean` 分母含有 16 次采样均值的噪声，压缩了条件差异。逐文档 baseline 的负结果仍有直接方差证据支持。修订结论与逐 probe 数值见[原始梯度重分析](rollout_gradient_reanalysis.md)。
+
 日期：2026-09-14。本文汇总[诊断使用文档](rollout_rng_diagnostics.md)中 Section 1（固定状态梯度诊断）与 Section 2（独立 rollout 训练对照）的实测结果，并按[实验计划](rollout_variance_experiment_plan.md) §2 给出判断。证据边界沿用[讨论复盘](rollout_variance_discussion.md)：固定状态梯度噪声与完整训练 seed 差距是**两个独立层面**的证据，本文不把二者合并成单一因果结论。
 
 ## 结论摘要（TL;DR）

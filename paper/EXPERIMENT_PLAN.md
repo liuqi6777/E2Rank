@@ -1,5 +1,16 @@
 # Experiment Plan: Reward-Based Optimization of Embedding Retrievers
 
+## 2026-09-15：G1 质量与 seed 稳定性的过夜训练批次
+
+以完整训练的 BRIGHT 均值、seed 标准差和最差成绩为主要判断依据，新增 7 配方 × 3 seed，
+共 21 次全新训练。MRR/graded nDCG × G32/G64 四格，加 binary nDCG/G32 和两个 G64 半 LR
+配方；训练/data/独立 rollout seed 同步取 42/3407/2026。8 卡，固定 113 steps，其余配方沿用
+当前 G1 主设置；当前逐文档反事实 baseline 不进入这批。
+
+配置、失败继续策略和自动 BRIGHT 汇总见[过夜实验计划](../docs/g1_stability_overnight_plan.md)。
+用户要求不设置时间自动停止，一直执行到队列结束；约 10 小时仅是时间估算。配置和脚本已准备，
+此处尚未启动训练。原始梯度结果的解释以[重分析](../docs/rollout_gradient_reanalysis.md)为准。
+
 ## 2026-09-14：G1 rollout 方差验证与后续改进（最新补充）
 
 原始三个训练 seed 的重复已完成；固定训练/data seed 42、仅改变 rollout seed

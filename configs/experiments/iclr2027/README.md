@@ -1,5 +1,12 @@
 # 三组实验配置指南
 
+## G1 稳定性过夜批次（2026-09-15）
+
+新增 `G1-S-*` 共 21 行，7 个配方各重复 seed 42/3407/2026，同时设置训练/data/rollout seed。
+覆盖 MRR/nDCG、G32/G64 和半学习率，从 E0 全新训练，包含新控制组；suite 共 90 行。
+入口为 `python scripts/run_g1_stability.py check|train|summary`。按用户要求无时间自动停止，
+运行到队列结束；每行训练后评测 BRIGHT。详见[完整计划](../../../docs/g1_stability_overnight_plan.md)。
+
 逐文档反事实 baseline 已提供配置字段 `document_advantage_baseline: counterfactual`，
 默认 `shared` 保持现有配方。当前先用诊断脚本的同名开关比较，不新增完整训练行；
 具体用法见[实现文档](../../../docs/document_counterfactual_baseline.md)。
