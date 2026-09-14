@@ -1,0 +1,3534 @@
+{
+  "run": "G1-A-MRRAlign095",
+  "config": {
+    "bf16": true,
+    "tf32": true,
+    "per_device_train_batch_size": 16,
+    "gradient_checkpointing": true,
+    "gradient_accumulation_steps": 1,
+    "learning_rate": 5e-06,
+    "warmup_ratio": 0.03,
+    "lr_scheduler_type": "linear",
+    "weight_decay": 0.01,
+    "num_train_epochs": 1,
+    "logging_strategy": "steps",
+    "logging_steps": 1,
+    "save_strategy": "steps",
+    "save_steps": 25,
+    "overwrite_output_dir": false,
+    "remove_unused_columns": false,
+    "report_to": "wandb",
+    "seed": 42,
+    "lora_enabled": false,
+    "model_name_or_path": "Qwen/Qwen3-Embedding-0.6B",
+    "pooling_method": "last",
+    "padding_side": "left",
+    "append_token": "pad",
+    "query_prompt_template": "Instruct: {task_description}\nQuery:{query}",
+    "document_prompt_template": "{document}",
+    "embedding_max_length": 8192,
+    "deepspeed": "./scripts/zero3.json",
+    "mteb_eval_tasks": null,
+    "mteb_eval_benchmark": null,
+    "mteb_eval_langs": null,
+    "mteb_eval_output_dir": null,
+    "mteb_eval_batch_size": 16,
+    "mteb_eval_precision": "fp16",
+    "mteb_eval_model_kwargs": null,
+    "mteb_eval_encode_kwargs": null,
+    "mteb_eval_run_kwargs": null,
+    "document_encoder_mode": "joint",
+    "frozen_document_verify_hashes": true,
+    "frozen_document_index_backend": "lookup",
+    "frozen_document_search_batch_size": 1024,
+    "data_path": "data/processed/reasonrank_multi/train.ready.jsonl",
+    "per_dataset_max_samples": null,
+    "q_max_len": 512,
+    "d_max_len": 1024,
+    "relevance_scheme": "binary",
+    "slate_size": 20,
+    "file_glob": "*.jsonl",
+    "batch_per_length_bucket": false,
+    "index_cache_dir": ".cache/dataset_index/g1",
+    "dev_samples_per_source": 0,
+    "max_steps": 113,
+    "data_seed": 42,
+    "optim": "adamw_torch",
+    "max_grad_norm": 1.0,
+    "save_total_limit": 2,
+    "action_components": [
+      [
+        "query"
+      ],
+      [
+        "positive",
+        "negative"
+      ]
+    ],
+    "group_size": 32,
+    "kappa": 755,
+    "sigma_learnable": false,
+    "advantage_norm": "none",
+    "sampling_law": "vmf",
+    "rollout": "product",
+    "frozen_doc_rescale": true,
+    "advantage_baseline": "leave_one_out",
+    "in_batch_use_sampled_documents": false,
+    "kl_coef": 0,
+    "document_log_prob_reduction": "sum",
+    "target_alignment": 0.95,
+    "final_alignment": null,
+    "exploration_schedule": "fixed",
+    "reward_type": "mrr_in_batch",
+    "reward_ndcg_k": 10,
+    "ndcg_in_batch_include_negatives": false,
+    "output_dir": "/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027/G1-A-MRRAlign095-s42",
+    "run_name": "G1-A-MRRAlign095",
+    "rollout_seed": 42
+  },
+  "step": 0,
+  "precision": "bf16",
+  "device": "cuda:0",
+  "training_seed": 42,
+  "rollout_seeds": [
+    42,
+    3407,
+    2026,
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12
+  ],
+  "checkpoint_state": null,
+  "checkpoint_weights_sha256": {},
+  "model_commit_hash": "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3",
+  "data_sha256": "59a9b2bc4f2ce7a0a890bc471b8ef784e3f92e01294523b2affd39f285b39a38",
+  "git_commit": "c918bd8bec116fef51232427509b823cd167d2af",
+  "git_dirty": true,
+  "torch_version": "2.6.0+cu124",
+  "gradient_space": "all trainable parameters; raw loss gradient before optimizer/clipping",
+  "dropout": "disabled",
+  "microbatch_size": 16,
+  "microbatches_per_probe": 1,
+  "parameters": [
+    {
+      "name": "model.embed_tokens.weight",
+      "shape": [
+        151669,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.0.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.0.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.0.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.0.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.0.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.0.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.0.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.0.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.0.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.0.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.0.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.1.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.1.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.1.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.1.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.1.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.1.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.1.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.1.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.1.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.1.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.1.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.2.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.2.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.2.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.2.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.2.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.2.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.2.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.2.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.2.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.2.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.2.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.3.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.3.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.3.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.3.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.3.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.3.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.3.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.3.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.3.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.3.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.3.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.4.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.4.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.4.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.4.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.4.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.4.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.4.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.4.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.4.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.4.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.4.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.5.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.5.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.5.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.5.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.5.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.5.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.5.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.5.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.5.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.5.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.5.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.6.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.6.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.6.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.6.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.6.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.6.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.6.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.6.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.6.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.6.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.6.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.7.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.7.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.7.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.7.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.7.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.7.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.7.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.7.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.7.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.7.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.7.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.8.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.8.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.8.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.8.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.8.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.8.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.8.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.8.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.8.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.8.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.8.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.9.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.9.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.9.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.9.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.9.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.9.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.9.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.9.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.9.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.9.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.9.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.10.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.10.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.10.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.10.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.10.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.10.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.10.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.10.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.10.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.10.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.10.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.11.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.11.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.11.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.11.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.11.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.11.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.11.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.11.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.11.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.11.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.11.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.12.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.12.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.12.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.12.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.12.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.12.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.12.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.12.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.12.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.12.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.12.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.13.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.13.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.13.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.13.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.13.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.13.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.13.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.13.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.13.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.13.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.13.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.14.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.14.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.14.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.14.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.14.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.14.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.14.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.14.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.14.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.14.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.14.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.15.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.15.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.15.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.15.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.15.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.15.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.15.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.15.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.15.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.15.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.15.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.16.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.16.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.16.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.16.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.16.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.16.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.16.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.16.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.16.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.16.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.16.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.17.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.17.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.17.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.17.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.17.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.17.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.17.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.17.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.17.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.17.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.17.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.18.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.18.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.18.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.18.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.18.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.18.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.18.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.18.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.18.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.18.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.18.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.19.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.19.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.19.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.19.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.19.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.19.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.19.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.19.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.19.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.19.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.19.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.20.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.20.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.20.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.20.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.20.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.20.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.20.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.20.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.20.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.20.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.20.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.21.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.21.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.21.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.21.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.21.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.21.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.21.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.21.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.21.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.21.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.21.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.22.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.22.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.22.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.22.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.22.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.22.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.22.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.22.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.22.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.22.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.22.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.23.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.23.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.23.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.23.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.23.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.23.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.23.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.23.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.23.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.23.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.23.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.24.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.24.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.24.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.24.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.24.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.24.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.24.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.24.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.24.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.24.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.24.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.25.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.25.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.25.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.25.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.25.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.25.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.25.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.25.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.25.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.25.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.25.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.26.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.26.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.26.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.26.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.26.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.26.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.26.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.26.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.26.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.26.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.26.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.27.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.27.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.27.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.27.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.27.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.27.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.27.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.27.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.27.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.27.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.27.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.norm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    }
+  ],
+  "probes": [
+    {
+      "batches": [
+        {
+          "sampler_microbatch_index": 0,
+          "dataset_positions": [
+            2112,
+            2113,
+            2114,
+            2115,
+            2116,
+            2117,
+            2118,
+            2119,
+            2120,
+            2121,
+            2122,
+            2123,
+            2124,
+            2125,
+            2126,
+            2127
+          ],
+          "record_ids": [
+            "reasonrank/train/4353",
+            "reasonrank/train/4665",
+            "reasonrank/train/4845",
+            "reasonrank/train/5058",
+            "reasonrank/train/4821",
+            "reasonrank/train/4548",
+            "reasonrank/train/4940",
+            "reasonrank/train/4975",
+            "reasonrank/train/4755",
+            "reasonrank/train/4338",
+            "reasonrank/train/4483",
+            "reasonrank/train/4658",
+            "reasonrank/train/4978",
+            "reasonrank/train/4379",
+            "reasonrank/train/4307",
+            "reasonrank/train/4581"
+          ],
+          "sources": [
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode"
+          ],
+          "tensor_sha256": "a72b559e5a92afeb0480fed247be9d9dabe94e7c810b80fce1fda6033fa2c873"
+        }
+      ],
+      "summary": {
+        "draws": 16,
+        "zero_gradient_draws": 0,
+        "mean_gradient_norm": 62.38675114571513,
+        "gradient_norm_mean": 213.6208038383431,
+        "gradient_norm_min": 172.3463398096301,
+        "gradient_norm_max": 265.2906995080432,
+        "noise_rms": 212.48304003965706,
+        "noise_to_mean_ratio": 3.4059000691247068,
+        "mean_pairwise_cosine": 0.022768655023114936
+      },
+      "draws": [
+        {
+          "rollout_seed": 42,
+          "gradient_norm": 216.33553325157158,
+          "reward_mean": 0.5190674066543579,
+          "loss": -0.1872296929359436,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.625,
+            "exploration/own_boundary_flip_rate": 0.2119838148355484,
+            "reward/mrr_in_batch/query/group_std": 0.025331098586320877,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.375,
+            "reward/mrr_in_batch/documents/group_std": 0.031748898327350616,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.375,
+            "reward/mrr_in_batch/n_distinct": 3.0625,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 3407,
+          "gradient_norm": 221.68611722521845,
+          "reward_mean": 0.5154013633728027,
+          "loss": -0.17205166816711426,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.625,
+            "exploration/own_boundary_flip_rate": 0.2077985554933548,
+            "reward/mrr_in_batch/query/group_std": 0.021758098155260086,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.375,
+            "reward/mrr_in_batch/documents/group_std": 0.034172311425209045,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.375,
+            "reward/mrr_in_batch/n_distinct": 2.875,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 2026,
+          "gradient_norm": 172.3463398096301,
+          "reward_mean": 0.5193601250648499,
+          "loss": 0.03681337833404541,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.625,
+            "exploration/own_boundary_flip_rate": 0.2066592276096344,
+            "reward/mrr_in_batch/query/group_std": 0.024570461362600327,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.375,
+            "reward/mrr_in_batch/documents/group_std": 0.025827862322330475,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.375,
+            "reward/mrr_in_batch/n_distinct": 3.0,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 0,
+          "gradient_norm": 224.95294080883428,
+          "reward_mean": 0.5187549591064453,
+          "loss": 0.20173108577728271,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.625,
+            "exploration/own_boundary_flip_rate": 0.2015206515789032,
+            "reward/mrr_in_batch/query/group_std": 0.02309992164373398,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.375,
+            "reward/mrr_in_batch/documents/group_std": 0.032227568328380585,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.375,
+            "reward/mrr_in_batch/n_distinct": 3.125,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 1,
+          "gradient_norm": 174.79630320679328,
+          "reward_mean": 0.524826169013977,
+          "loss": 0.2849048972129822,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.625,
+            "exploration/own_boundary_flip_rate": 0.1931966096162796,
+            "reward/mrr_in_batch/query/group_std": 0.024273725226521492,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.375,
+            "reward/mrr_in_batch/documents/group_std": 0.02550819143652916,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.375,
+            "reward/mrr_in_batch/n_distinct": 3.0625,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 2,
+          "gradient_norm": 202.09187391478366,
+          "reward_mean": 0.5212708115577698,
+          "loss": 0.045958518981933594,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.625,
+            "exploration/own_boundary_flip_rate": 0.19140625,
+            "reward/mrr_in_batch/query/group_std": 0.024670042097568512,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.375,
+            "reward/mrr_in_batch/documents/group_std": 0.030836008489131927,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.375,
+            "reward/mrr_in_batch/n_distinct": 2.8125,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 3,
+          "gradient_norm": 212.79831826184682,
+          "reward_mean": 0.5228234529495239,
+          "loss": 0.05697190761566162,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.625,
+            "exploration/own_boundary_flip_rate": 0.206938236951828,
+            "reward/mrr_in_batch/query/group_std": 0.02315102145075798,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.375,
+            "reward/mrr_in_batch/documents/group_std": 0.03157815709710121,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.375,
+            "reward/mrr_in_batch/n_distinct": 2.9375,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 4,
+          "gradient_norm": 255.14208655176546,
+          "reward_mean": 0.5184659957885742,
+          "loss": -0.037103891372680664,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.625,
+            "exploration/own_boundary_flip_rate": 0.2076590359210968,
+            "reward/mrr_in_batch/query/group_std": 0.019071632996201515,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.375,
+            "reward/mrr_in_batch/documents/group_std": 0.03525341674685478,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.375,
+            "reward/mrr_in_batch/n_distinct": 3.125,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 5,
+          "gradient_norm": 265.2906995080432,
+          "reward_mean": 0.5200200080871582,
+          "loss": -0.25739145278930664,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.625,
+            "exploration/own_boundary_flip_rate": 0.2098446786403656,
+            "reward/mrr_in_batch/query/group_std": 0.02377806231379509,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.375,
+            "reward/mrr_in_batch/documents/group_std": 0.03198937699198723,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.375,
+            "reward/mrr_in_batch/n_distinct": 2.875,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 6,
+          "gradient_norm": 232.78535940104715,
+          "reward_mean": 0.5199280977249146,
+          "loss": -0.4295274019241333,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.625,
+            "exploration/own_boundary_flip_rate": 0.2070544958114624,
+            "reward/mrr_in_batch/query/group_std": 0.02080240100622177,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.375,
+            "reward/mrr_in_batch/documents/group_std": 0.033569399267435074,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.375,
+            "reward/mrr_in_batch/n_distinct": 3.0,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 7,
+          "gradient_norm": 200.12719391659016,
+          "reward_mean": 0.5163803100585938,
+          "loss": -0.18024277687072754,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.625,
+            "exploration/own_boundary_flip_rate": 0.2046130895614624,
+            "reward/mrr_in_batch/query/group_std": 0.02307417243719101,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.375,
+            "reward/mrr_in_batch/documents/group_std": 0.0289580300450325,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.375,
+            "reward/mrr_in_batch/n_distinct": 3.0,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 8,
+          "gradient_norm": 197.7724540445338,
+          "reward_mean": 0.5228864550590515,
+          "loss": 0.015477538108825684,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.625,
+            "exploration/own_boundary_flip_rate": 0.2115420401096344,
+            "reward/mrr_in_batch/query/group_std": 0.023786505684256554,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.375,
+            "reward/mrr_in_batch/documents/group_std": 0.028031889349222183,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.375,
+            "reward/mrr_in_batch/n_distinct": 2.875,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 9,
+          "gradient_norm": 202.66334817982317,
+          "reward_mean": 0.5184304714202881,
+          "loss": -0.039403676986694336,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.625,
+            "exploration/own_boundary_flip_rate": 0.2004743367433548,
+            "reward/mrr_in_batch/query/group_std": 0.025111515074968338,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.375,
+            "reward/mrr_in_batch/documents/group_std": 0.0281040258705616,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.375,
+            "reward/mrr_in_batch/n_distinct": 3.0625,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 10,
+          "gradient_norm": 195.23993781261552,
+          "reward_mean": 0.5181021094322205,
+          "loss": -0.04746967554092407,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.625,
+            "exploration/own_boundary_flip_rate": 0.2094959020614624,
+            "reward/mrr_in_batch/query/group_std": 0.022743798792362213,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.375,
+            "reward/mrr_in_batch/documents/group_std": 0.029343685135245323,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.375,
+            "reward/mrr_in_batch/n_distinct": 2.6875,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 11,
+          "gradient_norm": 217.99264108609276,
+          "reward_mean": 0.5245306491851807,
+          "loss": -0.23101472854614258,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.625,
+            "exploration/own_boundary_flip_rate": 0.2029854953289032,
+            "reward/mrr_in_batch/query/group_std": 0.021042630076408386,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.375,
+            "reward/mrr_in_batch/documents/group_std": 0.03272007778286934,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.375,
+            "reward/mrr_in_batch/n_distinct": 2.9375,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 12,
+          "gradient_norm": 225.91171443430025,
+          "reward_mean": 0.5219835638999939,
+          "loss": -0.24883222579956055,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.625,
+            "exploration/own_boundary_flip_rate": 0.1990327388048172,
+            "reward/mrr_in_batch/query/group_std": 0.021408842876553535,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.375,
+            "reward/mrr_in_batch/documents/group_std": 0.033380333334207535,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.375,
+            "reward/mrr_in_batch/n_distinct": 2.8125,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        }
+      ]
+    },
+    {
+      "batches": [
+        {
+          "sampler_microbatch_index": 1,
+          "dataset_positions": [
+            3808,
+            3809,
+            3810,
+            3811,
+            3812,
+            3813,
+            3814,
+            3815,
+            3816,
+            3817,
+            3818,
+            3819,
+            3820,
+            3821,
+            3822,
+            3823
+          ],
+          "record_ids": [
+            "reasonrank/train/1781",
+            "reasonrank/train/2111",
+            "reasonrank/train/2037",
+            "reasonrank/train/2014",
+            "reasonrank/train/1615",
+            "reasonrank/train/1891",
+            "reasonrank/train/2300",
+            "reasonrank/train/1909",
+            "reasonrank/train/1956",
+            "reasonrank/train/2275",
+            "reasonrank/train/2132",
+            "reasonrank/train/2039",
+            "reasonrank/train/1844",
+            "reasonrank/train/2229",
+            "reasonrank/train/1890",
+            "reasonrank/train/2117"
+          ],
+          "sources": [
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology"
+          ],
+          "tensor_sha256": "2eeced76a9cbc9723ab260ae9ea6099a2ca7e8ed13653fb763ce85780fbe5580"
+        }
+      ],
+      "summary": {
+        "draws": 16,
+        "zero_gradient_draws": 0,
+        "mean_gradient_norm": 35.18785366461304,
+        "gradient_norm_mean": 138.6455388117454,
+        "gradient_norm_min": 119.41434286472646,
+        "gradient_norm_max": 175.98744855951108,
+        "noise_rms": 139.82484829589686,
+        "noise_to_mean_ratio": 3.973668005687795,
+        "mean_pairwise_cosine": 0.0018393328361102856
+      },
+      "draws": [
+        {
+          "rollout_seed": 42,
+          "gradient_norm": 154.53398984406664,
+          "reward_mean": 0.5184942483901978,
+          "loss": 0.09940218925476074,
+          "metrics": {
+            "exploration/own_boundary_pairs": 3.625,
+            "exploration/own_boundary_flip_rate": 0.13436153531074524,
+            "reward/mrr_in_batch/query/group_std": 0.02131536789238453,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.3125,
+            "reward/mrr_in_batch/documents/group_std": 0.029525406658649445,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.3125,
+            "reward/mrr_in_batch/n_distinct": 3.0625,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 3407,
+          "gradient_norm": 126.86710885438106,
+          "reward_mean": 0.5179672241210938,
+          "loss": 0.045272618532180786,
+          "metrics": {
+            "exploration/own_boundary_pairs": 3.625,
+            "exploration/own_boundary_flip_rate": 0.13631466031074524,
+            "reward/mrr_in_batch/query/group_std": 0.01747646927833557,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.3125,
+            "reward/mrr_in_batch/documents/group_std": 0.025032300502061844,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.3125,
+            "reward/mrr_in_batch/n_distinct": 3.1875,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 2026,
+          "gradient_norm": 129.6867934606775,
+          "reward_mean": 0.519425094127655,
+          "loss": 0.07134425640106201,
+          "metrics": {
+            "exploration/own_boundary_pairs": 3.625,
+            "exploration/own_boundary_flip_rate": 0.1377289891242981,
+            "reward/mrr_in_batch/query/group_std": 0.019824817776679993,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.3125,
+            "reward/mrr_in_batch/documents/group_std": 0.024417895823717117,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.3125,
+            "reward/mrr_in_batch/n_distinct": 2.9375,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 0,
+          "gradient_norm": 126.51463628321672,
+          "reward_mean": 0.5154929161071777,
+          "loss": -0.18882745504379272,
+          "metrics": {
+            "exploration/own_boundary_pairs": 3.625,
+            "exploration/own_boundary_flip_rate": 0.13845299184322357,
+            "reward/mrr_in_batch/query/group_std": 0.015560785308480263,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.3125,
+            "reward/mrr_in_batch/documents/group_std": 0.02307017706334591,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.3125,
+            "reward/mrr_in_batch/n_distinct": 3.0625,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 1,
+          "gradient_norm": 173.7715581302761,
+          "reward_mean": 0.516751766204834,
+          "loss": -0.07721412181854248,
+          "metrics": {
+            "exploration/own_boundary_pairs": 3.625,
+            "exploration/own_boundary_flip_rate": 0.14624865353107452,
+            "reward/mrr_in_batch/query/group_std": 0.019553424790501595,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.3125,
+            "reward/mrr_in_batch/documents/group_std": 0.028262952342629433,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.3125,
+            "reward/mrr_in_batch/n_distinct": 3.125,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 2,
+          "gradient_norm": 119.41434286472646,
+          "reward_mean": 0.5207221508026123,
+          "loss": 0.017864346504211426,
+          "metrics": {
+            "exploration/own_boundary_pairs": 3.625,
+            "exploration/own_boundary_flip_rate": 0.13818359375,
+            "reward/mrr_in_batch/query/group_std": 0.020796844735741615,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.3125,
+            "reward/mrr_in_batch/documents/group_std": 0.02347305417060852,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.3125,
+            "reward/mrr_in_batch/n_distinct": 3.25,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 3,
+          "gradient_norm": 120.96107913967904,
+          "reward_mean": 0.5194388031959534,
+          "loss": 0.08164429664611816,
+          "metrics": {
+            "exploration/own_boundary_pairs": 3.625,
+            "exploration/own_boundary_flip_rate": 0.1416352391242981,
+            "reward/mrr_in_batch/query/group_std": 0.018018189817667007,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.3125,
+            "reward/mrr_in_batch/documents/group_std": 0.022141072899103165,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.3125,
+            "reward/mrr_in_batch/n_distinct": 3.125,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 4,
+          "gradient_norm": 131.6006477073918,
+          "reward_mean": 0.5127488970756531,
+          "loss": -0.054404258728027344,
+          "metrics": {
+            "exploration/own_boundary_pairs": 3.625,
+            "exploration/own_boundary_flip_rate": 0.13200430572032928,
+            "reward/mrr_in_batch/query/group_std": 0.018704654648900032,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.3125,
+            "reward/mrr_in_batch/documents/group_std": 0.023252438753843307,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.3125,
+            "reward/mrr_in_batch/n_distinct": 2.9375,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 5,
+          "gradient_norm": 138.8198875705173,
+          "reward_mean": 0.5174356698989868,
+          "loss": 0.04322826862335205,
+          "metrics": {
+            "exploration/own_boundary_pairs": 3.625,
+            "exploration/own_boundary_flip_rate": 0.13742591440677643,
+            "reward/mrr_in_batch/query/group_std": 0.020730014890432358,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.3125,
+            "reward/mrr_in_batch/documents/group_std": 0.02624097838997841,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.3125,
+            "reward/mrr_in_batch/n_distinct": 3.0,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 6,
+          "gradient_norm": 140.8172589265671,
+          "reward_mean": 0.5139466524124146,
+          "loss": -0.16520065069198608,
+          "metrics": {
+            "exploration/own_boundary_pairs": 3.625,
+            "exploration/own_boundary_flip_rate": 0.13314925134181976,
+            "reward/mrr_in_batch/query/group_std": 0.02225896716117859,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.3125,
+            "reward/mrr_in_batch/documents/group_std": 0.027153056114912033,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.3125,
+            "reward/mrr_in_batch/n_distinct": 3.0,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 7,
+          "gradient_norm": 124.78253638420964,
+          "reward_mean": 0.5160167813301086,
+          "loss": -0.12594163417816162,
+          "metrics": {
+            "exploration/own_boundary_pairs": 3.625,
+            "exploration/own_boundary_flip_rate": 0.13436153531074524,
+            "reward/mrr_in_batch/query/group_std": 0.022213412448763847,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.3125,
+            "reward/mrr_in_batch/documents/group_std": 0.02408098801970482,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.3125,
+            "reward/mrr_in_batch/n_distinct": 3.125,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 8,
+          "gradient_norm": 169.74146721453462,
+          "reward_mean": 0.5179701447486877,
+          "loss": -0.03812253475189209,
+          "metrics": {
+            "exploration/own_boundary_pairs": 3.625,
+            "exploration/own_boundary_flip_rate": 0.1338564157485962,
+            "reward/mrr_in_batch/query/group_std": 0.018954236060380936,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.3125,
+            "reward/mrr_in_batch/documents/group_std": 0.03095046430826187,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.3125,
+            "reward/mrr_in_batch/n_distinct": 2.9375,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 9,
+          "gradient_norm": 122.6796034108192,
+          "reward_mean": 0.5198463797569275,
+          "loss": -0.24996423721313477,
+          "metrics": {
+            "exploration/own_boundary_pairs": 3.625,
+            "exploration/own_boundary_flip_rate": 0.1336543709039688,
+            "reward/mrr_in_batch/query/group_std": 0.01858535408973694,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.3125,
+            "reward/mrr_in_batch/documents/group_std": 0.0227835513651371,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.3125,
+            "reward/mrr_in_batch/n_distinct": 3.0625,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 10,
+          "gradient_norm": 175.98744855951108,
+          "reward_mean": 0.5183610916137695,
+          "loss": 0.2925165891647339,
+          "metrics": {
+            "exploration/own_boundary_pairs": 3.625,
+            "exploration/own_boundary_flip_rate": 0.13985048234462738,
+            "reward/mrr_in_batch/query/group_std": 0.020092109218239784,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.3125,
+            "reward/mrr_in_batch/documents/group_std": 0.031072698533535004,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.3125,
+            "reward/mrr_in_batch/n_distinct": 3.1875,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 11,
+          "gradient_norm": 130.09022903641753,
+          "reward_mean": 0.515167236328125,
+          "loss": -0.015216588973999023,
+          "metrics": {
+            "exploration/own_boundary_pairs": 3.625,
+            "exploration/own_boundary_flip_rate": 0.1331997513771057,
+            "reward/mrr_in_batch/query/group_std": 0.01713762991130352,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.25,
+            "reward/mrr_in_batch/documents/group_std": 0.0249551422894001,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.25,
+            "reward/mrr_in_batch/n_distinct": 2.9375,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 12,
+          "gradient_norm": 132.06003360093464,
+          "reward_mean": 0.5202879905700684,
+          "loss": -0.07629764080047607,
+          "metrics": {
+            "exploration/own_boundary_pairs": 3.625,
+            "exploration/own_boundary_flip_rate": 0.13788051903247833,
+            "reward/mrr_in_batch/query/group_std": 0.022395247593522072,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.3125,
+            "reward/mrr_in_batch/documents/group_std": 0.02627800777554512,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.3125,
+            "reward/mrr_in_batch/n_distinct": 2.9375,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        }
+      ]
+    },
+    {
+      "batches": [
+        {
+          "sampler_microbatch_index": 2,
+          "dataset_positions": [
+            3552,
+            3553,
+            3554,
+            3555,
+            3556,
+            3557,
+            3558,
+            3559,
+            3560,
+            3561,
+            3562,
+            3563,
+            3564,
+            3565,
+            3566,
+            3567
+          ],
+          "record_ids": [
+            "reasonrank/train/1754",
+            "reasonrank/train/2078",
+            "reasonrank/train/1757",
+            "reasonrank/train/1723",
+            "reasonrank/train/2189",
+            "reasonrank/train/2347",
+            "reasonrank/train/2369",
+            "reasonrank/train/1635",
+            "reasonrank/train/2334",
+            "reasonrank/train/2065",
+            "reasonrank/train/2031",
+            "reasonrank/train/1567",
+            "reasonrank/train/1859",
+            "reasonrank/train/1636",
+            "reasonrank/train/1934",
+            "reasonrank/train/1589"
+          ],
+          "sources": [
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology"
+          ],
+          "tensor_sha256": "de9550442810dd165716e03be85db9c620475aa2eb89a19c335916193f4ae889"
+        }
+      ],
+      "summary": {
+        "draws": 16,
+        "zero_gradient_draws": 0,
+        "mean_gradient_norm": 67.62887919111473,
+        "gradient_norm_mean": 241.88296664285906,
+        "gradient_norm_min": 221.61850366503626,
+        "gradient_norm_max": 260.6122598736012,
+        "noise_rms": 240.15849969077794,
+        "noise_to_mean_ratio": 3.551123463278253,
+        "mean_pairwise_cosine": 0.016369417468419675
+      },
+      "draws": [
+        {
+          "rollout_seed": 42,
+          "gradient_norm": 238.51102631733852,
+          "reward_mean": 0.4265356659889221,
+          "loss": -0.03448605537414551,
+          "metrics": {
+            "exploration/own_boundary_pairs": 3.3125,
+            "exploration/own_boundary_flip_rate": 0.18466244637966156,
+            "reward/mrr_in_batch/query/group_std": 0.03766438364982605,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.25,
+            "reward/mrr_in_batch/documents/group_std": 0.04609512537717819,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.25,
+            "reward/mrr_in_batch/n_distinct": 2.75,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 3407,
+          "gradient_norm": 257.81612644910115,
+          "reward_mean": 0.4305424094200134,
+          "loss": 0.048815250396728516,
+          "metrics": {
+            "exploration/own_boundary_pairs": 3.3125,
+            "exploration/own_boundary_flip_rate": 0.18639445304870605,
+            "reward/mrr_in_batch/query/group_std": 0.03860216215252876,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.25,
+            "reward/mrr_in_batch/documents/group_std": 0.04931917041540146,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.25,
+            "reward/mrr_in_batch/n_distinct": 3.0,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 2026,
+          "gradient_norm": 260.6122598736012,
+          "reward_mean": 0.425973117351532,
+          "loss": 0.43429553508758545,
+          "metrics": {
+            "exploration/own_boundary_pairs": 3.3125,
+            "exploration/own_boundary_flip_rate": 0.19201429188251495,
+            "reward/mrr_in_batch/query/group_std": 0.039712660014629364,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.3125,
+            "reward/mrr_in_batch/documents/group_std": 0.050050582736730576,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.3125,
+            "reward/mrr_in_batch/n_distinct": 2.6875,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 0,
+          "gradient_norm": 225.01634081792085,
+          "reward_mean": 0.4198836386203766,
+          "loss": 0.04526662826538086,
+          "metrics": {
+            "exploration/own_boundary_pairs": 3.3125,
+            "exploration/own_boundary_flip_rate": 0.17913472652435303,
+            "reward/mrr_in_batch/query/group_std": 0.038846466690301895,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.25,
+            "reward/mrr_in_batch/documents/group_std": 0.04298324137926102,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.25,
+            "reward/mrr_in_batch/n_distinct": 2.9375,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 1,
+          "gradient_norm": 241.58101993998693,
+          "reward_mean": 0.42568492889404297,
+          "loss": 0.3032010793685913,
+          "metrics": {
+            "exploration/own_boundary_pairs": 3.3125,
+            "exploration/own_boundary_flip_rate": 0.18547317385673523,
+            "reward/mrr_in_batch/query/group_std": 0.042059652507305145,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.25,
+            "reward/mrr_in_batch/documents/group_std": 0.047265492379665375,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.25,
+            "reward/mrr_in_batch/n_distinct": 2.9375,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 2,
+          "gradient_norm": 244.09979684949442,
+          "reward_mean": 0.42405033111572266,
+          "loss": 0.7122050523757935,
+          "metrics": {
+            "exploration/own_boundary_pairs": 3.3125,
+            "exploration/own_boundary_flip_rate": 0.17977963387966156,
+            "reward/mrr_in_batch/query/group_std": 0.036238692700862885,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.25,
+            "reward/mrr_in_batch/documents/group_std": 0.04611276835203171,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.25,
+            "reward/mrr_in_batch/n_distinct": 2.875,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 3,
+          "gradient_norm": 234.21720299766324,
+          "reward_mean": 0.427301287651062,
+          "loss": -0.07292342185974121,
+          "metrics": {
+            "exploration/own_boundary_pairs": 3.3125,
+            "exploration/own_boundary_flip_rate": 0.18805277347564697,
+            "reward/mrr_in_batch/query/group_std": 0.03939669579267502,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.25,
+            "reward/mrr_in_batch/documents/group_std": 0.04666987434029579,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.25,
+            "reward/mrr_in_batch/n_distinct": 2.9375,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 4,
+          "gradient_norm": 258.9357772170213,
+          "reward_mean": 0.4214842617511749,
+          "loss": 0.8126785755157471,
+          "metrics": {
+            "exploration/own_boundary_pairs": 3.3125,
+            "exploration/own_boundary_flip_rate": 0.17738428711891174,
+            "reward/mrr_in_batch/query/group_std": 0.033679939806461334,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.1875,
+            "reward/mrr_in_batch/documents/group_std": 0.050558432936668396,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.1875,
+            "reward/mrr_in_batch/n_distinct": 3.125,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 5,
+          "gradient_norm": 253.51952856764328,
+          "reward_mean": 0.419053316116333,
+          "loss": -0.30415892601013184,
+          "metrics": {
+            "exploration/own_boundary_pairs": 3.3125,
+            "exploration/own_boundary_flip_rate": 0.18127210438251495,
+            "reward/mrr_in_batch/query/group_std": 0.03413373604416847,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.25,
+            "reward/mrr_in_batch/documents/group_std": 0.04644601047039032,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.25,
+            "reward/mrr_in_batch/n_distinct": 2.875,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 6,
+          "gradient_norm": 243.31591707845965,
+          "reward_mean": 0.4208337962627411,
+          "loss": 0.0031507015228271484,
+          "metrics": {
+            "exploration/own_boundary_pairs": 3.3125,
+            "exploration/own_boundary_flip_rate": 0.18374115228652954,
+            "reward/mrr_in_batch/query/group_std": 0.0365908145904541,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.25,
+            "reward/mrr_in_batch/documents/group_std": 0.04672790691256523,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.25,
+            "reward/mrr_in_batch/n_distinct": 2.9375,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 7,
+          "gradient_norm": 233.9849143930152,
+          "reward_mean": 0.4262029826641083,
+          "loss": 0.6097866892814636,
+          "metrics": {
+            "exploration/own_boundary_pairs": 3.3125,
+            "exploration/own_boundary_flip_rate": 0.18315152823925018,
+            "reward/mrr_in_batch/query/group_std": 0.03686165809631348,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.3125,
+            "reward/mrr_in_batch/documents/group_std": 0.04547379910945892,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.3125,
+            "reward/mrr_in_batch/n_distinct": 2.75,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 8,
+          "gradient_norm": 231.12988554834052,
+          "reward_mean": 0.42172008752822876,
+          "loss": -0.060451507568359375,
+          "metrics": {
+            "exploration/own_boundary_pairs": 3.3125,
+            "exploration/own_boundary_flip_rate": 0.18753685057163239,
+            "reward/mrr_in_batch/query/group_std": 0.03996759653091431,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.25,
+            "reward/mrr_in_batch/documents/group_std": 0.04498016834259033,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.25,
+            "reward/mrr_in_batch/n_distinct": 2.875,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 9,
+          "gradient_norm": 232.037252854227,
+          "reward_mean": 0.42641812562942505,
+          "loss": 0.07578647136688232,
+          "metrics": {
+            "exploration/own_boundary_pairs": 3.3125,
+            "exploration/own_boundary_flip_rate": 0.17522847652435303,
+            "reward/mrr_in_batch/query/group_std": 0.03786516562104225,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.25,
+            "reward/mrr_in_batch/documents/group_std": 0.043481845408678055,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.25,
+            "reward/mrr_in_batch/n_distinct": 2.875,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 10,
+          "gradient_norm": 252.96988658338165,
+          "reward_mean": 0.42121753096580505,
+          "loss": -0.10248017311096191,
+          "metrics": {
+            "exploration/own_boundary_pairs": 3.3125,
+            "exploration/own_boundary_flip_rate": 0.1667710840702057,
+            "reward/mrr_in_batch/query/group_std": 0.03660092502832413,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.25,
+            "reward/mrr_in_batch/documents/group_std": 0.04744666442275047,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.25,
+            "reward/mrr_in_batch/n_distinct": 2.875,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 11,
+          "gradient_norm": 221.61850366503626,
+          "reward_mean": 0.42596009373664856,
+          "loss": 0.03164231777191162,
+          "metrics": {
+            "exploration/own_boundary_pairs": 3.3125,
+            "exploration/own_boundary_flip_rate": 0.18046137690544128,
+            "reward/mrr_in_batch/query/group_std": 0.039039067924022675,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.25,
+            "reward/mrr_in_batch/documents/group_std": 0.042480915784835815,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.25,
+            "reward/mrr_in_batch/n_distinct": 2.875,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        },
+        {
+          "rollout_seed": 12,
+          "gradient_norm": 240.7620271335135,
+          "reward_mean": 0.4276355803012848,
+          "loss": -0.060277462005615234,
+          "metrics": {
+            "exploration/own_boundary_pairs": 3.3125,
+            "exploration/own_boundary_flip_rate": 0.18060877919197083,
+            "reward/mrr_in_batch/query/group_std": 0.03624296933412552,
+            "reward/mrr_in_batch/query/degenerate_frac": 0.25,
+            "reward/mrr_in_batch/documents/group_std": 0.047449130564928055,
+            "reward/mrr_in_batch/documents/degenerate_frac": 0.25,
+            "reward/mrr_in_batch/n_distinct": 2.9375,
+            "exploration/kappa": 9968.19140625,
+            "exploration/mean_alignment": 0.949999988079071
+          }
+        }
+      ]
+    }
+  ]
+}

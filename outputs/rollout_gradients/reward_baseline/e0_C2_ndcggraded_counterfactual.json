@@ -1,0 +1,3775 @@
+{
+  "run": "G1-A-NDCGAlign090",
+  "config": {
+    "bf16": true,
+    "tf32": true,
+    "per_device_train_batch_size": 16,
+    "gradient_checkpointing": true,
+    "gradient_accumulation_steps": 1,
+    "learning_rate": 5e-06,
+    "warmup_ratio": 0.03,
+    "lr_scheduler_type": "linear",
+    "weight_decay": 0.01,
+    "num_train_epochs": 1,
+    "logging_strategy": "steps",
+    "logging_steps": 1,
+    "save_strategy": "steps",
+    "save_steps": 25,
+    "overwrite_output_dir": false,
+    "remove_unused_columns": false,
+    "report_to": "wandb",
+    "seed": 42,
+    "lora_enabled": false,
+    "model_name_or_path": "Qwen/Qwen3-Embedding-0.6B",
+    "pooling_method": "last",
+    "padding_side": "left",
+    "append_token": "pad",
+    "query_prompt_template": "Instruct: {task_description}\nQuery:{query}",
+    "document_prompt_template": "{document}",
+    "embedding_max_length": 8192,
+    "deepspeed": "./scripts/zero3.json",
+    "mteb_eval_tasks": null,
+    "mteb_eval_benchmark": null,
+    "mteb_eval_langs": null,
+    "mteb_eval_output_dir": null,
+    "mteb_eval_batch_size": 16,
+    "mteb_eval_precision": "fp16",
+    "mteb_eval_model_kwargs": null,
+    "mteb_eval_encode_kwargs": null,
+    "mteb_eval_run_kwargs": null,
+    "document_encoder_mode": "joint",
+    "frozen_document_verify_hashes": true,
+    "frozen_document_index_backend": "lookup",
+    "frozen_document_search_batch_size": 1024,
+    "data_path": "data/processed/reasonrank_multi/train.ready.jsonl",
+    "per_dataset_max_samples": null,
+    "q_max_len": 512,
+    "d_max_len": 1024,
+    "relevance_scheme": "graded",
+    "slate_size": 20,
+    "file_glob": "*.jsonl",
+    "batch_per_length_bucket": false,
+    "index_cache_dir": ".cache/dataset_index/g1",
+    "dev_samples_per_source": 0,
+    "max_steps": 113,
+    "data_seed": 42,
+    "optim": "adamw_torch",
+    "max_grad_norm": 1.0,
+    "save_total_limit": 2,
+    "action_components": [
+      [
+        "query"
+      ],
+      [
+        "positive",
+        "negative"
+      ]
+    ],
+    "group_size": 32,
+    "kappa": 755,
+    "sigma_learnable": false,
+    "advantage_norm": "none",
+    "sampling_law": "vmf",
+    "rollout": "product",
+    "frozen_doc_rescale": true,
+    "advantage_baseline": "leave_one_out",
+    "in_batch_use_sampled_documents": false,
+    "kl_coef": 0,
+    "document_log_prob_reduction": "sum",
+    "target_alignment": 0.9,
+    "final_alignment": null,
+    "exploration_schedule": "fixed",
+    "reward_type": "ndcg_in_batch",
+    "reward_ndcg_k": 10,
+    "ndcg_in_batch_include_negatives": false,
+    "output_dir": "/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027/G1-A-NDCGAlign090-s42",
+    "run_name": "G1-A-NDCGAlign090",
+    "document_advantage_baseline": "counterfactual",
+    "rollout_seed": 42
+  },
+  "step": 0,
+  "precision": "bf16",
+  "device": "cuda:0",
+  "training_seed": 42,
+  "rollout_seeds": [
+    42,
+    3407,
+    2026,
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12
+  ],
+  "checkpoint_state": null,
+  "checkpoint_weights_sha256": {},
+  "model_commit_hash": "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3",
+  "data_sha256": "59a9b2bc4f2ce7a0a890bc471b8ef784e3f92e01294523b2affd39f285b39a38",
+  "git_commit": "c918bd8bec116fef51232427509b823cd167d2af",
+  "git_dirty": true,
+  "torch_version": "2.6.0+cu124",
+  "gradient_space": "all trainable parameters; raw loss gradient before optimizer/clipping",
+  "dropout": "disabled",
+  "microbatch_size": 16,
+  "microbatches_per_probe": 1,
+  "parameters": [
+    {
+      "name": "model.embed_tokens.weight",
+      "shape": [
+        151669,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.0.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.0.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.0.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.0.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.0.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.0.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.0.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.0.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.0.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.0.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.0.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.1.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.1.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.1.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.1.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.1.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.1.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.1.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.1.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.1.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.1.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.1.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.2.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.2.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.2.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.2.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.2.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.2.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.2.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.2.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.2.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.2.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.2.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.3.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.3.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.3.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.3.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.3.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.3.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.3.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.3.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.3.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.3.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.3.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.4.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.4.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.4.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.4.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.4.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.4.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.4.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.4.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.4.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.4.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.4.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.5.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.5.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.5.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.5.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.5.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.5.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.5.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.5.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.5.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.5.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.5.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.6.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.6.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.6.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.6.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.6.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.6.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.6.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.6.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.6.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.6.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.6.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.7.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.7.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.7.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.7.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.7.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.7.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.7.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.7.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.7.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.7.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.7.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.8.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.8.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.8.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.8.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.8.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.8.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.8.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.8.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.8.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.8.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.8.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.9.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.9.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.9.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.9.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.9.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.9.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.9.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.9.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.9.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.9.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.9.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.10.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.10.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.10.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.10.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.10.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.10.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.10.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.10.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.10.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.10.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.10.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.11.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.11.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.11.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.11.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.11.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.11.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.11.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.11.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.11.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.11.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.11.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.12.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.12.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.12.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.12.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.12.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.12.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.12.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.12.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.12.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.12.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.12.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.13.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.13.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.13.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.13.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.13.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.13.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.13.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.13.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.13.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.13.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.13.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.14.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.14.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.14.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.14.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.14.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.14.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.14.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.14.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.14.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.14.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.14.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.15.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.15.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.15.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.15.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.15.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.15.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.15.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.15.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.15.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.15.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.15.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.16.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.16.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.16.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.16.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.16.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.16.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.16.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.16.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.16.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.16.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.16.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.17.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.17.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.17.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.17.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.17.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.17.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.17.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.17.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.17.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.17.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.17.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.18.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.18.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.18.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.18.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.18.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.18.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.18.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.18.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.18.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.18.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.18.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.19.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.19.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.19.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.19.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.19.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.19.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.19.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.19.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.19.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.19.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.19.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.20.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.20.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.20.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.20.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.20.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.20.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.20.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.20.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.20.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.20.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.20.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.21.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.21.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.21.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.21.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.21.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.21.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.21.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.21.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.21.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.21.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.21.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.22.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.22.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.22.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.22.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.22.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.22.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.22.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.22.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.22.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.22.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.22.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.23.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.23.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.23.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.23.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.23.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.23.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.23.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.23.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.23.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.23.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.23.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.24.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.24.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.24.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.24.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.24.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.24.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.24.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.24.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.24.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.24.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.24.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.25.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.25.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.25.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.25.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.25.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.25.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.25.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.25.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.25.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.25.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.25.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.26.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.26.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.26.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.26.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.26.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.26.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.26.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.26.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.26.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.26.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.26.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.27.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.27.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.27.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.27.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.27.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.27.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.27.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.27.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.27.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.27.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.27.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.norm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    }
+  ],
+  "probes": [
+    {
+      "batches": [
+        {
+          "sampler_microbatch_index": 0,
+          "dataset_positions": [
+            2112,
+            2113,
+            2114,
+            2115,
+            2116,
+            2117,
+            2118,
+            2119,
+            2120,
+            2121,
+            2122,
+            2123,
+            2124,
+            2125,
+            2126,
+            2127
+          ],
+          "record_ids": [
+            "reasonrank/train/4353",
+            "reasonrank/train/4665",
+            "reasonrank/train/4845",
+            "reasonrank/train/5058",
+            "reasonrank/train/4821",
+            "reasonrank/train/4548",
+            "reasonrank/train/4940",
+            "reasonrank/train/4975",
+            "reasonrank/train/4755",
+            "reasonrank/train/4338",
+            "reasonrank/train/4483",
+            "reasonrank/train/4658",
+            "reasonrank/train/4978",
+            "reasonrank/train/4379",
+            "reasonrank/train/4307",
+            "reasonrank/train/4581"
+          ],
+          "sources": [
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode"
+          ],
+          "tensor_sha256": "fd3f78123decb1023833612f95927cfba1571d1f7340b1ee4cff3f22d7e46f9c"
+        }
+      ],
+      "summary": {
+        "draws": 16,
+        "zero_gradient_draws": 0,
+        "mean_gradient_norm": 26.228215585183285,
+        "gradient_norm_mean": 89.55349251250544,
+        "gradient_norm_min": 83.11802010843725,
+        "gradient_norm_max": 98.55624088104497,
+        "noise_rms": 88.52178142701999,
+        "noise_to_mean_ratio": 3.375059242574904,
+        "mean_pairwise_cosine": 0.024541060767314986
+      },
+      "draws": [
+        {
+          "rollout_seed": 42,
+          "gradient_norm": 90.59604008517094,
+          "reward_mean": 0.5396578311920166,
+          "loss": -204.86932373046875,
+          "metrics": {
+            "exploration/own_boundary_pairs": 6.25,
+            "exploration/own_boundary_flip_rate": 0.26615235209465027,
+            "reward/ndcg_in_batch/query/group_std": 0.0249522365629673,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.028682293370366096,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": 0.0023477182257920504,
+            "baseline/documents/counterfactual/std": 0.033462394028902054,
+            "baseline/documents/counterfactual/min": -0.30597496032714844,
+            "baseline/documents/counterfactual/max": 0.19288598001003265,
+            "baseline/documents/counterfactual/zero_frac": 0.2992187440395355,
+            "reward/ndcg_in_batch/n_distinct": 287.25,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 3407,
+          "gradient_norm": 90.90922236825627,
+          "reward_mean": 0.5342709422111511,
+          "loss": -171.10687255859375,
+          "metrics": {
+            "exploration/own_boundary_pairs": 6.25,
+            "exploration/own_boundary_flip_rate": 0.27156248688697815,
+            "reward/ndcg_in_batch/query/group_std": 0.0243561789393425,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.027839982882142067,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": 0.001964274561032653,
+            "baseline/documents/counterfactual/std": 0.03371618315577507,
+            "baseline/documents/counterfactual/min": -0.2881186306476593,
+            "baseline/documents/counterfactual/max": 0.1976962387561798,
+            "baseline/documents/counterfactual/zero_frac": 0.30078125,
+            "reward/ndcg_in_batch/n_distinct": 284.3125,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 2026,
+          "gradient_norm": 95.7650158545529,
+          "reward_mean": 0.535088062286377,
+          "loss": -139.14817810058594,
+          "metrics": {
+            "exploration/own_boundary_pairs": 6.25,
+            "exploration/own_boundary_flip_rate": 0.262451171875,
+            "reward/ndcg_in_batch/query/group_std": 0.02342522144317627,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.030206890776753426,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": 0.0015960814198479056,
+            "baseline/documents/counterfactual/std": 0.03325430303812027,
+            "baseline/documents/counterfactual/min": -0.29757726192474365,
+            "baseline/documents/counterfactual/max": 0.1881321370601654,
+            "baseline/documents/counterfactual/zero_frac": 0.29902344942092896,
+            "reward/ndcg_in_batch/n_distinct": 283.125,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 0,
+          "gradient_norm": 88.42770875802798,
+          "reward_mean": 0.536712646484375,
+          "loss": -181.80447387695312,
+          "metrics": {
+            "exploration/own_boundary_pairs": 6.25,
+            "exploration/own_boundary_flip_rate": 0.2654492259025574,
+            "reward/ndcg_in_batch/query/group_std": 0.023133113980293274,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.027993259951472282,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": 0.002082670805975795,
+            "baseline/documents/counterfactual/std": 0.0338711217045784,
+            "baseline/documents/counterfactual/min": -0.2915729582309723,
+            "baseline/documents/counterfactual/max": 0.20086228847503662,
+            "baseline/documents/counterfactual/zero_frac": 0.28691408038139343,
+            "reward/ndcg_in_batch/n_distinct": 280.25,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 1,
+          "gradient_norm": 89.17412547533456,
+          "reward_mean": 0.5376013517379761,
+          "loss": -213.36585998535156,
+          "metrics": {
+            "exploration/own_boundary_pairs": 6.25,
+            "exploration/own_boundary_flip_rate": 0.26112306118011475,
+            "reward/ndcg_in_batch/query/group_std": 0.02526026964187622,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.028371699154376984,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": 0.0024448421318084,
+            "baseline/documents/counterfactual/std": 0.033925414085388184,
+            "baseline/documents/counterfactual/min": -0.2877955734729767,
+            "baseline/documents/counterfactual/max": 0.19643503427505493,
+            "baseline/documents/counterfactual/zero_frac": 0.29082033038139343,
+            "reward/ndcg_in_batch/n_distinct": 283.5625,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 2,
+          "gradient_norm": 83.11802010843725,
+          "reward_mean": 0.5369911789894104,
+          "loss": -148.5765838623047,
+          "metrics": {
+            "exploration/own_boundary_pairs": 6.25,
+            "exploration/own_boundary_flip_rate": 0.2669628858566284,
+            "reward/ndcg_in_batch/query/group_std": 0.02426300197839737,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.02819645404815674,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": 0.0017040105303749442,
+            "baseline/documents/counterfactual/std": 0.03325089439749718,
+            "baseline/documents/counterfactual/min": -0.2930316627025604,
+            "baseline/documents/counterfactual/max": 0.18592414259910583,
+            "baseline/documents/counterfactual/zero_frac": 0.2972656190395355,
+            "reward/ndcg_in_batch/n_distinct": 272.4375,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 3,
+          "gradient_norm": 89.62344376173851,
+          "reward_mean": 0.5366064310073853,
+          "loss": -172.43399047851562,
+          "metrics": {
+            "exploration/own_boundary_pairs": 6.25,
+            "exploration/own_boundary_flip_rate": 0.2628417909145355,
+            "reward/ndcg_in_batch/query/group_std": 0.02492544800043106,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.02742733061313629,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": 0.0019767899066209793,
+            "baseline/documents/counterfactual/std": 0.033205848187208176,
+            "baseline/documents/counterfactual/min": -0.2975633144378662,
+            "baseline/documents/counterfactual/max": 0.18606996536254883,
+            "baseline/documents/counterfactual/zero_frac": 0.2916015684604645,
+            "reward/ndcg_in_batch/n_distinct": 273.125,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 4,
+          "gradient_norm": 98.55624088104497,
+          "reward_mean": 0.5381713509559631,
+          "loss": -181.85382080078125,
+          "metrics": {
+            "exploration/own_boundary_pairs": 6.25,
+            "exploration/own_boundary_flip_rate": 0.2664843797683716,
+            "reward/ndcg_in_batch/query/group_std": 0.022183261811733246,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.03082963265478611,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": 0.0020859800279140472,
+            "baseline/documents/counterfactual/std": 0.034161899238824844,
+            "baseline/documents/counterfactual/min": -0.2943735718727112,
+            "baseline/documents/counterfactual/max": 0.20764406025409698,
+            "baseline/documents/counterfactual/zero_frac": 0.2886718809604645,
+            "reward/ndcg_in_batch/n_distinct": 276.4375,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 5,
+          "gradient_norm": 88.02918435187462,
+          "reward_mean": 0.5377193689346313,
+          "loss": -163.9186248779297,
+          "metrics": {
+            "exploration/own_boundary_pairs": 6.25,
+            "exploration/own_boundary_flip_rate": 0.2588867247104645,
+            "reward/ndcg_in_batch/query/group_std": 0.024230200797319412,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.027020052075386047,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": 0.0018798537785187364,
+            "baseline/documents/counterfactual/std": 0.03331275284290314,
+            "baseline/documents/counterfactual/min": -0.2934876084327698,
+            "baseline/documents/counterfactual/max": 0.19626003503799438,
+            "baseline/documents/counterfactual/zero_frac": 0.29316407442092896,
+            "reward/ndcg_in_batch/n_distinct": 268.0,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 6,
+          "gradient_norm": 83.79812942969494,
+          "reward_mean": 0.535308301448822,
+          "loss": -162.70045471191406,
+          "metrics": {
+            "exploration/own_boundary_pairs": 6.25,
+            "exploration/own_boundary_flip_rate": 0.2667480409145355,
+            "reward/ndcg_in_batch/query/group_std": 0.024445418268442154,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.029263293370604515,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": 0.0018620211631059647,
+            "baseline/documents/counterfactual/std": 0.033411458134651184,
+            "baseline/documents/counterfactual/min": -0.2924407124519348,
+            "baseline/documents/counterfactual/max": 0.19416305422782898,
+            "baseline/documents/counterfactual/zero_frac": 0.2916015684604645,
+            "reward/ndcg_in_batch/n_distinct": 280.5625,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 7,
+          "gradient_norm": 93.00999175382368,
+          "reward_mean": 0.535269021987915,
+          "loss": -162.46002197265625,
+          "metrics": {
+            "exploration/own_boundary_pairs": 6.25,
+            "exploration/own_boundary_flip_rate": 0.26079100370407104,
+            "reward/ndcg_in_batch/query/group_std": 0.02446620911359787,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.02925857901573181,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": 0.0018630207050591707,
+            "baseline/documents/counterfactual/std": 0.03330642357468605,
+            "baseline/documents/counterfactual/min": -0.28160762786865234,
+            "baseline/documents/counterfactual/max": 0.2074243575334549,
+            "baseline/documents/counterfactual/zero_frac": 0.2881835997104645,
+            "reward/ndcg_in_batch/n_distinct": 279.5,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 8,
+          "gradient_norm": 89.47185489370432,
+          "reward_mean": 0.5415665507316589,
+          "loss": -219.052978515625,
+          "metrics": {
+            "exploration/own_boundary_pairs": 6.25,
+            "exploration/own_boundary_flip_rate": 0.26649415493011475,
+            "reward/ndcg_in_batch/query/group_std": 0.023918496444821358,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.027631772682070732,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": 0.002510596066713333,
+            "baseline/documents/counterfactual/std": 0.03376126289367676,
+            "baseline/documents/counterfactual/min": -0.2994537949562073,
+            "baseline/documents/counterfactual/max": 0.19451943039894104,
+            "baseline/documents/counterfactual/zero_frac": 0.2923828065395355,
+            "reward/ndcg_in_batch/n_distinct": 284.1875,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 9,
+          "gradient_norm": 87.1787159179843,
+          "reward_mean": 0.5370633006095886,
+          "loss": -172.9795684814453,
+          "metrics": {
+            "exploration/own_boundary_pairs": 6.25,
+            "exploration/own_boundary_flip_rate": 0.25874024629592896,
+            "reward/ndcg_in_batch/query/group_std": 0.025381382554769516,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.028371987864375114,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": 0.001983823487535119,
+            "baseline/documents/counterfactual/std": 0.03346730396151543,
+            "baseline/documents/counterfactual/min": -0.30036062002182007,
+            "baseline/documents/counterfactual/max": 0.18857324123382568,
+            "baseline/documents/counterfactual/zero_frac": 0.30009767413139343,
+            "reward/ndcg_in_batch/n_distinct": 277.125,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 10,
+          "gradient_norm": 88.36602876428935,
+          "reward_mean": 0.5333988666534424,
+          "loss": -134.7137451171875,
+          "metrics": {
+            "exploration/own_boundary_pairs": 6.25,
+            "exploration/own_boundary_flip_rate": 0.2565234303474426,
+            "reward/ndcg_in_batch/query/group_std": 0.024249497801065445,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.026968177407979965,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": 0.001545944600366056,
+            "baseline/documents/counterfactual/std": 0.0338003896176815,
+            "baseline/documents/counterfactual/min": -0.2923986613750458,
+            "baseline/documents/counterfactual/max": 0.19812965393066406,
+            "baseline/documents/counterfactual/zero_frac": 0.28876954317092896,
+            "reward/ndcg_in_batch/n_distinct": 274.1875,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 11,
+          "gradient_norm": 86.340095998793,
+          "reward_mean": 0.5366719365119934,
+          "loss": -192.64096069335938,
+          "metrics": {
+            "exploration/own_boundary_pairs": 6.25,
+            "exploration/own_boundary_flip_rate": 0.26877930760383606,
+            "reward/ndcg_in_batch/query/group_std": 0.02537088841199875,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.0294162780046463,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": 0.0022094380110502243,
+            "baseline/documents/counterfactual/std": 0.03319210186600685,
+            "baseline/documents/counterfactual/min": -0.29356518387794495,
+            "baseline/documents/counterfactual/max": 0.19030460715293884,
+            "baseline/documents/counterfactual/zero_frac": 0.29443359375,
+            "reward/ndcg_in_batch/n_distinct": 281.3125,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 12,
+          "gradient_norm": 90.49206179735941,
+          "reward_mean": 0.54058438539505,
+          "loss": -184.50279235839844,
+          "metrics": {
+            "exploration/own_boundary_pairs": 6.25,
+            "exploration/own_boundary_flip_rate": 0.27149415016174316,
+            "reward/ndcg_in_batch/query/group_std": 0.02377469837665558,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.02897639572620392,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": 0.002117351396009326,
+            "baseline/documents/counterfactual/std": 0.03345900774002075,
+            "baseline/documents/counterfactual/min": -0.28562527894973755,
+            "baseline/documents/counterfactual/max": 0.2069016695022583,
+            "baseline/documents/counterfactual/zero_frac": 0.2945312559604645,
+            "reward/ndcg_in_batch/n_distinct": 288.375,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        }
+      ]
+    },
+    {
+      "batches": [
+        {
+          "sampler_microbatch_index": 1,
+          "dataset_positions": [
+            3808,
+            3809,
+            3810,
+            3811,
+            3812,
+            3813,
+            3814,
+            3815,
+            3816,
+            3817,
+            3818,
+            3819,
+            3820,
+            3821,
+            3822,
+            3823
+          ],
+          "record_ids": [
+            "reasonrank/train/1781",
+            "reasonrank/train/2111",
+            "reasonrank/train/2037",
+            "reasonrank/train/2014",
+            "reasonrank/train/1615",
+            "reasonrank/train/1891",
+            "reasonrank/train/2300",
+            "reasonrank/train/1909",
+            "reasonrank/train/1956",
+            "reasonrank/train/2275",
+            "reasonrank/train/2132",
+            "reasonrank/train/2039",
+            "reasonrank/train/1844",
+            "reasonrank/train/2229",
+            "reasonrank/train/1890",
+            "reasonrank/train/2117"
+          ],
+          "sources": [
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology"
+          ],
+          "tensor_sha256": "a181c4aad4e16c5b1d3f434b5fa4de5f252b13971bd91543a4b23310e46d6443"
+        }
+      ],
+      "summary": {
+        "draws": 16,
+        "zero_gradient_draws": 0,
+        "mean_gradient_norm": 17.98969874576509,
+        "gradient_norm_mean": 67.00078511139677,
+        "gradient_norm_min": 62.80483146250136,
+        "gradient_norm_max": 70.06204443043715,
+        "noise_rms": 66.68998856907193,
+        "noise_to_mean_ratio": 3.707120920230599,
+        "mean_pairwise_cosine": 0.010031171241789982
+      },
+      "draws": [
+        {
+          "rollout_seed": 42,
+          "gradient_norm": 68.96582311400877,
+          "reward_mean": 0.6736791729927063,
+          "loss": 4.344994068145752,
+          "metrics": {
+            "exploration/own_boundary_pairs": 5.9375,
+            "exploration/own_boundary_flip_rate": 0.2191714644432068,
+            "reward/ndcg_in_batch/query/group_std": 0.02117919735610485,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.025362873449921608,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": -6.446491170208901e-05,
+            "baseline/documents/counterfactual/std": 0.028829796239733696,
+            "baseline/documents/counterfactual/min": -0.20486360788345337,
+            "baseline/documents/counterfactual/max": 0.1797562837600708,
+            "baseline/documents/counterfactual/zero_frac": 0.30493950843811035,
+            "reward/ndcg_in_batch/n_distinct": 172.875,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 3407,
+          "gradient_norm": 65.84462224307205,
+          "reward_mean": 0.6725951433181763,
+          "loss": -16.241147994995117,
+          "metrics": {
+            "exploration/own_boundary_pairs": 5.9375,
+            "exploration/own_boundary_flip_rate": 0.21880139410495758,
+            "reward/ndcg_in_batch/query/group_std": 0.019507158547639847,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.023459535092115402,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": 0.0002389262372162193,
+            "baseline/documents/counterfactual/std": 0.028998898342251778,
+            "baseline/documents/counterfactual/min": -0.18764591217041016,
+            "baseline/documents/counterfactual/max": 0.17890627682209015,
+            "baseline/documents/counterfactual/zero_frac": 0.30645161867141724,
+            "reward/ndcg_in_batch/n_distinct": 179.5625,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 2026,
+          "gradient_norm": 66.85957242676312,
+          "reward_mean": 0.6712534427642822,
+          "loss": 18.89011573791504,
+          "metrics": {
+            "exploration/own_boundary_pairs": 5.9375,
+            "exploration/own_boundary_flip_rate": 0.21955181658267975,
+            "reward/ndcg_in_batch/query/group_std": 0.019760843366384506,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.02363533340394497,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": -0.00027872747159563005,
+            "baseline/documents/counterfactual/std": 0.029278112575411797,
+            "baseline/documents/counterfactual/min": -0.20601315796375275,
+            "baseline/documents/counterfactual/max": 0.17890630662441254,
+            "baseline/documents/counterfactual/zero_frac": 0.2953628897666931,
+            "reward/ndcg_in_batch/n_distinct": 171.6875,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 0,
+          "gradient_norm": 63.373557906591294,
+          "reward_mean": 0.6713091135025024,
+          "loss": -14.938846588134766,
+          "metrics": {
+            "exploration/own_boundary_pairs": 5.9375,
+            "exploration/own_boundary_flip_rate": 0.21871915459632874,
+            "reward/ndcg_in_batch/query/group_std": 0.019311249256134033,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.025489049032330513,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": 0.0002204515039920807,
+            "baseline/documents/counterfactual/std": 0.02846353128552437,
+            "baseline/documents/counterfactual/min": -0.19279265403747559,
+            "baseline/documents/counterfactual/max": 0.17890627682209015,
+            "baseline/documents/counterfactual/zero_frac": 0.30405744910240173,
+            "reward/ndcg_in_batch/n_distinct": 173.625,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 1,
+          "gradient_norm": 68.42565931337903,
+          "reward_mean": 0.6732797622680664,
+          "loss": -7.996580123901367,
+          "metrics": {
+            "exploration/own_boundary_pairs": 5.9375,
+            "exploration/own_boundary_flip_rate": 0.22421875596046448,
+            "reward/ndcg_in_batch/query/group_std": 0.021510403603315353,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.023006588220596313,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": 0.00011738087778212503,
+            "baseline/documents/counterfactual/std": 0.02886076271533966,
+            "baseline/documents/counterfactual/min": -0.20006050169467926,
+            "baseline/documents/counterfactual/max": 0.17890626192092896,
+            "baseline/documents/counterfactual/zero_frac": 0.3070816397666931,
+            "reward/ndcg_in_batch/n_distinct": 181.5,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 2,
+          "gradient_norm": 65.27089492014595,
+          "reward_mean": 0.6733301281929016,
+          "loss": -16.003332138061523,
+          "metrics": {
+            "exploration/own_boundary_pairs": 5.9375,
+            "exploration/own_boundary_flip_rate": 0.22015830874443054,
+            "reward/ndcg_in_batch/query/group_std": 0.021105842664837837,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.023513827472925186,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": 0.00023559827241115272,
+            "baseline/documents/counterfactual/std": 0.02850589156150818,
+            "baseline/documents/counterfactual/min": -0.18172365427017212,
+            "baseline/documents/counterfactual/max": 0.17890629172325134,
+            "baseline/documents/counterfactual/zero_frac": 0.30393144488334656,
+            "reward/ndcg_in_batch/n_distinct": 170.9375,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 3,
+          "gradient_norm": 69.17877257924476,
+          "reward_mean": 0.6727749109268188,
+          "loss": 0.32795512676239014,
+          "metrics": {
+            "exploration/own_boundary_pairs": 5.9375,
+            "exploration/own_boundary_flip_rate": 0.21829769015312195,
+            "reward/ndcg_in_batch/query/group_std": 0.021510928869247437,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.024332687258720398,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": -1.2701888181254617e-06,
+            "baseline/documents/counterfactual/std": 0.028968241065740585,
+            "baseline/documents/counterfactual/min": -0.20190152525901794,
+            "baseline/documents/counterfactual/max": 0.179756298661232,
+            "baseline/documents/counterfactual/zero_frac": 0.3012852668762207,
+            "reward/ndcg_in_batch/n_distinct": 173.1875,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 4,
+          "gradient_norm": 65.75662243016329,
+          "reward_mean": 0.6714776158332825,
+          "loss": 5.4648566246032715,
+          "metrics": {
+            "exploration/own_boundary_pairs": 5.9375,
+            "exploration/own_boundary_flip_rate": 0.21763980388641357,
+            "reward/ndcg_in_batch/query/group_std": 0.020906314253807068,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.023230884224176407,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": -8.210998930735514e-05,
+            "baseline/documents/counterfactual/std": 0.028061261400580406,
+            "baseline/documents/counterfactual/min": -0.17890629172325134,
+            "baseline/documents/counterfactual/max": 0.17890629172325134,
+            "baseline/documents/counterfactual/zero_frac": 0.3043094575405121,
+            "reward/ndcg_in_batch/n_distinct": 169.4375,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 5,
+          "gradient_norm": 67.69773114067704,
+          "reward_mean": 0.6749195456504822,
+          "loss": -20.100631713867188,
+          "metrics": {
+            "exploration/own_boundary_pairs": 5.9375,
+            "exploration/own_boundary_flip_rate": 0.21627262234687805,
+            "reward/ndcg_in_batch/query/group_std": 0.019494589418172836,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.023495778441429138,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": 0.00029731678660027683,
+            "baseline/documents/counterfactual/std": 0.028943270444869995,
+            "baseline/documents/counterfactual/min": -0.18745027482509613,
+            "baseline/documents/counterfactual/max": 0.17890629172325134,
+            "baseline/documents/counterfactual/zero_frac": 0.30682963132858276,
+            "reward/ndcg_in_batch/n_distinct": 175.1875,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 6,
+          "gradient_norm": 68.56530246125902,
+          "reward_mean": 0.6721547245979309,
+          "loss": -17.633960723876953,
+          "metrics": {
+            "exploration/own_boundary_pairs": 5.9375,
+            "exploration/own_boundary_flip_rate": 0.21783511340618134,
+            "reward/ndcg_in_batch/query/group_std": 0.019364967942237854,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.025406163185834885,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": 0.0002576541737653315,
+            "baseline/documents/counterfactual/std": 0.028722625225782394,
+            "baseline/documents/counterfactual/min": -0.19753596186637878,
+            "baseline/documents/counterfactual/max": 0.17890629172325134,
+            "baseline/documents/counterfactual/zero_frac": 0.3002772033214569,
+            "reward/ndcg_in_batch/n_distinct": 174.0,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 7,
+          "gradient_norm": 70.06204443043715,
+          "reward_mean": 0.6701112985610962,
+          "loss": 23.230791091918945,
+          "metrics": {
+            "exploration/own_boundary_pairs": 5.9375,
+            "exploration/own_boundary_flip_rate": 0.21746504306793213,
+            "reward/ndcg_in_batch/query/group_std": 0.021069057285785675,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.02423412725329399,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": -0.00034409514046274126,
+            "baseline/documents/counterfactual/std": 0.02931605651974678,
+            "baseline/documents/counterfactual/min": -0.18594637513160706,
+            "baseline/documents/counterfactual/max": 0.17890629172325134,
+            "baseline/documents/counterfactual/zero_frac": 0.30015119910240173,
+            "reward/ndcg_in_batch/n_distinct": 175.0625,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 8,
+          "gradient_norm": 65.95252683646403,
+          "reward_mean": 0.6736706495285034,
+          "loss": 7.89742374420166,
+          "metrics": {
+            "exploration/own_boundary_pairs": 5.9375,
+            "exploration/own_boundary_flip_rate": 0.2134046107530594,
+            "reward/ndcg_in_batch/query/group_std": 0.018886934965848923,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.023825712502002716,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": -0.00011940857075387612,
+            "baseline/documents/counterfactual/std": 0.028921812772750854,
+            "baseline/documents/counterfactual/min": -0.20290327072143555,
+            "baseline/documents/counterfactual/max": 0.179756298661232,
+            "baseline/documents/counterfactual/zero_frac": 0.3084677457809448,
+            "reward/ndcg_in_batch/n_distinct": 172.5625,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 9,
+          "gradient_norm": 62.80483146250136,
+          "reward_mean": 0.6737529039382935,
+          "loss": -29.258886337280273,
+          "metrics": {
+            "exploration/own_boundary_pairs": 5.9375,
+            "exploration/own_boundary_flip_rate": 0.21818462014198303,
+            "reward/ndcg_in_batch/query/group_std": 0.020697012543678284,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.022185783833265305,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": 0.00043290815665386617,
+            "baseline/documents/counterfactual/std": 0.02845948375761509,
+            "baseline/documents/counterfactual/min": -0.17890626192092896,
+            "baseline/documents/counterfactual/max": 0.17890627682209015,
+            "baseline/documents/counterfactual/zero_frac": 0.29763102531433105,
+            "reward/ndcg_in_batch/n_distinct": 168.25,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 10,
+          "gradient_norm": 69.11105415630304,
+          "reward_mean": 0.6727854013442993,
+          "loss": 2.7201855182647705,
+          "metrics": {
+            "exploration/own_boundary_pairs": 5.9375,
+            "exploration/own_boundary_flip_rate": 0.2200966328382492,
+            "reward/ndcg_in_batch/query/group_std": 0.01935553178191185,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.02478022687137127,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": -4.114303010283038e-05,
+            "baseline/documents/counterfactual/std": 0.029314210638403893,
+            "baseline/documents/counterfactual/min": -0.1926347017288208,
+            "baseline/documents/counterfactual/max": 0.17890627682209015,
+            "baseline/documents/counterfactual/zero_frac": 0.3080897033214569,
+            "reward/ndcg_in_batch/n_distinct": 169.0625,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 11,
+          "gradient_norm": 66.55147925007623,
+          "reward_mean": 0.6722025275230408,
+          "loss": -3.100261688232422,
+          "metrics": {
+            "exploration/own_boundary_pairs": 5.9375,
+            "exploration/own_boundary_flip_rate": 0.21809209883213043,
+            "reward/ndcg_in_batch/query/group_std": 0.01946275681257248,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.024543222039937973,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": 4.785599230672233e-05,
+            "baseline/documents/counterfactual/std": 0.028647080063819885,
+            "baseline/documents/counterfactual/min": -0.1832323968410492,
+            "baseline/documents/counterfactual/max": 0.1797563135623932,
+            "baseline/documents/counterfactual/zero_frac": 0.3089717626571655,
+            "reward/ndcg_in_batch/n_distinct": 170.3125,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 12,
+          "gradient_norm": 67.59206711126218,
+          "reward_mean": 0.6724333167076111,
+          "loss": -17.882734298706055,
+          "metrics": {
+            "exploration/own_boundary_pairs": 5.9375,
+            "exploration/own_boundary_flip_rate": 0.22066201269626617,
+            "reward/ndcg_in_batch/query/group_std": 0.01934170164167881,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.024814311414957047,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": 0.000265732902335003,
+            "baseline/documents/counterfactual/std": 0.028855787590146065,
+            "baseline/documents/counterfactual/min": -0.18984250724315643,
+            "baseline/documents/counterfactual/max": 0.17890629172325134,
+            "baseline/documents/counterfactual/zero_frac": 0.3061995804309845,
+            "reward/ndcg_in_batch/n_distinct": 170.0625,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        }
+      ]
+    },
+    {
+      "batches": [
+        {
+          "sampler_microbatch_index": 2,
+          "dataset_positions": [
+            3552,
+            3553,
+            3554,
+            3555,
+            3556,
+            3557,
+            3558,
+            3559,
+            3560,
+            3561,
+            3562,
+            3563,
+            3564,
+            3565,
+            3566,
+            3567
+          ],
+          "record_ids": [
+            "reasonrank/train/1754",
+            "reasonrank/train/2078",
+            "reasonrank/train/1757",
+            "reasonrank/train/1723",
+            "reasonrank/train/2189",
+            "reasonrank/train/2347",
+            "reasonrank/train/2369",
+            "reasonrank/train/1635",
+            "reasonrank/train/2334",
+            "reasonrank/train/2065",
+            "reasonrank/train/2031",
+            "reasonrank/train/1567",
+            "reasonrank/train/1859",
+            "reasonrank/train/1636",
+            "reasonrank/train/1934",
+            "reasonrank/train/1589"
+          ],
+          "sources": [
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology"
+          ],
+          "tensor_sha256": "523cd568d2b4c05bd3b9fd33c9c996d4a0e19dd16540d8ec02350f1ae33e8b19"
+        }
+      ],
+      "summary": {
+        "draws": 16,
+        "zero_gradient_draws": 0,
+        "mean_gradient_norm": 21.03809285282937,
+        "gradient_norm_mean": 77.47287322378027,
+        "gradient_norm_min": 75.191979836688,
+        "gradient_norm_max": 80.29118973896419,
+        "noise_rms": 77.02164881123971,
+        "noise_to_mean_ratio": 3.6610566057503275,
+        "mean_pairwise_cosine": 0.011735273202200958
+      },
+      "draws": [
+        {
+          "rollout_seed": 42,
+          "gradient_norm": 77.49434578313218,
+          "reward_mean": 0.7414655685424805,
+          "loss": 147.84622192382812,
+          "metrics": {
+            "exploration/own_boundary_pairs": 6.3125,
+            "exploration/own_boundary_flip_rate": 0.24930383265018463,
+            "reward/ndcg_in_batch/query/group_std": 0.021479789167642593,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.023039771243929863,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": -0.0020777166355401278,
+            "baseline/documents/counterfactual/std": 0.031302858144044876,
+            "baseline/documents/counterfactual/min": -0.25730687379837036,
+            "baseline/documents/counterfactual/max": 0.18056564033031464,
+            "baseline/documents/counterfactual/zero_frac": 0.3600335121154785,
+            "reward/ndcg_in_batch/n_distinct": 219.125,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 3407,
+          "gradient_norm": 79.26616093021312,
+          "reward_mean": 0.7423413991928101,
+          "loss": 133.37318420410156,
+          "metrics": {
+            "exploration/own_boundary_pairs": 6.3125,
+            "exploration/own_boundary_flip_rate": 0.2537612020969391,
+            "reward/ndcg_in_batch/query/group_std": 0.022265508770942688,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.02328558638691902,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": -0.0018759258091449738,
+            "baseline/documents/counterfactual/std": 0.03174915164709091,
+            "baseline/documents/counterfactual/min": -0.2603015899658203,
+            "baseline/documents/counterfactual/max": 0.1758289486169815,
+            "baseline/documents/counterfactual/zero_frac": 0.3607518970966339,
+            "reward/ndcg_in_batch/n_distinct": 221.6875,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 2026,
+          "gradient_norm": 75.32035875639713,
+          "reward_mean": 0.7402315139770508,
+          "loss": 161.9952392578125,
+          "metrics": {
+            "exploration/own_boundary_pairs": 6.3125,
+            "exploration/own_boundary_flip_rate": 0.2540126144886017,
+            "reward/ndcg_in_batch/query/group_std": 0.021564699709415436,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.022373948246240616,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": -0.002277767052873969,
+            "baseline/documents/counterfactual/std": 0.032020434737205505,
+            "baseline/documents/counterfactual/min": -0.26110702753067017,
+            "baseline/documents/counterfactual/max": 0.16614285111427307,
+            "baseline/documents/counterfactual/zero_frac": 0.3625478744506836,
+            "reward/ndcg_in_batch/n_distinct": 224.0,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 0,
+          "gradient_norm": 78.24266204870356,
+          "reward_mean": 0.7396376729011536,
+          "loss": 163.42770385742188,
+          "metrics": {
+            "exploration/own_boundary_pairs": 6.3125,
+            "exploration/own_boundary_flip_rate": 0.2442566454410553,
+            "reward/ndcg_in_batch/query/group_std": 0.020056484267115593,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.02152915671467781,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": -0.0022970351856201887,
+            "baseline/documents/counterfactual/std": 0.03177684172987938,
+            "baseline/documents/counterfactual/min": -0.2647809684276581,
+            "baseline/documents/counterfactual/max": 0.16366998851299286,
+            "baseline/documents/counterfactual/zero_frac": 0.3548850417137146,
+            "reward/ndcg_in_batch/n_distinct": 206.375,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 1,
+          "gradient_norm": 78.58242235855666,
+          "reward_mean": 0.7426376938819885,
+          "loss": 153.35165405273438,
+          "metrics": {
+            "exploration/own_boundary_pairs": 6.3125,
+            "exploration/own_boundary_flip_rate": 0.25021272897720337,
+            "reward/ndcg_in_batch/query/group_std": 0.021776359528303146,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.024232035502791405,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": -0.0021560664754360914,
+            "baseline/documents/counterfactual/std": 0.03173947334289551,
+            "baseline/documents/counterfactual/min": -0.25492703914642334,
+            "baseline/documents/counterfactual/max": 0.17220257222652435,
+            "baseline/documents/counterfactual/zero_frac": 0.36482277512550354,
+            "reward/ndcg_in_batch/n_distinct": 218.5625,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 2,
+          "gradient_norm": 77.44984479837821,
+          "reward_mean": 0.7409676313400269,
+          "loss": 173.3236846923828,
+          "metrics": {
+            "exploration/own_boundary_pairs": 6.3125,
+            "exploration/own_boundary_flip_rate": 0.2493715137243271,
+            "reward/ndcg_in_batch/query/group_std": 0.02124960720539093,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.02275858446955681,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": -0.002435457194224,
+            "baseline/documents/counterfactual/std": 0.03235236555337906,
+            "baseline/documents/counterfactual/min": -0.26860877871513367,
+            "baseline/documents/counterfactual/max": 0.17367476224899292,
+            "baseline/documents/counterfactual/zero_frac": 0.3587164580821991,
+            "reward/ndcg_in_batch/n_distinct": 211.5,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 3,
+          "gradient_norm": 75.75062106637151,
+          "reward_mean": 0.7448139190673828,
+          "loss": 124.94964599609375,
+          "metrics": {
+            "exploration/own_boundary_pairs": 6.3125,
+            "exploration/own_boundary_flip_rate": 0.23894840478897095,
+            "reward/ndcg_in_batch/query/group_std": 0.02088935300707817,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.02322649396955967,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": -0.0017561158165335655,
+            "baseline/documents/counterfactual/std": 0.031333938241004944,
+            "baseline/documents/counterfactual/min": -0.2597721219062805,
+            "baseline/documents/counterfactual/max": 0.19416800141334534,
+            "baseline/documents/counterfactual/zero_frac": 0.3625478744506836,
+            "reward/ndcg_in_batch/n_distinct": 212.0,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 4,
+          "gradient_norm": 79.2717830299249,
+          "reward_mean": 0.7415614724159241,
+          "loss": 164.1501922607422,
+          "metrics": {
+            "exploration/own_boundary_pairs": 6.3125,
+            "exploration/own_boundary_flip_rate": 0.2458326816558838,
+            "reward/ndcg_in_batch/query/group_std": 0.018848158419132233,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.02391558140516281,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": -0.002308262512087822,
+            "baseline/documents/counterfactual/std": 0.03208896890282631,
+            "baseline/documents/counterfactual/min": -0.2656916379928589,
+            "baseline/documents/counterfactual/max": 0.19031578302383423,
+            "baseline/documents/counterfactual/zero_frac": 0.35991379618644714,
+            "reward/ndcg_in_batch/n_distinct": 217.875,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 5,
+          "gradient_norm": 78.8239315260165,
+          "reward_mean": 0.741598904132843,
+          "loss": 174.26133728027344,
+          "metrics": {
+            "exploration/own_boundary_pairs": 6.3125,
+            "exploration/own_boundary_flip_rate": 0.25128597021102905,
+            "reward/ndcg_in_batch/query/group_std": 0.020423121750354767,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.0213315412402153,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": -0.002448110841214657,
+            "baseline/documents/counterfactual/std": 0.032861415296792984,
+            "baseline/documents/counterfactual/min": -0.2606712579727173,
+            "baseline/documents/counterfactual/max": 0.19827884435653687,
+            "baseline/documents/counterfactual/zero_frac": 0.36757662892341614,
+            "reward/ndcg_in_batch/n_distinct": 224.0625,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 6,
+          "gradient_norm": 80.29118973896419,
+          "reward_mean": 0.7403613328933716,
+          "loss": 166.526611328125,
+          "metrics": {
+            "exploration/own_boundary_pairs": 6.3125,
+            "exploration/own_boundary_flip_rate": 0.24526222050189972,
+            "reward/ndcg_in_batch/query/group_std": 0.019343990832567215,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.023057887330651283,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": -0.0023408879060298204,
+            "baseline/documents/counterfactual/std": 0.03241646662354469,
+            "baseline/documents/counterfactual/min": -0.26518163084983826,
+            "baseline/documents/counterfactual/max": 0.18230633437633514,
+            "baseline/documents/counterfactual/zero_frac": 0.36470305919647217,
+            "reward/ndcg_in_batch/n_distinct": 219.5,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 7,
+          "gradient_norm": 75.191979836688,
+          "reward_mean": 0.7426629066467285,
+          "loss": 136.5375518798828,
+          "metrics": {
+            "exploration/own_boundary_pairs": 6.3125,
+            "exploration/own_boundary_flip_rate": 0.24737972021102905,
+            "reward/ndcg_in_batch/query/group_std": 0.019696302711963654,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.022634781897068024,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": -0.0019171119201928377,
+            "baseline/documents/counterfactual/std": 0.031889986246824265,
+            "baseline/documents/counterfactual/min": -0.25672444701194763,
+            "baseline/documents/counterfactual/max": 0.18807126581668854,
+            "baseline/documents/counterfactual/zero_frac": 0.36685821413993835,
+            "reward/ndcg_in_batch/n_distinct": 211.875,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 8,
+          "gradient_norm": 76.5524294601475,
+          "reward_mean": 0.7395849227905273,
+          "loss": 159.78289794921875,
+          "metrics": {
+            "exploration/own_boundary_pairs": 6.3125,
+            "exploration/own_boundary_flip_rate": 0.24868503212928772,
+            "reward/ndcg_in_batch/query/group_std": 0.02057267725467682,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.021767644211649895,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": -0.0022446936927735806,
+            "baseline/documents/counterfactual/std": 0.03145149350166321,
+            "baseline/documents/counterfactual/min": -0.23509284853935242,
+            "baseline/documents/counterfactual/max": 0.16687250137329102,
+            "baseline/documents/counterfactual/zero_frac": 0.35955458879470825,
+            "reward/ndcg_in_batch/n_distinct": 219.0625,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 9,
+          "gradient_norm": 76.88389764152781,
+          "reward_mean": 0.7402188181877136,
+          "loss": 175.61024475097656,
+          "metrics": {
+            "exploration/own_boundary_pairs": 6.3125,
+            "exploration/own_boundary_flip_rate": 0.24468208849430084,
+            "reward/ndcg_in_batch/query/group_std": 0.020454805344343185,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.022660603746771812,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": -0.002468761755153537,
+            "baseline/documents/counterfactual/std": 0.031870290637016296,
+            "baseline/documents/counterfactual/min": -0.2504085600376129,
+            "baseline/documents/counterfactual/max": 0.18696703016757965,
+            "baseline/documents/counterfactual/zero_frac": 0.36230841279029846,
+            "reward/ndcg_in_batch/n_distinct": 223.3125,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 10,
+          "gradient_norm": 77.39872382540814,
+          "reward_mean": 0.7412993311882019,
+          "loss": 164.93443298339844,
+          "metrics": {
+            "exploration/own_boundary_pairs": 6.3125,
+            "exploration/own_boundary_flip_rate": 0.24307703971862793,
+            "reward/ndcg_in_batch/query/group_std": 0.01953187584877014,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.02271144464612007,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": -0.0023176504764705896,
+            "baseline/documents/counterfactual/std": 0.03232438489794731,
+            "baseline/documents/counterfactual/min": -0.26954546570777893,
+            "baseline/documents/counterfactual/max": 0.17525815963745117,
+            "baseline/documents/counterfactual/zero_frac": 0.3655411899089813,
+            "reward/ndcg_in_batch/n_distinct": 214.4375,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 11,
+          "gradient_norm": 76.36732956762921,
+          "reward_mean": 0.7419298887252808,
+          "loss": 152.28993225097656,
+          "metrics": {
+            "exploration/own_boundary_pairs": 6.3125,
+            "exploration/own_boundary_flip_rate": 0.24652884900569916,
+            "reward/ndcg_in_batch/query/group_std": 0.020241450518369675,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.022682543843984604,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": -0.002143135527148843,
+            "baseline/documents/counterfactual/std": 0.03207089379429817,
+            "baseline/documents/counterfactual/min": -0.25996705889701843,
+            "baseline/documents/counterfactual/max": 0.1687019318342209,
+            "baseline/documents/counterfactual/zero_frac": 0.35775861144065857,
+            "reward/ndcg_in_batch/n_distinct": 217.25,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 12,
+          "gradient_norm": 76.67829121242566,
+          "reward_mean": 0.7403970956802368,
+          "loss": 173.3399200439453,
+          "metrics": {
+            "exploration/own_boundary_pairs": 6.3125,
+            "exploration/own_boundary_flip_rate": 0.2458326816558838,
+            "reward/ndcg_in_batch/query/group_std": 0.019587188959121704,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0,
+            "reward/ndcg_in_batch/documents/group_std": 0.024173438549041748,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0,
+            "baseline/documents/counterfactual/mean": -0.0024361121468245983,
+            "baseline/documents/counterfactual/std": 0.032688774168491364,
+            "baseline/documents/counterfactual/min": -0.2577770948410034,
+            "baseline/documents/counterfactual/max": 0.19505661725997925,
+            "baseline/documents/counterfactual/zero_frac": 0.36374521255493164,
+            "reward/ndcg_in_batch/n_distinct": 219.0625,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        }
+      ]
+    }
+  ]
+}

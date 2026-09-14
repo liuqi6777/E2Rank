@@ -1,0 +1,4753 @@
+{
+  "run": "G1-A-BinaryNDCGAlign090",
+  "config": {
+    "bf16": true,
+    "tf32": true,
+    "per_device_train_batch_size": 16,
+    "gradient_checkpointing": true,
+    "gradient_accumulation_steps": 1,
+    "learning_rate": 5e-06,
+    "warmup_ratio": 0.03,
+    "lr_scheduler_type": "linear",
+    "weight_decay": 0.01,
+    "num_train_epochs": 1,
+    "logging_strategy": "steps",
+    "logging_steps": 1,
+    "save_strategy": "steps",
+    "save_steps": 25,
+    "overwrite_output_dir": false,
+    "remove_unused_columns": false,
+    "report_to": "wandb",
+    "seed": 42,
+    "lora_enabled": false,
+    "model_name_or_path": "Qwen/Qwen3-Embedding-0.6B",
+    "pooling_method": "last",
+    "padding_side": "left",
+    "append_token": "pad",
+    "query_prompt_template": "Instruct: {task_description}\nQuery:{query}",
+    "document_prompt_template": "{document}",
+    "embedding_max_length": 8192,
+    "deepspeed": "./scripts/zero3.json",
+    "mteb_eval_tasks": null,
+    "mteb_eval_benchmark": null,
+    "mteb_eval_langs": null,
+    "mteb_eval_output_dir": null,
+    "mteb_eval_batch_size": 16,
+    "mteb_eval_precision": "fp16",
+    "mteb_eval_model_kwargs": null,
+    "mteb_eval_encode_kwargs": null,
+    "mteb_eval_run_kwargs": null,
+    "document_encoder_mode": "joint",
+    "frozen_document_verify_hashes": true,
+    "frozen_document_index_backend": "lookup",
+    "frozen_document_search_batch_size": 1024,
+    "data_path": "data/processed/reasonrank_multi/train.ready.jsonl",
+    "per_dataset_max_samples": null,
+    "q_max_len": 512,
+    "d_max_len": 1024,
+    "relevance_scheme": "binary",
+    "slate_size": 20,
+    "file_glob": "*.jsonl",
+    "batch_per_length_bucket": false,
+    "index_cache_dir": ".cache/dataset_index/g1",
+    "dev_samples_per_source": 0,
+    "max_steps": 113,
+    "data_seed": 42,
+    "optim": "adamw_torch",
+    "max_grad_norm": 1.0,
+    "save_total_limit": 2,
+    "action_components": [
+      [
+        "query"
+      ],
+      [
+        "positive",
+        "negative"
+      ]
+    ],
+    "group_size": 32,
+    "kappa": 755,
+    "sigma_learnable": false,
+    "advantage_norm": "none",
+    "sampling_law": "vmf",
+    "rollout": "product",
+    "frozen_doc_rescale": true,
+    "advantage_baseline": "leave_one_out",
+    "in_batch_use_sampled_documents": false,
+    "kl_coef": 0,
+    "document_log_prob_reduction": "sum",
+    "target_alignment": 0.9,
+    "final_alignment": null,
+    "exploration_schedule": "fixed",
+    "reward_type": "ndcg_in_batch",
+    "reward_ndcg_k": 10,
+    "ndcg_in_batch_include_negatives": false,
+    "output_dir": "/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027/G1-A-BinaryNDCGAlign090-s42",
+    "run_name": "G1-A-BinaryNDCGAlign090",
+    "document_advantage_baseline": "shared",
+    "rollout_seed": 42
+  },
+  "step": 0,
+  "precision": "bf16",
+  "device": "cuda:0",
+  "training_seed": 42,
+  "rollout_seeds": [
+    42,
+    3407,
+    2026,
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12
+  ],
+  "checkpoint_state": null,
+  "checkpoint_weights_sha256": {},
+  "model_commit_hash": "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3",
+  "data_sha256": "59a9b2bc4f2ce7a0a890bc471b8ef784e3f92e01294523b2affd39f285b39a38",
+  "git_commit": "c918bd8bec116fef51232427509b823cd167d2af",
+  "git_dirty": true,
+  "torch_version": "2.6.0+cu124",
+  "gradient_space": "all trainable parameters; raw loss gradient before optimizer/clipping",
+  "dropout": "disabled",
+  "microbatch_size": 16,
+  "microbatches_per_probe": 8,
+  "parameters": [
+    {
+      "name": "model.embed_tokens.weight",
+      "shape": [
+        151669,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.0.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.0.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.0.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.0.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.0.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.0.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.0.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.0.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.0.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.0.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.0.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.1.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.1.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.1.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.1.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.1.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.1.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.1.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.1.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.1.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.1.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.1.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.2.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.2.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.2.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.2.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.2.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.2.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.2.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.2.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.2.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.2.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.2.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.3.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.3.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.3.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.3.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.3.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.3.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.3.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.3.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.3.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.3.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.3.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.4.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.4.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.4.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.4.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.4.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.4.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.4.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.4.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.4.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.4.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.4.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.5.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.5.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.5.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.5.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.5.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.5.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.5.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.5.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.5.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.5.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.5.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.6.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.6.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.6.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.6.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.6.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.6.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.6.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.6.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.6.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.6.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.6.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.7.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.7.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.7.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.7.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.7.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.7.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.7.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.7.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.7.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.7.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.7.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.8.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.8.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.8.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.8.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.8.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.8.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.8.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.8.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.8.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.8.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.8.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.9.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.9.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.9.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.9.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.9.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.9.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.9.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.9.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.9.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.9.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.9.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.10.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.10.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.10.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.10.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.10.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.10.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.10.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.10.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.10.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.10.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.10.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.11.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.11.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.11.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.11.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.11.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.11.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.11.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.11.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.11.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.11.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.11.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.12.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.12.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.12.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.12.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.12.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.12.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.12.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.12.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.12.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.12.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.12.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.13.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.13.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.13.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.13.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.13.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.13.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.13.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.13.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.13.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.13.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.13.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.14.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.14.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.14.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.14.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.14.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.14.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.14.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.14.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.14.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.14.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.14.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.15.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.15.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.15.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.15.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.15.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.15.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.15.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.15.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.15.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.15.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.15.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.16.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.16.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.16.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.16.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.16.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.16.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.16.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.16.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.16.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.16.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.16.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.17.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.17.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.17.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.17.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.17.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.17.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.17.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.17.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.17.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.17.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.17.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.18.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.18.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.18.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.18.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.18.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.18.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.18.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.18.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.18.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.18.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.18.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.19.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.19.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.19.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.19.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.19.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.19.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.19.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.19.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.19.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.19.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.19.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.20.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.20.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.20.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.20.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.20.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.20.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.20.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.20.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.20.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.20.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.20.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.21.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.21.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.21.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.21.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.21.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.21.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.21.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.21.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.21.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.21.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.21.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.22.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.22.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.22.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.22.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.22.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.22.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.22.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.22.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.22.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.22.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.22.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.23.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.23.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.23.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.23.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.23.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.23.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.23.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.23.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.23.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.23.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.23.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.24.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.24.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.24.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.24.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.24.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.24.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.24.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.24.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.24.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.24.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.24.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.25.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.25.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.25.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.25.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.25.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.25.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.25.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.25.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.25.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.25.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.25.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.26.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.26.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.26.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.26.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.26.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.26.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.26.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.26.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.26.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.26.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.26.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.27.self_attn.q_proj.weight",
+      "shape": [
+        2048,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.27.self_attn.k_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.27.self_attn.v_proj.weight",
+      "shape": [
+        1024,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.27.self_attn.o_proj.weight",
+      "shape": [
+        1024,
+        2048
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.27.self_attn.q_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.27.self_attn.k_norm.weight",
+      "shape": [
+        128
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.27.mlp.gate_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.27.mlp.up_proj.weight",
+      "shape": [
+        3072,
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.27.mlp.down_proj.weight",
+      "shape": [
+        1024,
+        3072
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.27.input_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.layers.27.post_attention_layernorm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    },
+    {
+      "name": "model.norm.weight",
+      "shape": [
+        1024
+      ],
+      "dtype": "torch.float32"
+    }
+  ],
+  "probes": [
+    {
+      "batches": [
+        {
+          "sampler_microbatch_index": 0,
+          "dataset_positions": [
+            2112,
+            2113,
+            2114,
+            2115,
+            2116,
+            2117,
+            2118,
+            2119,
+            2120,
+            2121,
+            2122,
+            2123,
+            2124,
+            2125,
+            2126,
+            2127
+          ],
+          "record_ids": [
+            "reasonrank/train/4353",
+            "reasonrank/train/4665",
+            "reasonrank/train/4845",
+            "reasonrank/train/5058",
+            "reasonrank/train/4821",
+            "reasonrank/train/4548",
+            "reasonrank/train/4940",
+            "reasonrank/train/4975",
+            "reasonrank/train/4755",
+            "reasonrank/train/4338",
+            "reasonrank/train/4483",
+            "reasonrank/train/4658",
+            "reasonrank/train/4978",
+            "reasonrank/train/4379",
+            "reasonrank/train/4307",
+            "reasonrank/train/4581"
+          ],
+          "sources": [
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode"
+          ],
+          "tensor_sha256": "a72b559e5a92afeb0480fed247be9d9dabe94e7c810b80fce1fda6033fa2c873"
+        },
+        {
+          "sampler_microbatch_index": 1,
+          "dataset_positions": [
+            3808,
+            3809,
+            3810,
+            3811,
+            3812,
+            3813,
+            3814,
+            3815,
+            3816,
+            3817,
+            3818,
+            3819,
+            3820,
+            3821,
+            3822,
+            3823
+          ],
+          "record_ids": [
+            "reasonrank/train/1781",
+            "reasonrank/train/2111",
+            "reasonrank/train/2037",
+            "reasonrank/train/2014",
+            "reasonrank/train/1615",
+            "reasonrank/train/1891",
+            "reasonrank/train/2300",
+            "reasonrank/train/1909",
+            "reasonrank/train/1956",
+            "reasonrank/train/2275",
+            "reasonrank/train/2132",
+            "reasonrank/train/2039",
+            "reasonrank/train/1844",
+            "reasonrank/train/2229",
+            "reasonrank/train/1890",
+            "reasonrank/train/2117"
+          ],
+          "sources": [
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology"
+          ],
+          "tensor_sha256": "2eeced76a9cbc9723ab260ae9ea6099a2ca7e8ed13653fb763ce85780fbe5580"
+        },
+        {
+          "sampler_microbatch_index": 2,
+          "dataset_positions": [
+            3552,
+            3553,
+            3554,
+            3555,
+            3556,
+            3557,
+            3558,
+            3559,
+            3560,
+            3561,
+            3562,
+            3563,
+            3564,
+            3565,
+            3566,
+            3567
+          ],
+          "record_ids": [
+            "reasonrank/train/1754",
+            "reasonrank/train/2078",
+            "reasonrank/train/1757",
+            "reasonrank/train/1723",
+            "reasonrank/train/2189",
+            "reasonrank/train/2347",
+            "reasonrank/train/2369",
+            "reasonrank/train/1635",
+            "reasonrank/train/2334",
+            "reasonrank/train/2065",
+            "reasonrank/train/2031",
+            "reasonrank/train/1567",
+            "reasonrank/train/1859",
+            "reasonrank/train/1636",
+            "reasonrank/train/1934",
+            "reasonrank/train/1589"
+          ],
+          "sources": [
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology"
+          ],
+          "tensor_sha256": "de9550442810dd165716e03be85db9c620475aa2eb89a19c335916193f4ae889"
+        },
+        {
+          "sampler_microbatch_index": 3,
+          "dataset_positions": [
+            928,
+            929,
+            930,
+            931,
+            932,
+            933,
+            934,
+            935,
+            936,
+            937,
+            938,
+            939,
+            940,
+            941,
+            942,
+            943
+          ],
+          "record_ids": [
+            "reasonrank/train/2099",
+            "reasonrank/train/1990",
+            "reasonrank/train/1761",
+            "reasonrank/train/1591",
+            "reasonrank/train/1915",
+            "reasonrank/train/1704",
+            "reasonrank/train/2063",
+            "reasonrank/train/1692",
+            "reasonrank/train/1755",
+            "reasonrank/train/1825",
+            "reasonrank/train/1946",
+            "reasonrank/train/1764",
+            "reasonrank/train/2190",
+            "reasonrank/train/1718",
+            "reasonrank/train/2140",
+            "reasonrank/train/1941"
+          ],
+          "sources": [
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology"
+          ],
+          "tensor_sha256": "91dab9b2219774b75da00b4376acfb8499eba68221cc713f59d3a32efc505298"
+        },
+        {
+          "sampler_microbatch_index": 4,
+          "dataset_positions": [
+            4288,
+            4289,
+            4290,
+            4291,
+            4292,
+            4293,
+            4294,
+            4295,
+            4296,
+            4297,
+            4298,
+            4299,
+            4300,
+            4301,
+            4302,
+            4303
+          ],
+          "record_ids": [
+            "reasonrank/train/4272",
+            "reasonrank/train/4693",
+            "reasonrank/train/4915",
+            "reasonrank/train/5050",
+            "reasonrank/train/4450",
+            "reasonrank/train/4543",
+            "reasonrank/train/4415",
+            "reasonrank/train/4616",
+            "reasonrank/train/4735",
+            "reasonrank/train/4970",
+            "reasonrank/train/4496",
+            "reasonrank/train/4651",
+            "reasonrank/train/4809",
+            "reasonrank/train/4698",
+            "reasonrank/train/4823",
+            "reasonrank/train/4738"
+          ],
+          "sources": [
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode"
+          ],
+          "tensor_sha256": "91cd80a5863957853bc5135775fbc2cb55177f1381700b11ed50bd03f8ea5615"
+        },
+        {
+          "sampler_microbatch_index": 5,
+          "dataset_positions": [
+            2144,
+            2145,
+            2146,
+            2147,
+            2148,
+            2149,
+            2150,
+            2151,
+            2152,
+            2153,
+            2154,
+            2155,
+            2156,
+            2157,
+            2158,
+            2159
+          ],
+          "record_ids": [
+            "reasonrank/train/5507",
+            "reasonrank/train/5918",
+            "reasonrank/train/5587",
+            "reasonrank/train/5366",
+            "reasonrank/train/5592",
+            "reasonrank/train/5784",
+            "reasonrank/train/5133",
+            "reasonrank/train/5112",
+            "reasonrank/train/5293",
+            "reasonrank/train/5341",
+            "reasonrank/train/5086",
+            "reasonrank/train/5141",
+            "reasonrank/train/5089",
+            "reasonrank/train/5146",
+            "reasonrank/train/5556",
+            "reasonrank/train/5249"
+          ],
+          "sources": [
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa"
+          ],
+          "tensor_sha256": "ca1ac7c110075d91c0d935f394df502bfa80b11c87f1acff3ac25b3905d07b73"
+        },
+        {
+          "sampler_microbatch_index": 6,
+          "dataset_positions": [
+            3616,
+            3617,
+            3618,
+            3619,
+            3620,
+            3621,
+            3622,
+            3623,
+            3624,
+            3625,
+            3626,
+            3627,
+            3628,
+            3629,
+            3630,
+            3631
+          ],
+          "record_ids": [
+            "reasonrank/train/3859",
+            "reasonrank/train/3992",
+            "reasonrank/train/3713",
+            "reasonrank/train/3814",
+            "reasonrank/train/4113",
+            "reasonrank/train/3667",
+            "reasonrank/train/4198",
+            "reasonrank/train/3966",
+            "reasonrank/train/3675",
+            "reasonrank/train/3643",
+            "reasonrank/train/3591",
+            "reasonrank/train/4159",
+            "reasonrank/train/4053",
+            "reasonrank/train/3463",
+            "reasonrank/train/3951",
+            "reasonrank/train/3662"
+          ],
+          "sources": [
+            "stackoverflow",
+            "stackoverflow",
+            "stackoverflow",
+            "stackoverflow",
+            "stackoverflow",
+            "stackoverflow",
+            "stackoverflow",
+            "stackoverflow",
+            "stackoverflow",
+            "stackoverflow",
+            "stackoverflow",
+            "stackoverflow",
+            "stackoverflow",
+            "stackoverflow",
+            "stackoverflow",
+            "stackoverflow"
+          ],
+          "tensor_sha256": "de328acf0f074462600f0fd3913f6fd5afa159adaa7f1bc4f7879dc73f68bf94"
+        },
+        {
+          "sampler_microbatch_index": 7,
+          "dataset_positions": [
+            3968,
+            3969,
+            3970,
+            3971,
+            3972,
+            3973,
+            3974,
+            3975,
+            3976,
+            3977,
+            3978,
+            3979,
+            3980,
+            3981,
+            3982,
+            3983
+          ],
+          "record_ids": [
+            "reasonrank/train/6643",
+            "reasonrank/train/6454",
+            "reasonrank/train/6411",
+            "reasonrank/train/6313",
+            "reasonrank/train/6216",
+            "reasonrank/train/6139",
+            "reasonrank/train/6305",
+            "reasonrank/train/5986",
+            "reasonrank/train/6403",
+            "reasonrank/train/5968",
+            "reasonrank/train/6191",
+            "reasonrank/train/5994",
+            "reasonrank/train/6141",
+            "reasonrank/train/6660",
+            "reasonrank/train/6663",
+            "reasonrank/train/5964"
+          ],
+          "sources": [
+            "math-theorem",
+            "math-theorem",
+            "math-theorem",
+            "math-theorem",
+            "math-theorem",
+            "math-theorem",
+            "math-theorem",
+            "math-theorem",
+            "math-theorem",
+            "math-theorem",
+            "math-theorem",
+            "math-theorem",
+            "math-theorem",
+            "math-theorem",
+            "math-theorem",
+            "math-theorem"
+          ],
+          "tensor_sha256": "ff13bb5ee8eacaf6d3971b7954a1aed84f255d04d904f7617eeb726a33f720f0"
+        }
+      ],
+      "summary": {
+        "draws": 16,
+        "zero_gradient_draws": 0,
+        "mean_gradient_norm": 12.081820039146598,
+        "gradient_norm_mean": 43.542201692676116,
+        "gradient_norm_min": 41.273023791834476,
+        "gradient_norm_max": 46.031354329836425,
+        "noise_rms": 43.224670433531536,
+        "noise_to_mean_ratio": 3.5776621645975717,
+        "mean_pairwise_cosine": 0.015352794187008974
+      },
+      "draws": [
+        {
+          "rollout_seed": 42,
+          "gradient_norm": 44.05350490750429,
+          "reward_mean": 0.5360939726233482,
+          "loss": -0.13149188831448555,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.9921875,
+            "exploration/own_boundary_flip_rate": 0.24022228084504604,
+            "reward/ndcg_in_batch/query/group_std": 0.032663957215845585,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0546875,
+            "reward/ndcg_in_batch/documents/group_std": 0.038550547789782286,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0546875,
+            "reward/ndcg_in_batch/n_distinct": 40.9921875,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 3407,
+          "gradient_norm": 41.79227456321098,
+          "reward_mean": 0.5351775921881199,
+          "loss": -0.05007138755172491,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.9921875,
+            "exploration/own_boundary_flip_rate": 0.23647931963205338,
+            "reward/ndcg_in_batch/query/group_std": 0.0309570690151304,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0546875,
+            "reward/ndcg_in_batch/documents/group_std": 0.037609517108649015,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0546875,
+            "reward/ndcg_in_batch/n_distinct": 40.8984375,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 2026,
+          "gradient_norm": 44.445782171497996,
+          "reward_mean": 0.5339549519121647,
+          "loss": 0.07789772003889084,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.9921875,
+            "exploration/own_boundary_flip_rate": 0.23919851891696453,
+            "reward/ndcg_in_batch/query/group_std": 0.030850087059661746,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0625,
+            "reward/ndcg_in_batch/documents/group_std": 0.03851095074787736,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0625,
+            "reward/ndcg_in_batch/n_distinct": 40.5234375,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 0,
+          "gradient_norm": 43.85932720801915,
+          "reward_mean": 0.5372816435992718,
+          "loss": -0.03056277334690094,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.9921875,
+            "exploration/own_boundary_flip_rate": 0.23782863095402718,
+            "reward/ndcg_in_batch/query/group_std": 0.032454750733450055,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0546875,
+            "reward/ndcg_in_batch/documents/group_std": 0.03861005115322769,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0546875,
+            "reward/ndcg_in_batch/n_distinct": 40.765625,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 1,
+          "gradient_norm": 46.031354329836425,
+          "reward_mean": 0.5350484177470207,
+          "loss": 0.06376644223928452,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.9921875,
+            "exploration/own_boundary_flip_rate": 0.23925459012389183,
+            "reward/ndcg_in_batch/query/group_std": 0.032942189602181315,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0625,
+            "reward/ndcg_in_batch/documents/group_std": 0.03892659652046859,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0625,
+            "reward/ndcg_in_batch/n_distinct": 40.84375,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 2,
+          "gradient_norm": 42.67828244426261,
+          "reward_mean": 0.5364378169178963,
+          "loss": -0.05043765529990196,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.9921875,
+            "exploration/own_boundary_flip_rate": 0.23342145048081875,
+            "reward/ndcg_in_batch/query/group_std": 0.03138901712372899,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0546875,
+            "reward/ndcg_in_batch/documents/group_std": 0.03833189164288342,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0546875,
+            "reward/ndcg_in_batch/n_distinct": 40.8203125,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 3,
+          "gradient_norm": 41.273023791834476,
+          "reward_mean": 0.5352030582726002,
+          "loss": -0.00372188538312912,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.9921875,
+            "exploration/own_boundary_flip_rate": 0.23630956932902336,
+            "reward/ndcg_in_batch/query/group_std": 0.03198532317765057,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0546875,
+            "reward/ndcg_in_batch/documents/group_std": 0.038119628559798,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0546875,
+            "reward/ndcg_in_batch/n_distinct": 40.296875,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 4,
+          "gradient_norm": 44.16760844459994,
+          "reward_mean": 0.5355130583047867,
+          "loss": 0.0012957900762557983,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.9921875,
+            "exploration/own_boundary_flip_rate": 0.2395532801747322,
+            "reward/ndcg_in_batch/query/group_std": 0.031745562329888344,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0625,
+            "reward/ndcg_in_batch/documents/group_std": 0.03868200280703604,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0625,
+            "reward/ndcg_in_batch/n_distinct": 40.828125,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 5,
+          "gradient_norm": 43.32652917510983,
+          "reward_mean": 0.5355715863406658,
+          "loss": 0.06999742612242699,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.9921875,
+            "exploration/own_boundary_flip_rate": 0.24012657813727856,
+            "reward/ndcg_in_batch/query/group_std": 0.032726393546909094,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0625,
+            "reward/ndcg_in_batch/documents/group_std": 0.0389551657717675,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0625,
+            "reward/ndcg_in_batch/n_distinct": 40.9375,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 6,
+          "gradient_norm": 45.59627255687675,
+          "reward_mean": 0.5359663367271423,
+          "loss": 0.06003481522202492,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.9921875,
+            "exploration/own_boundary_flip_rate": 0.23873485065996647,
+            "reward/ndcg_in_batch/query/group_std": 0.03192738606594503,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0625,
+            "reward/ndcg_in_batch/documents/group_std": 0.03994642850011587,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0625,
+            "reward/ndcg_in_batch/n_distinct": 40.9609375,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 7,
+          "gradient_norm": 42.258908815206055,
+          "reward_mean": 0.5374524928629398,
+          "loss": -0.047987207770347595,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.9921875,
+            "exploration/own_boundary_flip_rate": 0.24141142889857292,
+            "reward/ndcg_in_batch/query/group_std": 0.03201051498763263,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0625,
+            "reward/ndcg_in_batch/documents/group_std": 0.03781586163677275,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0625,
+            "reward/ndcg_in_batch/n_distinct": 40.890625,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 8,
+          "gradient_norm": 44.264300175335606,
+          "reward_mean": 0.5360307209193707,
+          "loss": -0.09659179300069809,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.9921875,
+            "exploration/own_boundary_flip_rate": 0.24218531139194965,
+            "reward/ndcg_in_batch/query/group_std": 0.03175150277093053,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0546875,
+            "reward/ndcg_in_batch/documents/group_std": 0.03914955025538802,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0546875,
+            "reward/ndcg_in_batch/n_distinct": 41.046875,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 9,
+          "gradient_norm": 44.23920082285694,
+          "reward_mean": 0.5351016670465469,
+          "loss": 0.04113229364156723,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.9921875,
+            "exploration/own_boundary_flip_rate": 0.23832915909588337,
+            "reward/ndcg_in_batch/query/group_std": 0.03177944663912058,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0546875,
+            "reward/ndcg_in_batch/documents/group_std": 0.03912297100760043,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0546875,
+            "reward/ndcg_in_batch/n_distinct": 40.6875,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 10,
+          "gradient_norm": 42.315122871241044,
+          "reward_mean": 0.535011749714613,
+          "loss": 0.026362812146544456,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.9921875,
+            "exploration/own_boundary_flip_rate": 0.23830588534474373,
+            "reward/ndcg_in_batch/query/group_std": 0.03183652553707361,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0546875,
+            "reward/ndcg_in_batch/documents/group_std": 0.0386690937448293,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0546875,
+            "reward/ndcg_in_batch/n_distinct": 41.234375,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 11,
+          "gradient_norm": 42.50368312351574,
+          "reward_mean": 0.5359645634889603,
+          "loss": 0.11807099543511868,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.9921875,
+            "exploration/own_boundary_flip_rate": 0.2415057998150587,
+            "reward/ndcg_in_batch/query/group_std": 0.032154417829588056,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0546875,
+            "reward/ndcg_in_batch/documents/group_std": 0.03832887299358845,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0546875,
+            "reward/ndcg_in_batch/n_distinct": 40.203125,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 12,
+          "gradient_norm": 43.87005168191,
+          "reward_mean": 0.5337850078940392,
+          "loss": -0.009841393679380417,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.9921875,
+            "exploration/own_boundary_flip_rate": 0.2394782155752182,
+            "reward/ndcg_in_batch/query/group_std": 0.031822675839066505,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0625,
+            "reward/ndcg_in_batch/documents/group_std": 0.03867437387816608,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0625,
+            "reward/ndcg_in_batch/n_distinct": 41.359375,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        }
+      ]
+    },
+    {
+      "batches": [
+        {
+          "sampler_microbatch_index": 8,
+          "dataset_positions": [
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31
+          ],
+          "record_ids": [
+            "reasonrank/train/2644",
+            "reasonrank/train/2658",
+            "reasonrank/train/2499",
+            "reasonrank/train/2474",
+            "reasonrank/train/2507",
+            "reasonrank/train/2797",
+            "reasonrank/train/2455",
+            "reasonrank/train/2610",
+            "reasonrank/train/2551",
+            "reasonrank/train/2426",
+            "reasonrank/train/2755",
+            "reasonrank/train/2654",
+            "reasonrank/train/2633",
+            "reasonrank/train/2601",
+            "reasonrank/train/2439",
+            "reasonrank/train/2473"
+          ],
+          "sources": [
+            "economics",
+            "economics",
+            "economics",
+            "economics",
+            "economics",
+            "economics",
+            "economics",
+            "economics",
+            "economics",
+            "economics",
+            "economics",
+            "economics",
+            "economics",
+            "economics",
+            "economics",
+            "economics"
+          ],
+          "tensor_sha256": "cd28468e46ed7fe63e27904e9bcac77bf0bd51308bedf0c3f5b5f6a763ef4a62"
+        },
+        {
+          "sampler_microbatch_index": 9,
+          "dataset_positions": [
+            176,
+            177,
+            178,
+            179,
+            180,
+            181,
+            182,
+            183,
+            184,
+            185,
+            186,
+            187,
+            188,
+            189,
+            190,
+            191
+          ],
+          "record_ids": [
+            "reasonrank/train/5103",
+            "reasonrank/train/5654",
+            "reasonrank/train/5156",
+            "reasonrank/train/5244",
+            "reasonrank/train/5574",
+            "reasonrank/train/5528",
+            "reasonrank/train/5806",
+            "reasonrank/train/5499",
+            "reasonrank/train/5577",
+            "reasonrank/train/5778",
+            "reasonrank/train/5492",
+            "reasonrank/train/5580",
+            "reasonrank/train/5744",
+            "reasonrank/train/5591",
+            "reasonrank/train/5651",
+            "reasonrank/train/5467"
+          ],
+          "sources": [
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa"
+          ],
+          "tensor_sha256": "3fe1338cdf99d03c6d9a17847a73862e667936a3d12a4e84906243bceb9daeb6"
+        },
+        {
+          "sampler_microbatch_index": 10,
+          "dataset_positions": [
+            1984,
+            1985,
+            1986,
+            1987,
+            1988,
+            1989,
+            1990,
+            1991,
+            1992,
+            1993,
+            1994,
+            1995,
+            1996,
+            1997,
+            1998,
+            1999
+          ],
+          "record_ids": [
+            "reasonrank/train/3264",
+            "reasonrank/train/3154",
+            "reasonrank/train/3233",
+            "reasonrank/train/3275",
+            "reasonrank/train/3298",
+            "reasonrank/train/3197",
+            "reasonrank/train/3278",
+            "reasonrank/train/3153",
+            "reasonrank/train/3129",
+            "reasonrank/train/3158",
+            "reasonrank/train/3143",
+            "reasonrank/train/3136",
+            "reasonrank/train/3090",
+            "reasonrank/train/3207",
+            "reasonrank/train/3247",
+            "reasonrank/train/3227"
+          ],
+          "sources": [
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics"
+          ],
+          "tensor_sha256": "cb224ac35e4ae4e283d6a5ea47dc26c9ef499a581eada65ce231d9b72ee511be"
+        },
+        {
+          "sampler_microbatch_index": 11,
+          "dataset_positions": [
+            4800,
+            4801,
+            4802,
+            4803,
+            4804,
+            4805,
+            4806,
+            4807,
+            4808,
+            4809,
+            4810,
+            4811,
+            4812,
+            4813,
+            4814,
+            4815
+          ],
+          "record_ids": [
+            "reasonrank/train/5463",
+            "reasonrank/train/5352",
+            "reasonrank/train/5885",
+            "reasonrank/train/5172",
+            "reasonrank/train/5471",
+            "reasonrank/train/5915",
+            "reasonrank/train/5325",
+            "reasonrank/train/5669",
+            "reasonrank/train/5508",
+            "reasonrank/train/5310",
+            "reasonrank/train/5196",
+            "reasonrank/train/5391",
+            "reasonrank/train/5452",
+            "reasonrank/train/5696",
+            "reasonrank/train/5670",
+            "reasonrank/train/5361"
+          ],
+          "sources": [
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa"
+          ],
+          "tensor_sha256": "90ba12e1657466c5134f428b616439ed2d496bf81830accc8d31cfa2206d32c4"
+        },
+        {
+          "sampler_microbatch_index": 12,
+          "dataset_positions": [
+            4544,
+            4545,
+            4546,
+            4547,
+            4548,
+            4549,
+            4550,
+            4551,
+            4552,
+            4553,
+            4554,
+            4555,
+            4556,
+            4557,
+            4558,
+            4559
+          ],
+          "record_ids": [
+            "reasonrank/train/1556",
+            "reasonrank/train/1938",
+            "reasonrank/train/1578",
+            "reasonrank/train/2403",
+            "reasonrank/train/1931",
+            "reasonrank/train/1983",
+            "reasonrank/train/2125",
+            "reasonrank/train/2118",
+            "reasonrank/train/1907",
+            "reasonrank/train/1558",
+            "reasonrank/train/2250",
+            "reasonrank/train/2354",
+            "reasonrank/train/2012",
+            "reasonrank/train/1843",
+            "reasonrank/train/2358",
+            "reasonrank/train/1743"
+          ],
+          "sources": [
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology"
+          ],
+          "tensor_sha256": "34c79038df0de1f2dae027c3d79938fa74af9f3bb9cf3dea4551c5b75f84f119"
+        },
+        {
+          "sampler_microbatch_index": 13,
+          "dataset_positions": [
+            4064,
+            4065,
+            4066,
+            4067,
+            4068,
+            4069,
+            4070,
+            4071,
+            4072,
+            4073,
+            4074,
+            4075,
+            4076,
+            4077,
+            4078,
+            4079
+          ],
+          "record_ids": [
+            "reasonrank/train/5802",
+            "reasonrank/train/5150",
+            "reasonrank/train/5867",
+            "reasonrank/train/5137",
+            "reasonrank/train/5351",
+            "reasonrank/train/5685",
+            "reasonrank/train/5416",
+            "reasonrank/train/5102",
+            "reasonrank/train/5895",
+            "reasonrank/train/5811",
+            "reasonrank/train/5825",
+            "reasonrank/train/5873",
+            "reasonrank/train/5243",
+            "reasonrank/train/5338",
+            "reasonrank/train/5428",
+            "reasonrank/train/5582"
+          ],
+          "sources": [
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa"
+          ],
+          "tensor_sha256": "7e2d54025d4eb2a4c03e076ef1fac4ee52ee09300551463fa24b2c4bb71dc419"
+        },
+        {
+          "sampler_microbatch_index": 14,
+          "dataset_positions": [
+            4432,
+            4433,
+            4434,
+            4435,
+            4436,
+            4437,
+            4438,
+            4439,
+            4440,
+            4441,
+            4442,
+            4443,
+            4444,
+            4445,
+            4446,
+            4447
+          ],
+          "record_ids": [
+            "reasonrank/train/3265",
+            "reasonrank/train/3212",
+            "reasonrank/train/3169",
+            "reasonrank/train/3228",
+            "reasonrank/train/3269",
+            "reasonrank/train/3288",
+            "reasonrank/train/3099",
+            "reasonrank/train/3256",
+            "reasonrank/train/3147",
+            "reasonrank/train/3223",
+            "reasonrank/train/3210",
+            "reasonrank/train/3116",
+            "reasonrank/train/3248",
+            "reasonrank/train/3226",
+            "reasonrank/train/3184",
+            "reasonrank/train/3302"
+          ],
+          "sources": [
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics"
+          ],
+          "tensor_sha256": "d534055ad66012f7bddcc126d9c17d468274bf1df11000ed34c5698273fefa05"
+        },
+        {
+          "sampler_microbatch_index": 15,
+          "dataset_positions": [
+            784,
+            785,
+            786,
+            787,
+            788,
+            789,
+            790,
+            791,
+            792,
+            793,
+            794,
+            795,
+            796,
+            797,
+            798,
+            799
+          ],
+          "record_ids": [
+            "reasonrank/train/5708",
+            "reasonrank/train/5705",
+            "reasonrank/train/5555",
+            "reasonrank/train/5343",
+            "reasonrank/train/5757",
+            "reasonrank/train/5497",
+            "reasonrank/train/5774",
+            "reasonrank/train/5674",
+            "reasonrank/train/5894",
+            "reasonrank/train/5223",
+            "reasonrank/train/5488",
+            "reasonrank/train/5648",
+            "reasonrank/train/5553",
+            "reasonrank/train/5301",
+            "reasonrank/train/5460",
+            "reasonrank/train/5673"
+          ],
+          "sources": [
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa"
+          ],
+          "tensor_sha256": "f7d8644ac94f73fbe43d00a1a3fd7cab10c02946e54f521d3d6a0266ae28536c"
+        }
+      ],
+      "summary": {
+        "draws": 16,
+        "zero_gradient_draws": 0,
+        "mean_gradient_norm": 11.087191398437643,
+        "gradient_norm_mean": 39.27073647324106,
+        "gradient_norm_min": 38.03588115474862,
+        "gradient_norm_max": 42.653006706998454,
+        "noise_rms": 38.92616435863715,
+        "noise_to_mean_ratio": 3.510912994982882,
+        "mean_pairwise_cosine": 0.017915839608391708
+      },
+      "draws": [
+        {
+          "rollout_seed": 42,
+          "gradient_norm": 38.40323097134543,
+          "reward_mean": 0.5819128975272179,
+          "loss": 0.00559835322201252,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.5,
+            "exploration/own_boundary_flip_rate": 0.20479526929557323,
+            "reward/ndcg_in_batch/query/group_std": 0.027824966236948967,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0546875,
+            "reward/ndcg_in_batch/documents/group_std": 0.03350233635865152,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0546875,
+            "reward/ndcg_in_batch/n_distinct": 27.5546875,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 3407,
+          "gradient_norm": 39.89680086448344,
+          "reward_mean": 0.5807488486170769,
+          "loss": 0.005661388859152794,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.5,
+            "exploration/own_boundary_flip_rate": 0.1994121801108122,
+            "reward/ndcg_in_batch/query/group_std": 0.027056837687268853,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.078125,
+            "reward/ndcg_in_batch/documents/group_std": 0.03357828035950661,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.078125,
+            "reward/ndcg_in_batch/n_distinct": 27.4296875,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 2026,
+          "gradient_norm": 39.33366021893618,
+          "reward_mean": 0.5816453360021114,
+          "loss": -0.14562194980680943,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.5,
+            "exploration/own_boundary_flip_rate": 0.20138105191290379,
+            "reward/ndcg_in_batch/query/group_std": 0.027699728030711412,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0703125,
+            "reward/ndcg_in_batch/documents/group_std": 0.033788953674957156,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0703125,
+            "reward/ndcg_in_batch/n_distinct": 28.3203125,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 0,
+          "gradient_norm": 38.07170010376399,
+          "reward_mean": 0.5802990682423115,
+          "loss": -0.0906140860170126,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.5,
+            "exploration/own_boundary_flip_rate": 0.19743363000452518,
+            "reward/ndcg_in_batch/query/group_std": 0.02682110737077892,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0859375,
+            "reward/ndcg_in_batch/documents/group_std": 0.032258105697110295,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0859375,
+            "reward/ndcg_in_batch/n_distinct": 27.484375,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 1,
+          "gradient_norm": 40.03585754994402,
+          "reward_mean": 0.5821239165961742,
+          "loss": -0.035791244357824326,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.5,
+            "exploration/own_boundary_flip_rate": 0.20148356072604656,
+            "reward/ndcg_in_batch/query/group_std": 0.027527064085006714,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.078125,
+            "reward/ndcg_in_batch/documents/group_std": 0.033380694687366486,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.078125,
+            "reward/ndcg_in_batch/n_distinct": 28.125,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 2,
+          "gradient_norm": 38.04351737062849,
+          "reward_mean": 0.5801385417580605,
+          "loss": 0.12635860964655876,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.5,
+            "exploration/own_boundary_flip_rate": 0.2020641565322876,
+            "reward/ndcg_in_batch/query/group_std": 0.026847724802792072,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.078125,
+            "reward/ndcg_in_batch/documents/group_std": 0.03278504544869065,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.078125,
+            "reward/ndcg_in_batch/n_distinct": 28.1640625,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 3,
+          "gradient_norm": 39.60367658449023,
+          "reward_mean": 0.5821621306240559,
+          "loss": 0.004157768562436104,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.5,
+            "exploration/own_boundary_flip_rate": 0.19714483618736267,
+            "reward/ndcg_in_batch/query/group_std": 0.02787096705287695,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.078125,
+            "reward/ndcg_in_batch/documents/group_std": 0.03286701091565192,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.078125,
+            "reward/ndcg_in_batch/n_distinct": 27.96875,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 4,
+          "gradient_norm": 39.65305565040755,
+          "reward_mean": 0.5807996429502964,
+          "loss": -0.06528836861252785,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.5,
+            "exploration/own_boundary_flip_rate": 0.2004887368530035,
+            "reward/ndcg_in_batch/query/group_std": 0.027335978345945477,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0625,
+            "reward/ndcg_in_batch/documents/group_std": 0.03415769408456981,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0625,
+            "reward/ndcg_in_batch/n_distinct": 28.3515625,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 5,
+          "gradient_norm": 38.41570918369102,
+          "reward_mean": 0.5812744684517384,
+          "loss": -0.047884974628686905,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.5,
+            "exploration/own_boundary_flip_rate": 0.2002918552607298,
+            "reward/ndcg_in_batch/query/group_std": 0.02848047553561628,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0703125,
+            "reward/ndcg_in_batch/documents/group_std": 0.03339408873580396,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0703125,
+            "reward/ndcg_in_batch/n_distinct": 27.6640625,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 6,
+          "gradient_norm": 38.81098709235975,
+          "reward_mean": 0.5811240337789059,
+          "loss": 0.08389607071876526,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.5,
+            "exploration/own_boundary_flip_rate": 0.19903386570513248,
+            "reward/ndcg_in_batch/query/group_std": 0.027579527348279953,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.078125,
+            "reward/ndcg_in_batch/documents/group_std": 0.03336045425385237,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.078125,
+            "reward/ndcg_in_batch/n_distinct": 27.875,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 7,
+          "gradient_norm": 40.29906814386061,
+          "reward_mean": 0.5826190188527107,
+          "loss": -0.004793114960193634,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.5,
+            "exploration/own_boundary_flip_rate": 0.1960126757621765,
+            "reward/ndcg_in_batch/query/group_std": 0.027678081998601556,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0703125,
+            "reward/ndcg_in_batch/documents/group_std": 0.03316798713058233,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0703125,
+            "reward/ndcg_in_batch/n_distinct": 28.6796875,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 8,
+          "gradient_norm": 38.57448819530619,
+          "reward_mean": 0.5814080126583576,
+          "loss": -0.08363315742462873,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.5,
+            "exploration/own_boundary_flip_rate": 0.19939901866018772,
+            "reward/ndcg_in_batch/query/group_std": 0.026562575716525316,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.078125,
+            "reward/ndcg_in_batch/documents/group_std": 0.03348572365939617,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.078125,
+            "reward/ndcg_in_batch/n_distinct": 27.625,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 9,
+          "gradient_norm": 42.653006706998454,
+          "reward_mean": 0.5818059034645557,
+          "loss": 0.016894720494747162,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.5,
+            "exploration/own_boundary_flip_rate": 0.1957215741276741,
+            "reward/ndcg_in_batch/query/group_std": 0.02658532653003931,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0703125,
+            "reward/ndcg_in_batch/documents/group_std": 0.033927809447050095,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0703125,
+            "reward/ndcg_in_batch/n_distinct": 28.078125,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 10,
+          "gradient_norm": 38.03588115474862,
+          "reward_mean": 0.581267736852169,
+          "loss": 0.059336498379707336,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.5,
+            "exploration/own_boundary_flip_rate": 0.19951916858553886,
+            "reward/ndcg_in_batch/query/group_std": 0.027532161446288228,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0703125,
+            "reward/ndcg_in_batch/documents/group_std": 0.03350324579514563,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0703125,
+            "reward/ndcg_in_batch/n_distinct": 27.4296875,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 11,
+          "gradient_norm": 39.43822670837187,
+          "reward_mean": 0.580754566937685,
+          "loss": 0.07998327910900116,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.5,
+            "exploration/own_boundary_flip_rate": 0.20057021267712116,
+            "reward/ndcg_in_batch/query/group_std": 0.02708779601380229,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.078125,
+            "reward/ndcg_in_batch/documents/group_std": 0.03311061440035701,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.078125,
+            "reward/ndcg_in_batch/n_distinct": 27.953125,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 12,
+          "gradient_norm": 39.06291707252105,
+          "reward_mean": 0.5816548205912113,
+          "loss": -0.11863477900624275,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.5,
+            "exploration/own_boundary_flip_rate": 0.19968684762716293,
+            "reward/ndcg_in_batch/query/group_std": 0.02744059218093753,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.078125,
+            "reward/ndcg_in_batch/documents/group_std": 0.03372319205664098,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.078125,
+            "reward/ndcg_in_batch/n_distinct": 27.578125,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        }
+      ]
+    },
+    {
+      "batches": [
+        {
+          "sampler_microbatch_index": 16,
+          "dataset_positions": [
+            4016,
+            4017,
+            4018,
+            4019,
+            4020,
+            4021,
+            4022,
+            4023,
+            4024,
+            4025,
+            4026,
+            4027,
+            4028,
+            4029,
+            4030,
+            4031
+          ],
+          "record_ids": [
+            "reasonrank/train/2197",
+            "reasonrank/train/2166",
+            "reasonrank/train/1801",
+            "reasonrank/train/2085",
+            "reasonrank/train/2221",
+            "reasonrank/train/1582",
+            "reasonrank/train/2291",
+            "reasonrank/train/1908",
+            "reasonrank/train/2113",
+            "reasonrank/train/1680",
+            "reasonrank/train/1695",
+            "reasonrank/train/2315",
+            "reasonrank/train/2202",
+            "reasonrank/train/1596",
+            "reasonrank/train/1608",
+            "reasonrank/train/2239"
+          ],
+          "sources": [
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology",
+            "biology"
+          ],
+          "tensor_sha256": "974933861e8b338f62ddc5a8824e0612391fd85383616835c95f02011772cd12"
+        },
+        {
+          "sampler_microbatch_index": 17,
+          "dataset_positions": [
+            704,
+            705,
+            706,
+            707,
+            708,
+            709,
+            710,
+            711,
+            712,
+            713,
+            714,
+            715,
+            716,
+            717,
+            718,
+            719
+          ],
+          "record_ids": [
+            "reasonrank/train/5533",
+            "reasonrank/train/5367",
+            "reasonrank/train/5477",
+            "reasonrank/train/5884",
+            "reasonrank/train/5520",
+            "reasonrank/train/5359",
+            "reasonrank/train/5302",
+            "reasonrank/train/5130",
+            "reasonrank/train/5096",
+            "reasonrank/train/5332",
+            "reasonrank/train/5082",
+            "reasonrank/train/5920",
+            "reasonrank/train/5844",
+            "reasonrank/train/5491",
+            "reasonrank/train/5321",
+            "reasonrank/train/5618"
+          ],
+          "sources": [
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa",
+            "math-qa"
+          ],
+          "tensor_sha256": "6c745dc568adb7ecb98bd884faf7c46c1c1d4105a185e7ef9b883c43f77f1db6"
+        },
+        {
+          "sampler_microbatch_index": 18,
+          "dataset_positions": [
+            3216,
+            3217,
+            3218,
+            3219,
+            3220,
+            3221,
+            3222,
+            3223,
+            3224,
+            3225,
+            3226,
+            3227,
+            3228,
+            3229,
+            3230,
+            3231
+          ],
+          "record_ids": [
+            "reasonrank/train/6519",
+            "reasonrank/train/6473",
+            "reasonrank/train/6073",
+            "reasonrank/train/6349",
+            "reasonrank/train/6455",
+            "reasonrank/train/6591",
+            "reasonrank/train/6002",
+            "reasonrank/train/6098",
+            "reasonrank/train/6464",
+            "reasonrank/train/5992",
+            "reasonrank/train/6318",
+            "reasonrank/train/6465",
+            "reasonrank/train/6433",
+            "reasonrank/train/6352",
+            "reasonrank/train/6661",
+            "reasonrank/train/6388"
+          ],
+          "sources": [
+            "math-theorem",
+            "math-theorem",
+            "math-theorem",
+            "math-theorem",
+            "math-theorem",
+            "math-theorem",
+            "math-theorem",
+            "math-theorem",
+            "math-theorem",
+            "math-theorem",
+            "math-theorem",
+            "math-theorem",
+            "math-theorem",
+            "math-theorem",
+            "math-theorem",
+            "math-theorem"
+          ],
+          "tensor_sha256": "d6514de62fdce2b9b28957154a41dc3cc08377325161a42aef5921f8baf97f9a"
+        },
+        {
+          "sampler_microbatch_index": 19,
+          "dataset_positions": [
+            4384,
+            4385,
+            4386,
+            4387,
+            4388,
+            4389,
+            4390,
+            4391,
+            4392,
+            4393,
+            4394,
+            4395,
+            4396,
+            4397,
+            4398,
+            4399
+          ],
+          "record_ids": [
+            "reasonrank/train/3271",
+            "reasonrank/train/3160",
+            "reasonrank/train/3188",
+            "reasonrank/train/3148",
+            "reasonrank/train/3307",
+            "reasonrank/train/3276",
+            "reasonrank/train/3098",
+            "reasonrank/train/3097",
+            "reasonrank/train/3166",
+            "reasonrank/train/3303",
+            "reasonrank/train/3093",
+            "reasonrank/train/3127",
+            "reasonrank/train/3291",
+            "reasonrank/train/3151",
+            "reasonrank/train/3140",
+            "reasonrank/train/3130"
+          ],
+          "sources": [
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics"
+          ],
+          "tensor_sha256": "c74f5967edb943764f078bdfcea79552d5f2fffe3704f89edb59c36c3a7e96ef"
+        },
+        {
+          "sampler_microbatch_index": 20,
+          "dataset_positions": [
+            4880,
+            4881,
+            4882,
+            4883,
+            4884,
+            4885,
+            4886,
+            4887,
+            4888,
+            4889,
+            4890,
+            4891,
+            4892,
+            4893,
+            4894,
+            4895
+          ],
+          "record_ids": [
+            "reasonrank/train/4134",
+            "reasonrank/train/3648",
+            "reasonrank/train/3426",
+            "reasonrank/train/3570",
+            "reasonrank/train/4068",
+            "reasonrank/train/3918",
+            "reasonrank/train/3475",
+            "reasonrank/train/4141",
+            "reasonrank/train/3750",
+            "reasonrank/train/3494",
+            "reasonrank/train/3863",
+            "reasonrank/train/3451",
+            "reasonrank/train/4233",
+            "reasonrank/train/3915",
+            "reasonrank/train/3889",
+            "reasonrank/train/4024"
+          ],
+          "sources": [
+            "stackoverflow",
+            "stackoverflow",
+            "stackoverflow",
+            "stackoverflow",
+            "stackoverflow",
+            "stackoverflow",
+            "stackoverflow",
+            "stackoverflow",
+            "stackoverflow",
+            "stackoverflow",
+            "stackoverflow",
+            "stackoverflow",
+            "stackoverflow",
+            "stackoverflow",
+            "stackoverflow",
+            "stackoverflow"
+          ],
+          "tensor_sha256": "2193dccb24621534be26c9397127861f9a9523f3be017b58f2ec1d1acab0f72a"
+        },
+        {
+          "sampler_microbatch_index": 21,
+          "dataset_positions": [
+            4352,
+            4353,
+            4354,
+            4355,
+            4356,
+            4357,
+            4358,
+            4359,
+            4360,
+            4361,
+            4362,
+            4363,
+            4364,
+            4365,
+            4366,
+            4367
+          ],
+          "record_ids": [
+            "reasonrank/train/3182",
+            "reasonrank/train/3250",
+            "reasonrank/train/3120",
+            "reasonrank/train/3176",
+            "reasonrank/train/3292",
+            "reasonrank/train/3122",
+            "reasonrank/train/3238",
+            "reasonrank/train/3245",
+            "reasonrank/train/3255",
+            "reasonrank/train/3234",
+            "reasonrank/train/3110",
+            "reasonrank/train/3112",
+            "reasonrank/train/3106",
+            "reasonrank/train/3312",
+            "reasonrank/train/3128",
+            "reasonrank/train/3187"
+          ],
+          "sources": [
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics",
+            "robotics"
+          ],
+          "tensor_sha256": "bfdf45bcb420e91021a3cf393351d049f7817ec94a24f1cd80568ef0d7705b6b"
+        },
+        {
+          "sampler_microbatch_index": 22,
+          "dataset_positions": [
+            1072,
+            1073,
+            1074,
+            1075,
+            1076,
+            1077,
+            1078,
+            1079,
+            1080,
+            1081,
+            1082,
+            1083,
+            1084,
+            1085,
+            1086,
+            1087
+          ],
+          "record_ids": [
+            "reasonrank/train/5070",
+            "reasonrank/train/4873",
+            "reasonrank/train/4417",
+            "reasonrank/train/5023",
+            "reasonrank/train/4361",
+            "reasonrank/train/4732",
+            "reasonrank/train/4996",
+            "reasonrank/train/4876",
+            "reasonrank/train/5036",
+            "reasonrank/train/4501",
+            "reasonrank/train/4632",
+            "reasonrank/train/4767",
+            "reasonrank/train/4865",
+            "reasonrank/train/4306",
+            "reasonrank/train/4499",
+            "reasonrank/train/4774"
+          ],
+          "sources": [
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode"
+          ],
+          "tensor_sha256": "2a8194de2eaa2a21ae5d4112eb51d339799c9dff91296b657a95652c4d49cb77"
+        },
+        {
+          "sampler_microbatch_index": 23,
+          "dataset_positions": [
+            3792,
+            3793,
+            3794,
+            3795,
+            3796,
+            3797,
+            3798,
+            3799,
+            3800,
+            3801,
+            3802,
+            3803,
+            3804,
+            3805,
+            3806,
+            3807
+          ],
+          "record_ids": [
+            "reasonrank/train/5038",
+            "reasonrank/train/5032",
+            "reasonrank/train/4377",
+            "reasonrank/train/4973",
+            "reasonrank/train/4580",
+            "reasonrank/train/4987",
+            "reasonrank/train/4779",
+            "reasonrank/train/4969",
+            "reasonrank/train/5031",
+            "reasonrank/train/4420",
+            "reasonrank/train/4576",
+            "reasonrank/train/4740",
+            "reasonrank/train/4378",
+            "reasonrank/train/4950",
+            "reasonrank/train/4319",
+            "reasonrank/train/5047"
+          ],
+          "sources": [
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode",
+            "leetcode"
+          ],
+          "tensor_sha256": "694ed3691c46ceca22e85cf0ca242260d8b5b5d3b06fb56ef2821557e9e434ba"
+        }
+      ],
+      "summary": {
+        "draws": 16,
+        "zero_gradient_draws": 0,
+        "mean_gradient_norm": 11.010553247163736,
+        "gradient_norm_mean": 38.077067164492874,
+        "gradient_norm_min": 36.368846295310725,
+        "gradient_norm_max": 41.286623344891495,
+        "noise_rms": 37.66712877556004,
+        "noise_to_mean_ratio": 3.421002371998237,
+        "mean_pairwise_cosine": 0.022381546648084102
+      },
+      "draws": [
+        {
+          "rollout_seed": 42,
+          "gradient_norm": 37.084554088496674,
+          "reward_mean": 0.4957759194076061,
+          "loss": -0.06280028074979782,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.46875,
+            "exploration/own_boundary_flip_rate": 0.22612164355814457,
+            "reward/ndcg_in_batch/query/group_std": 0.02715664100833237,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.046875,
+            "reward/ndcg_in_batch/documents/group_std": 0.03453624597750604,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.046875,
+            "reward/ndcg_in_batch/n_distinct": 34.5703125,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 3407,
+          "gradient_norm": 37.82436406444417,
+          "reward_mean": 0.49518682807683945,
+          "loss": -0.039511771872639656,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.46875,
+            "exploration/own_boundary_flip_rate": 0.22581464052200317,
+            "reward/ndcg_in_batch/query/group_std": 0.028490240685641766,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0546875,
+            "reward/ndcg_in_batch/documents/group_std": 0.034654723247513175,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0546875,
+            "reward/ndcg_in_batch/n_distinct": 34.8125,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 2026,
+          "gradient_norm": 39.24039574224154,
+          "reward_mean": 0.4964114688336849,
+          "loss": -0.0009212829172611237,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.46875,
+            "exploration/own_boundary_flip_rate": 0.22656694054603577,
+            "reward/ndcg_in_batch/query/group_std": 0.02792096300981939,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0546875,
+            "reward/ndcg_in_batch/documents/group_std": 0.035030889324843884,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0546875,
+            "reward/ndcg_in_batch/n_distinct": 34.328125,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 0,
+          "gradient_norm": 37.640348878192974,
+          "reward_mean": 0.4960002638399601,
+          "loss": 0.10051578283309937,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.46875,
+            "exploration/own_boundary_flip_rate": 0.2243562564253807,
+            "reward/ndcg_in_batch/query/group_std": 0.027213757624849677,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.046875,
+            "reward/ndcg_in_batch/documents/group_std": 0.033060106448829174,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.046875,
+            "reward/ndcg_in_batch/n_distinct": 34.9375,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 1,
+          "gradient_norm": 36.86067274061608,
+          "reward_mean": 0.49568912759423256,
+          "loss": 0.004100237041711807,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.46875,
+            "exploration/own_boundary_flip_rate": 0.22759411484003067,
+            "reward/ndcg_in_batch/query/group_std": 0.028385538840666413,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0703125,
+            "reward/ndcg_in_batch/documents/group_std": 0.03412475320510566,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0703125,
+            "reward/ndcg_in_batch/n_distinct": 34.6875,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 2,
+          "gradient_norm": 38.38424711725169,
+          "reward_mean": 0.49512144923210144,
+          "loss": -0.07308393344283104,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.46875,
+            "exploration/own_boundary_flip_rate": 0.22519195079803467,
+            "reward/ndcg_in_batch/query/group_std": 0.027133528143167496,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.046875,
+            "reward/ndcg_in_batch/documents/group_std": 0.03468854818493128,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.046875,
+            "reward/ndcg_in_batch/n_distinct": 34.46875,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 3,
+          "gradient_norm": 37.17645080597042,
+          "reward_mean": 0.4964670427143574,
+          "loss": -0.028058208525180817,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.46875,
+            "exploration/own_boundary_flip_rate": 0.22336915880441666,
+            "reward/ndcg_in_batch/query/group_std": 0.026977435685694218,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.046875,
+            "reward/ndcg_in_batch/documents/group_std": 0.034120392287150025,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.046875,
+            "reward/ndcg_in_batch/n_distinct": 34.25,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 4,
+          "gradient_norm": 37.40453979430857,
+          "reward_mean": 0.4967182129621506,
+          "loss": 0.01559009775519371,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.46875,
+            "exploration/own_boundary_flip_rate": 0.2274730782955885,
+            "reward/ndcg_in_batch/query/group_std": 0.027482194593176246,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0625,
+            "reward/ndcg_in_batch/documents/group_std": 0.033113135723397136,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0625,
+            "reward/ndcg_in_batch/n_distinct": 34.546875,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 5,
+          "gradient_norm": 38.73262994198904,
+          "reward_mean": 0.495612446218729,
+          "loss": -0.052489861845970154,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.46875,
+            "exploration/own_boundary_flip_rate": 0.22299074195325375,
+            "reward/ndcg_in_batch/query/group_std": 0.028414023341611028,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0625,
+            "reward/ndcg_in_batch/documents/group_std": 0.034725368255749345,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0625,
+            "reward/ndcg_in_batch/n_distinct": 34.3046875,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 6,
+          "gradient_norm": 39.74943749292345,
+          "reward_mean": 0.4955047145485878,
+          "loss": 0.12106343731284142,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.46875,
+            "exploration/own_boundary_flip_rate": 0.22675153240561485,
+            "reward/ndcg_in_batch/query/group_std": 0.02843315713107586,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0546875,
+            "reward/ndcg_in_batch/documents/group_std": 0.03439147653989494,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0546875,
+            "reward/ndcg_in_batch/n_distinct": 34.796875,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 7,
+          "gradient_norm": 39.04736486918045,
+          "reward_mean": 0.49391940236091614,
+          "loss": 0.061449889093637466,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.46875,
+            "exploration/own_boundary_flip_rate": 0.22880407981574535,
+            "reward/ndcg_in_batch/query/group_std": 0.027952764881774783,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0546875,
+            "reward/ndcg_in_batch/documents/group_std": 0.03448471333831549,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0546875,
+            "reward/ndcg_in_batch/n_distinct": 35.0234375,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 8,
+          "gradient_norm": 37.23802216278246,
+          "reward_mean": 0.495032399892807,
+          "loss": -0.05696222558617592,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.46875,
+            "exploration/own_boundary_flip_rate": 0.22664864547550678,
+            "reward/ndcg_in_batch/query/group_std": 0.02824250515550375,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0546875,
+            "reward/ndcg_in_batch/documents/group_std": 0.033879356225952506,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0546875,
+            "reward/ndcg_in_batch/n_distinct": 34.953125,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 9,
+          "gradient_norm": 36.368846295310725,
+          "reward_mean": 0.4975009448826313,
+          "loss": 0.04238790646195412,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.46875,
+            "exploration/own_boundary_flip_rate": 0.22554849460721016,
+            "reward/ndcg_in_batch/query/group_std": 0.02830105391331017,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0625,
+            "reward/ndcg_in_batch/documents/group_std": 0.03422640194185078,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0625,
+            "reward/ndcg_in_batch/n_distinct": 35.0,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 10,
+          "gradient_norm": 37.83666039828444,
+          "reward_mean": 0.4952302575111389,
+          "loss": -0.07817245274782181,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.46875,
+            "exploration/own_boundary_flip_rate": 0.225503196939826,
+            "reward/ndcg_in_batch/query/group_std": 0.02752359351143241,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0546875,
+            "reward/ndcg_in_batch/documents/group_std": 0.034288588678464293,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0546875,
+            "reward/ndcg_in_batch/n_distinct": 34.9765625,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 11,
+          "gradient_norm": 41.286623344891495,
+          "reward_mean": 0.4963972009718418,
+          "loss": 0.02852315455675125,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.46875,
+            "exploration/own_boundary_flip_rate": 0.22753703594207764,
+            "reward/ndcg_in_batch/query/group_std": 0.02721059275791049,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.0703125,
+            "reward/ndcg_in_batch/documents/group_std": 0.03490404295735061,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.0703125,
+            "reward/ndcg_in_batch/n_distinct": 34.4375,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        },
+        {
+          "rollout_seed": 12,
+          "gradient_norm": 37.35791689500189,
+          "reward_mean": 0.49532343074679375,
+          "loss": 0.011081567034125328,
+          "metrics": {
+            "exploration/own_boundary_pairs": 2.46875,
+            "exploration/own_boundary_flip_rate": 0.22866289876401424,
+            "reward/ndcg_in_batch/query/group_std": 0.027731232112273574,
+            "reward/ndcg_in_batch/query/degenerate_frac": 0.046875,
+            "reward/ndcg_in_batch/documents/group_std": 0.034224083879962564,
+            "reward/ndcg_in_batch/documents/degenerate_frac": 0.046875,
+            "reward/ndcg_in_batch/n_distinct": 34.609375,
+            "exploration/kappa": 4846.28662109375,
+            "exploration/mean_alignment": 0.8999999761581421
+          }
+        }
+      ]
+    }
+  ]
+}
