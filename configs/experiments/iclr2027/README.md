@@ -1,5 +1,38 @@
 # 三组实验配置指南
 
+## G1 最终 MRR 配方的 seed 重复（2026-09-14）
+
+新增 `G1-A-MRRAlign090-Seed3407` 与 `G1-A-MRRAlign090-Seed2026`，复用已完成的
+`G1-A-MRRAlign090`（seed 42）作为第三个 seed。只重复最终 RL，不新增监督训练。
+两行通过同一个 YAML anchor 继承原始配方，从 E0 独立训练，不加载 seed-42 的适配权重。
+
+```bash
+bash scripts/run_g1_mrr_seed_repeats.sh check 8
+bash scripts/run_g1_mrr_seed_repeats.sh train 8
+```
+
+保持 binary MRR@10、G=32、alignment 0.90、双侧 vMF product、leave-one-out、无
+advantage 标准化、document sum、保留校准、KL=0，以及 113 steps、LR 5e-6、
+global batch 128 / microbatch 16。训练 `seed` 与 `data_seed` 同步改为 3407 或 2026。
+继续读取同一份 `reasonrank_multi/train.ready.jsonl`，预处理的正例代表选择 seed 仍为 42；
+不重新准备数据。Seed 定义在 suite 的单行 `seed` 字段，不放入 `overrides`。
+
+输出分别为：
+
+- `checkpoints/iclr2027/G1-A-MRRAlign090-Seed3407-s3407/`
+- `checkpoints/iclr2027/G1-A-MRRAlign090-Seed2026-s2026/`
+
+脚本先预检两行，再按 3407 → 2026 顺序训练；每次成功保存最终权重后自动评测 BRIGHT，
+结果位于对应输出目录的 `mteb_eval/bright/`。失败即停，不覆盖、不跳过、不自动续训。
+部分完成后，单独运行剩余行，例如：
+
+```bash
+python scripts/experiment.py train G1-A-MRRAlign090-Seed2026 --gpus 8
+```
+
+本次仅配置和预检，尚未启动新训练。完成后以 42/3407/2026 三个 seed 汇总均值和标准差，
+不从中选最高分替代平均值。Suite 共 66 行（64 次训练、2 次评测）；下文旧批次计数为历史记录。
+
 ## G1 MRR group size × alignment 局部网格（当前执行批次）
 
 核心消融后固定采用 `G1-A-MRRAlign090` 的 binary MRR@10、双侧 product 与更新规则。

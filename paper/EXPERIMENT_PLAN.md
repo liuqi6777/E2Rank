@@ -1,5 +1,19 @@
 # Experiment Plan: Reward-Based Optimization of Embedding Retrievers
 
+## 2026-09-14：G1 最终配方的训练随机性重复
+
+新增两次 RL 训练：`G1-A-MRRAlign090-Seed3407`、`G1-A-MRRAlign090-Seed2026`，
+与已完成的 seed 42 组成三个 seed。固定 `G1-A-MRRAlign090` 全部训练配方、数据和预算，
+仅同步改变训练 seed/data seed；各自从原始 E0 开始。数据准备保持不变，in-batch 代表
+正例仍使用预处理 seed 42。此次不新增 LL/CL 重复，不改变既定 G2 计划。
+
+入口为 `scripts/run_g1_mrr_seed_repeats.sh [check|train] [gpus]`，默认 8 卡，先全部预检，
+再按 3407 → 2026 训练并自动执行最终 BRIGHT。每行使用独立、带实际 seed 后缀的输出目录；
+不重跑 seed 42，不继续训练其 checkpoint。当前只完成配置与预检，新 seed 没有结果。
+完成后报告三个 seed 的均值和标准差，用于判断最终 RL 配方的训练稳定性；监督对照尚无
+对应重复，因此不据此单独宣称 RL 与 LL 的差值已得到多 seed 验证。
+运行细节见[配置指南](../configs/experiments/iclr2027/README.md)。
+
 ## 2026-09-14：G1 完成后的 G2 RL 计划
 
 用户确认 G1 已全部完成、E2Rank CL 已完成。最新本地 G1 汇总含 45 次训练和 E0，

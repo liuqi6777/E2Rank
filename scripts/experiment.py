@@ -117,7 +117,9 @@ def main():
         resolved = iclr2027.resolve_run(suite, iclr2027.DEFAULT_SUITE, args.run, nproc=args.gpus)
         config = resolved['config']
         summary = {key: resolved[key] for key in ['run_id', 'dataset', 'scope', 'objective', 'selection', 'priority', 'execution_stage', 'execution_stage_name']}
-        summary.update(model=config.get('model_name_or_path'), data=config.get('data_path', config.get('rag_dataset_root')),
+        summary.update(seed=config['seed'], data_seed=config['data_seed'],
+                       output_dir=config['output_dir'],
+                       model=config.get('model_name_or_path'), data=config.get('data_path', config.get('rag_dataset_root')),
                        training_budget=resolved['protocol'].get('training_budget', 'fixed_steps'),
                        steps=resolved['protocol'].get('max_steps'), epochs=config.get('num_train_epochs'),
                        learning_rate=resolved['protocol'].get('learning_rate'),

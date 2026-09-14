@@ -1,7 +1,7 @@
 # Experiment contracts, not HfArgumentParser input. Use scripts/experiments/iclr2027.py.
 version: 1
 plan: paper/EXPERIMENT_PLAN.md
-seed: 42
+seed: 42 # Default training/data seed; explicit per-run seed repeats override it.
 output_root: checkpoints/iclr2027
 
 # Missing generated files are checked as artifact prerequisites, not implementation blockers.
@@ -62,6 +62,8 @@ profiles:
 # Advisory order only: launch still requires one explicit run ID.
 # Round 2 explicitly develops configurations using the first-round BRIGHT results.
 execution_stages:
+  - name: G1 selected MRR seed repeats
+    runs: [G1-A-MRRAlign090-Seed3407, G1-A-MRRAlign090-Seed2026]
   - name: G1 MRR group-size x alignment grid
     runs: [G1-A-MRRG16Align090, G1-A-MRRG64Align090, G1-A-MRRG16Align080, G1-A-MRRG16Align095, G1-A-MRRG64Align080, G1-A-MRRG64Align095]
   - name: G1 binary supervised control
@@ -100,6 +102,22 @@ execution_stages:
     runs: [G1-A-Anneal, G1-A-FixedSmall, G1-A-Gaussion, G1-A-MRR]
 
 runs:
+  # Shared recipe: each seed repeat starts independently from E0 and reuses
+  # the same prepared data, including its seed-42 in-batch representatives.
+  G1-A-MRRAlign090: &g1_mrr090
+    group: G1
+    objective: rl
+    scope: joint
+    control: G1-A-MRR
+    overrides: {reward_type: mrr_in_batch, relevance_scheme: binary, target_alignment: 0.90, final_alignment: null, exploration_schedule: fixed}
+  G1-A-MRRAlign090-Seed3407:
+    <<: *g1_mrr090
+    seed: 3407
+    control: G1-A-MRRAlign090
+  G1-A-MRRAlign090-Seed2026:
+    <<: *g1_mrr090
+    seed: 2026
+    control: G1-A-MRRAlign090
   # Round 4: narrow interaction grid around the selected MRRAlign090 recipe.
   # The G=32 row reuses MRRSmall / MRRAlign090 / MRRAlign095; only the six
   # off-center cells below require new training.
@@ -274,12 +292,6 @@ runs:
     scope: joint
     control: G1-A-MRR
     overrides: {reward_type: mrr_in_batch, relevance_scheme: binary, target_alignment: 0.65, final_alignment: null, exploration_schedule: fixed}
-  G1-A-MRRAlign090:
-    group: G1
-    objective: rl
-    scope: joint
-    control: G1-A-MRR
-    overrides: {reward_type: mrr_in_batch, relevance_scheme: binary, target_alignment: 0.90, final_alignment: null, exploration_schedule: fixed}
   G1-A-MRRAlign095:
     group: G1
     objective: rl

@@ -6,6 +6,7 @@
 |---|---|
 | `experiment.py` | G1/G2/G3 的 prepare、encode、list、show、check、train |
 | `experiments/iclr2027.py` | 实验定义解析、预算与依赖检查、实际启动；由公共入口调用 |
+| `run_g1_mrr_seed_repeats.sh` | 预检并顺序运行最终 G1 MRR 配方的 seed 3407、2026；每次训练后自动评测 BRIGHT |
 | `download_reasonrank_audit.py` | 下载审计使用的 ReasonRank / BRIGHT 原始数据 |
 | `audit_reasonrank_bright.py` | 检查数据来源、标签和 BRIGHT 重叠，产出审计记录 |
 | `prepare_reasonrank.py` | 多正例保留、去污染与 ready 数据编译，也提供审计共用的原始格式解析函数 |

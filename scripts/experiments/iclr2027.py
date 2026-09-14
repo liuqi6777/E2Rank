@@ -69,9 +69,10 @@ def resolve_config(path, stack=()):
 def load_suite(path=DEFAULT_SUITE):
     suite = read_mapping(path)
     if suite.get('version') != 1 or suite.get('seed') != 42:
-        raise ValueError('Expected suite version=1 and shared seed=42')
+        raise ValueError('Expected suite version=1 and default seed=42')
     runs = suite['runs']
     for run_id, run in runs.items():
+        run_seed(suite, run_id)
         if run['group'] not in suite['profiles']:
             raise ValueError(f'{run_id}: unknown group')
         profile = suite['profiles'][run['group']]
@@ -170,6 +171,18 @@ def path_at_root(path, root=ROOT):
     return (root / path).resolve()
 
 
+def run_seed(suite, run_id):
+    """A run may override the default training/data seed, not prepared-data seeds."""
+    seed = suite['runs'][run_id].get('seed', suite['seed'])
+    if isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed < 2**32:
+        raise ValueError(f'{run_id}: seed must be an integer in [0, 2**32)')
+    return seed
+
+
+def run_output_dir(suite, run_id, root=ROOT):
+    return path_at_root(suite['output_root'], root) / f'{run_id}-s{run_seed(suite, run_id)}'
+
+
 def validate_g1_rl_ablation_contract(run_id, config):
     """Keep named G1 policy ablations tied to their declared intervention."""
     expected = G1_RL_ABLATION_CONTRACTS.get(run_id)
@@ -256,12 +269,13 @@ def resolve_run(suite, suite_path, run_id, root=ROOT, nproc=1):
         config['per_device_train_batch_size'] = micro
         config['gradient_accumulation_steps'] = total // (micro * nproc)
 
-    output = path_at_root(suite['output_root'], root) / f'{run_id}-s42'
-    config.update(seed=42, data_seed=42, lora_enabled=False, overwrite_output_dir=False,
+    seed = run_seed(suite, run_id)
+    output = run_output_dir(suite, run_id, root)
+    config.update(seed=seed, data_seed=seed, lora_enabled=False, overwrite_output_dir=False,
                   output_dir=str(output), run_name=run_id)
     dependency = None
     if run.get('init_from'):
-        dependency = path_at_root(suite['output_root'], root) / f"{run['init_from']}-s42"
+        dependency = run_output_dir(suite, run['init_from'], root)
         config['model_name_or_path'] = str(dependency)
     return dict(run_id=run_id, group=group, dataset=dataset_name, kind=kind, scope=run['scope'],
                 **execution_metadata(suite, run_id),
