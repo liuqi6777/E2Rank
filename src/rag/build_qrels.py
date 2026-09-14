@@ -77,7 +77,34 @@ def _open_text(path: Path) -> TextIO:
 
 
 def iter_json_array(path: Path, chunk_size: int = 1 << 20) -> Iterator[dict[str, Any]]:
-    """Stream objects from a top-level JSON array without loading the file in memory."""
+    """Yield objects from a top-level JSON array.
+
+    Fast path: when the fully decoded array fits comfortably in memory, decode it in
+    one pass with the C-accelerated ``json.load`` (orders of magnitude faster than the
+    character-by-character streaming parser below). This is enabled by default and can
+    be disabled with the ``E2RANK_QRELS_STREAM_JSON=1`` environment variable, which
+    forces the original constant-memory streaming parser for very large inputs.
+    """
+    if os.environ.get("E2RANK_QRELS_STREAM_JSON") != "1":
+        # Reading the whole (decompressed) payload once and handing the bytes to the
+        # C-accelerated json.loads is far faster than json.load reading incrementally
+        # from a gzip text stream. The frozen inputs comfortably fit in memory.
+        if path.suffix == ".gz":
+            with gzip.open(path, "rb") as handle:
+                raw = handle.read()
+        else:
+            with open(path, "rb") as handle:
+                raw = handle.read()
+        payload = json.loads(raw)
+        del raw
+        if not isinstance(payload, list):
+            raise ValueError(f"Expected a top-level JSON array in {path}")
+        for value in payload:
+            if not isinstance(value, dict):
+                raise ValueError(f"Every item in {path} must be an object")
+            yield value
+        return
+
     decoder = json.JSONDecoder()
     with _open_text(path) as handle:
         buffer = ""
@@ -273,43 +300,76 @@ def load_hotpotqa(path: Path, expected_count: int | None) -> tuple[list[dict[str
     return rows, dict(statistics)
 
 
-def align_to_corpus(
-    corpus_path: Path,
-    nq_rows: list[dict[str, Any]],
-    hotpot_rows: list[dict[str, Any]],
-    minimum_window_f1: float,
-    expected_count: int | None,
-) -> tuple[dict[str, list[int]], dict[tuple[str, str], tuple[float, int]], dict]:
-    nq_strict_targets: dict[str, set[str]] = defaultdict(set)
-    nq_relaxed_targets: dict[str, set[str]] = defaultdict(set)
-    for row in nq_rows:
-        for target in row["positive_targets"]:
-            nq_strict_targets[target["strict_key"]].add(target["strict_key"])
-            nq_relaxed_targets[target["relaxed_key"]].add(target["strict_key"])
+def _corpus_sha256(corpus_path: Path) -> str:
+    """Content hash matching the original per-line accumulation (== whole-file bytes)."""
+    digest = hashlib.sha256()
+    with corpus_path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(8 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
-    facts_by_title: dict[str, set[str]] = defaultdict(set)
-    for row in hotpot_rows:
-        for title, sentence in row["fact_keys"]:
-            facts_by_title[title].add(sentence)
+
+# Worker-global read-only lookup tables, populated once per process (via fork or the
+# pool initializer) so large corpus scans avoid re-pickling them for every chunk.
+_WORKER_STATE: dict[str, Any] = {}
+
+
+def _init_align_worker(
+    nq_strict_targets: dict[str, set[str]],
+    nq_relaxed_targets: dict[str, set[str]],
+    facts_by_title: dict[str, set[str]],
+    minimum_window_f1: float,
+) -> None:
+    _WORKER_STATE["nq_strict_targets"] = nq_strict_targets
+    _WORKER_STATE["nq_relaxed_targets"] = nq_relaxed_targets
+    _WORKER_STATE["facts_by_title"] = facts_by_title
+    _WORKER_STATE["minimum_window_f1"] = minimum_window_f1
+
+
+def _scan_corpus_chunk(
+    args: tuple[str, int, int],
+) -> tuple[dict[str, list[int]], dict[tuple[str, str], tuple[float, int]], dict[str, int]]:
+    """Scan one byte range ``[start, end)`` (line-aligned) of the corpus.
+
+    Global ``ordinal`` is taken from the record ``id`` and validated against the
+    contiguous ordinal expected within the chunk, preserving the original semantics.
+    """
+    corpus_path, start, end = args
+    nq_strict_targets = _WORKER_STATE["nq_strict_targets"]
+    nq_relaxed_targets = _WORKER_STATE["nq_relaxed_targets"]
+    facts_by_title = _WORKER_STATE["facts_by_title"]
+    minimum_window_f1 = _WORKER_STATE["minimum_window_f1"]
 
     nq_matches: dict[str, list[int]] = defaultdict(list)
     best_hotpot: dict[tuple[str, str], tuple[float, int]] = {}
-    statistics = Counter()
-    corpus_digest = hashlib.sha256()
-    with corpus_path.open("rb") as handle:
-        for ordinal, raw_line in enumerate(handle):
-            corpus_digest.update(raw_line)
+    statistics: Counter = Counter()
+
+    expected_ordinal: int | None = None
+    with open(corpus_path, "rb") as handle:
+        handle.seek(start)
+        position = start
+        while position < end:
+            raw_line = handle.readline()
+            if not raw_line:
+                break
+            line_length = len(raw_line)
             if not raw_line.strip():
-                raise ValueError(f"Blank corpus line at physical line {ordinal + 1}")
+                raise ValueError(f"Blank corpus line near byte {position}")
             record = json.loads(raw_line)
             try:
                 passage_id = int(record["id"])
             except (KeyError, TypeError, ValueError) as exc:
-                raise ValueError(f"Invalid corpus id at line {ordinal + 1}") from exc
-            if passage_id != ordinal:
+                raise ValueError(f"Invalid corpus id near byte {position}") from exc
+            if expected_ordinal is None:
+                expected_ordinal = passage_id
+            if passage_id != expected_ordinal:
                 raise ValueError(
-                    f"Corpus ids must equal ordinals: id={passage_id}, ordinal={ordinal}"
+                    f"Corpus ids must equal ordinals: id={passage_id}, ordinal={expected_ordinal}"
                 )
+            ordinal = passage_id
+            expected_ordinal += 1
+            position += line_length
+
             contents = record.get("contents")
             if not isinstance(contents, str):
                 raise ValueError(f"Invalid corpus contents at ordinal {ordinal}")
@@ -345,11 +405,117 @@ def align_to_corpus(
                     score == current[0] and ordinal < current[1]
                 ):
                     best_hotpot[fact_key] = (score, ordinal)
-    count = ordinal + 1 if "ordinal" in locals() else 0
+    return dict(nq_matches), best_hotpot, dict(statistics)
+
+
+def _chunk_byte_ranges(corpus_path: Path, num_chunks: int) -> list[tuple[str, int, int]]:
+    """Split the corpus into line-aligned byte ranges for parallel scanning."""
+    size = corpus_path.stat().st_size
+    if num_chunks <= 1 or size == 0:
+        return [(str(corpus_path), 0, size)]
+    approx = size // num_chunks
+    boundaries = [0]
+    with corpus_path.open("rb") as handle:
+        for index in range(1, num_chunks):
+            handle.seek(index * approx)
+            handle.readline()  # advance to the next line boundary
+            boundary = handle.tell()
+            if boundary > boundaries[-1] and boundary < size:
+                boundaries.append(boundary)
+    boundaries.append(size)
+    return [
+        (str(corpus_path), boundaries[i], boundaries[i + 1])
+        for i in range(len(boundaries) - 1)
+        if boundaries[i + 1] > boundaries[i]
+    ]
+
+
+def align_to_corpus(
+    corpus_path: Path,
+    nq_rows: list[dict[str, Any]],
+    hotpot_rows: list[dict[str, Any]],
+    minimum_window_f1: float,
+    expected_count: int | None,
+    num_workers: int | None = None,
+) -> tuple[dict[str, list[int]], dict[tuple[str, str], tuple[float, int]], dict]:
+    nq_strict_targets: dict[str, set[str]] = defaultdict(set)
+    nq_relaxed_targets: dict[str, set[str]] = defaultdict(set)
+    for row in nq_rows:
+        for target in row["positive_targets"]:
+            nq_strict_targets[target["strict_key"]].add(target["strict_key"])
+            nq_relaxed_targets[target["relaxed_key"]].add(target["strict_key"])
+
+    facts_by_title: dict[str, set[str]] = defaultdict(set)
+    for row in hotpot_rows:
+        for title, sentence in row["fact_keys"]:
+            facts_by_title[title].add(sentence)
+
+    if num_workers is None:
+        env_workers = os.environ.get("E2RANK_QRELS_WORKERS")
+        num_workers = int(env_workers) if env_workers else (os.cpu_count() or 1)
+    num_workers = max(1, num_workers)
+
+    corpus_sha256 = _corpus_sha256(corpus_path)
+
+    nq_matches: dict[str, list[int]] = defaultdict(list)
+    best_hotpot: dict[tuple[str, str], tuple[float, int]] = {}
+    statistics = Counter()
+    count = 0
+
+    plain_targets = (
+        dict(nq_strict_targets),
+        dict(nq_relaxed_targets),
+        dict(facts_by_title),
+    )
+
+    if num_workers == 1:
+        _init_align_worker(*plain_targets, minimum_window_f1)
+        chunk_ranges = _chunk_byte_ranges(corpus_path, 1)
+        chunk_results = [_scan_corpus_chunk(chunk_ranges[0])]
+    else:
+        import multiprocessing as mp
+
+        chunk_ranges = _chunk_byte_ranges(corpus_path, num_workers)
+        context = mp.get_context("fork")
+        with context.Pool(
+            processes=min(num_workers, len(chunk_ranges)),
+            initializer=_init_align_worker,
+            initargs=(*plain_targets, minimum_window_f1),
+        ) as pool:
+            chunk_results = pool.map(_scan_corpus_chunk, chunk_ranges)
+
+    for chunk_nq, chunk_hotpot, chunk_stats in chunk_results:
+        for target_key, ordinals in chunk_nq.items():
+            nq_matches[target_key].extend(ordinals)
+        for fact_key, value in chunk_hotpot.items():
+            current = best_hotpot.get(fact_key)
+            score, ordinal = value
+            if current is None or score > current[0] or (
+                score == current[0] and ordinal < current[1]
+            ):
+                best_hotpot[fact_key] = value
+        for key, increment in chunk_stats.items():
+            statistics[key] += increment
+
+    # Chunks are scanned out of order; restore ascending corpus order per NQ target so
+    # downstream materialization stays deterministic.
+    for target_key in nq_matches:
+        nq_matches[target_key] = sorted(nq_matches[target_key])
+
+    # Derive the total passage count from the last record id (ids == ordinals).
+    with corpus_path.open("rb") as handle:
+        handle.seek(0, os.SEEK_END)
+        file_size = handle.tell()
+        seek_back = min(file_size, 1 << 16)
+        handle.seek(file_size - seek_back)
+        tail = handle.read().splitlines()
+    last_line = next((line for line in reversed(tail) if line.strip()), b"")
+    if last_line:
+        count = int(json.loads(last_line)["id"]) + 1
     if expected_count is not None and count != expected_count:
         raise ValueError(f"Unexpected corpus count: {count}, expected {expected_count}")
     statistics["corpus_count"] = count
-    statistics["corpus_sha256"] = corpus_digest.hexdigest()
+    statistics["corpus_sha256"] = corpus_sha256
     statistics["hotpot_fact_targets"] = sum(len(values) for values in facts_by_title.values())
     statistics["hotpot_fact_matches"] = len(best_hotpot)
     return dict(nq_matches), best_hotpot, dict(statistics)
