@@ -4,6 +4,8 @@
 
 正文聚焦最终配方及其有效对照：监督适配、reward × exploration 扫描、MRR 0.90 机制消融和 group size 网格。早期 σ=1 的 LL、初始 graded nDCG 机制消融及退火/采样失配诊断仅保留在[完整附表](g1_results/all_runs.md)，不再逐项展开。
 
+后续已通过 W&B API 取得最终配方、七项消融和两项 LL 对照的完整训练历史，分析见 [G1 梯度诊断](G1_GRADIENT_ANALYSIS.md)。日志确认更新规则改变了总梯度尺度，但性能较低的配置没有更低的训练 reward；另外，Trainer 声明的 `max_grad_norm=1` 不等于已启用 DeepSpeed clipping，详见该诊断的配置核查。
+
 ## 摘要
 
 在清理后的 4,963 条 ReasonRank 训练记录上，对 `Qwen/Qwen3-Embedding-0.6B` 进行固定预算的适配，最佳已测 RL 配置在 BRIGHT 12 领域宏平均 nDCG@10 上达到 **22.01**，较原始模型 E0 的 15.07 提升 **6.94 分（相对 46.05%）**，较当前最强监督对照 graded LambdaLoss-Scaled 的 19.50 提升 **2.51 分（相对 12.87%）**。该配置使用 binary MRR@10 奖励、双侧 vMF product rollout、group size 32、固定 target alignment 0.90、leave-one-out baseline、不做 advantage 标准化、文档 log-prob 求和，并保留冻结候选分数校准。
@@ -24,7 +26,7 @@ G1 考察已有 embedding model 经 reasoning retrieval 数据适配后的检索
 
 本地证据分为三个层次。**结果事实**来自 [run_summary.csv](_summary/g1_bright/run_summary.csv) 和 [subset_summary.csv](_summary/g1_bright/subset_summary.csv)；**运行设计和配置解释**来自 [实验计划](EXPERIMENT_PLAN.md)、[suite.yaml](../configs/experiments/iclr2027/suite.yaml)、[公共参数](../configs/experiments.yaml) 及配置解析器；**数据事实**来自 [reasonrank_multi/summary.json](../data/processed/reasonrank_multi/summary.json)、[manifest.json](../data/processed/reasonrank_multi/manifest.json) 与[重叠审计](REASONRANK_BRIGHT_AUDIT.md)。本地数据产物受 Git ignore 管理，跨机器阅读可使用第 2 节转录的统计和第 10 节的哈希。
 
-本次检查确认所有 46 行都包含同一组 12 个 subset，汇总中 `tasks_missing=0`、`errors=0`，无重复 run/subset。这里的 `tasks_found=1` 指一个 `BrightRetrieval` 任务，不是只评了一个领域；`retrieval_ood` 与主分数相同也不是额外的 OOD 评测证据。远端逐 run 原始结果 JSON、训练日志与启动配置快照未包含在当前结果目录中，因此本文没有重新执行评测，也不将当前配置文件等同于逐 run 的历史执行证明。
+本次检查确认所有 46 行都包含同一组 12 个 subset，汇总中 `tasks_missing=0`、`errors=0`，无重复 run/subset。这里的 `tasks_found=1` 指一个 `BrightRetrieval` 任务，不是只评了一个领域；`retrieval_ood` 与主分数相同也不是额外的 OOD 评测证据。后续已补取 10 个相关运行的 W&B 训练历史和部分配置元数据，但没有完整的 RL 专有参数快照或远端 BRIGHT 原始结果 JSON；本文没有重新执行评测，也不将当前配置文件等同于逐 run 的历史执行证明。
 
 ## 2. 实验设置
 
@@ -59,7 +61,7 @@ ReasonRank 原始 train 有 6,721 条记录。当前实际多正例预处理产�
 | 每次训练预算 | 113 optimizer steps；global batch 128 |
 | 默认并行设置 | 8 workers，每卡 microbatch 16，gradient accumulation 1 |
 | 名义 query 暴露量 | 113 × 128 = 14,464，约相当于 2.91 次数据遍历；不是新增独立样本数 |
-| 优化器 | AdamW，LR 5e-6，weight decay 0.01，max grad norm 1.0 |
+| 优化器 | AdamW，LR 5e-6，weight decay 0.01；Trainer 声明 max grad norm 1.0，实际 clipping 见梯度诊断 |
 | 学习率调度 | Linear，warmup ratio 0.03 |
 | Seed | 训练 seed、data seed、in-batch 正例选择 seed 均为 42 |
 | 训练长度上限 | Query 512 tokens；document 1,024 tokens |
@@ -156,7 +158,7 @@ Binary MRR 从早期 alignment 0.530237 的 19.21 提升到 0.90 的 22.01，增
 
 在相同标签下，MRR 在六个 alignment 中五个优于 binary nDCG，在 0.65 处低 0.09 分；最大优势出现在 0.90，为 **2.17 分**。这说明训练 reward 与评测指标名称完全一致，并非本组获得最佳泛化分数的必要条件。
 
-一个待检验的解释是，MRR 强调首个相关文档命中，在当前候选池和噪声标签下提供了不同于多正例 nDCG 的训练信号。但当前只有最终检索分数，缺少 reward 分布、首正例排名变化和 advantage 诊断，不能据此确认信号更稠密、梯度更稳定或模型学会了更多推理。
+一个待检验的解释是，MRR 强调首个相关文档命中，在当前候选池和噪声标签下提供了不同于多正例 nDCG 的训练信号。目前的日志补充聚焦最终 MRR 配方内的消融，尚未对三条 reward 曲线开展同口径的机制比较，不能据此确认 MRR 信号更稠密、梯度更稳定或模型学会了更多推理。
 
 ### 4.3 Binary 与 teacher grades 之间没有一致支配关系
 
@@ -193,7 +195,7 @@ Binary nDCG 在四个 alignment 上高于 graded nDCG，在 0.65 和 0.80 上较
 
 关闭校准后仍达到 21.72，仅比完整配方低 **0.29 分**，是本次全部配置中的第二高分。完整配方在 9/12 个领域优于无校准版本，但 psychology 反向差异为 −4.03 分，说明宏平均差异仍包含领域权衡。校准可以作为最终配方的一部分保留，当前证据不足以把它列为主要增益来源。
 
-实现中的校准将冻结候选分数乘以采样文档的期望 alignment，以补偿采样动作与未采样文档的期望分数尺度差异。当前 alignment 为 0.90，修正幅度较小；没有配套日志可进一步量化它对 reward 退化和优化动态的影响。
+实现中的校准将冻结候选分数乘以采样文档的期望 alignment，以补偿采样动作与未采样文档的期望分数尺度差异。当前 alignment 为 0.90，修正幅度较小；后续 W&B 日志显示，有/无校准的总梯度均值分别为 62.46/61.77，退化比例为 27.24%/26.64%，没有观察到关闭校准导致信号坍缩，详见 [G1 梯度诊断](G1_GRADIENT_ANALYSIS.md)。
 
 ### 5.4 文档求和与不标准化共同构成有效更新规则
 
@@ -209,6 +211,8 @@ Binary nDCG 在四个 alignment 上高于 graded nDCG，在 0.65 和 0.80 上较
 以 `S(norm,mean) − S(norm,sum) − S(none,mean) + S(none,sum)` 定义描述性的二阶差值，结果为 **+2.00 分**。两项改动共同造成的 −8.20，并不是单项下降相加所得的 −10.20，说明组件效应不可简单叠加。
 
 Document mean 既改变文档分量相对 query 分量的权重，又改变不同候选长度记录的相对尺度；advantage 标准化也改变有效更新尺度。固定相同学习率下的最终分数不足以区分这些机制，更不直接证明某种估计器无偏、有偏或理论上更优。
+
+后续日志给出了更直接的尺度证据：完整配方、Norm、DocMean、NormDocMean 的总梯度均值分别为 62.46、751.87、14.43、209.22；三个消融的后 20 步训练 reward 均略高于完整配方。因此，BRIGHT 下降不能简单解释为没有改善训练 reward，但尚无分支梯度或参数更新范数来确认具体机制。
 
 ## 6. Group size × alignment 局部交互
 
@@ -267,7 +271,7 @@ G1 最适合支持的论点是：**在已有 embedding model 的 ReasonRank 适�
 | RL 本质上优于所有监督目标 | Graded RL 的最佳扫描值仍低于 graded LL-Scaled；监督超参数也未充分搜索 |
 | 提升具有统计显著性且可稳定复现 | 仅 seed 42，没有逐 query 分数与重复训练 |
 | 22.01 是未经测试集调参的确认性结果 | 后续 reward、alignment 和 G 的开发明确使用了 BRIGHT 反馈 |
-| 提升证明模型学会推理 | 只有检索结果，没有机制诊断或推理过程验证 |
+| 提升证明模型学会推理 | 检索结果和现有梯度/reward 诊断均未验证推理过程 |
 | G=32 或 product 已证明成本最优 | 缺少端到端时长、显存和等算力比较 |
 | 校准和不标准化在所有设置都必需 | 校准只贡献 +0.29；其余消融也只支持当前 MRR 配方和固定学习率下的结论 |
 | Query-only 固定索引部署已被否定 | QPolicy 仍更新共享 encoder；本地没有 G1-DR 结果 |
@@ -341,7 +345,7 @@ python scripts/experiment.py show G1-A-MRRAlign090 --verbose
 | 需要回答的问题 | 最直接的补充材料 |
 |---|---|
 | 训练收益是否稳定 | 关键配方的重复 seed；逐 query 结果可支持评测样本不确定性分析，但不能替代训练重复 |
-| 为何 MRR 0.90、document sum 更有效 | 原有训练日志中的 reward 分布、distinct reward、group std、degenerate fraction、梯度范数和 clipping |
+| 为何 MRR 0.90、document sum 更有效 | 已取得总梯度、reward 波动和退化日志；仍缺 query/document 分支梯度、实际参数更新范数和远端 engine clipping 配置 |
 | Group size / product 是否更高效 | 实际训练时长、峰值显存、吞吐，以及明确的相同成本比较 |
 | 配方能否独立迁移 | 按已冻结 G2 配方开展的外部评测；避免再将目标评测纳入同轮调参 |
 | 能否满足完整复现和数据审计 | 逐 run 配置/模型 revision/数据哈希/原始评测 JSON，以及剩余同题复核记录 |

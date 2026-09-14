@@ -2,6 +2,8 @@
 
 G1 已完成实验的综合分析见 [G1_RESULTS.md](G1_RESULTS.md)，包括全部 12 个 BRIGHT subset 的主表、探索与机制消融、领域分析和复现材料。[完整附表](g1_results/all_runs.md) 收录 45 次训练和 E0 的结果；这些材料独立于论文 LaTeX 正文。
 
+W&B 完整日志的后续诊断见 [G1_GRADIENT_ANALYSIS.md](G1_GRADIENT_ANALYSIS.md)，涵盖更新规则的梯度尺度、训练 reward 与 BRIGHT 差异，以及实际 clipping 配置的核查。
+
 ```text
 paper/
 ├── README.md                 # this guide
