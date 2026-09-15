@@ -1,0 +1,134 @@
+{
+  "raw_formula_check": {
+    "max_absolute_error_against_actual_log_prob_autograd": 7.152557373046875e-07
+  },
+  "joint_projection": [
+    {
+      "dimension": 32,
+      "own_documents": 8,
+      "frozen_documents": 3,
+      "group": 32,
+      "repeats": 4096,
+      "reward": "bilinear",
+      "mean_sampled_reward": 0.5971262359526008,
+      "raw": {
+        "shared_encoder_noise_variance": 14.936503139440564,
+        "embedding_noise_variance": 14.950890746171346,
+        "shared_encoder_mean_norm": 1.2687019643387454,
+        "relative_error_to_analytic": 0.044015357669364354,
+        "expected_mc_rms_relative_error": 0.04777670241806127,
+        "analytic_gradient_norm": 1.2639454246205364
+      },
+      "projected": {
+        "shared_encoder_noise_variance": 0.7030499450182195,
+        "embedding_noise_variance": 0.7173540554692841,
+        "shared_encoder_mean_norm": 1.26016749052923,
+        "relative_error_to_analytic": 0.0096607338321252,
+        "expected_mc_rms_relative_error": 0.010365369618255805,
+        "analytic_gradient_norm": 1.2639454246205364
+      },
+      "shared_encoder_variance_ratio": 0.04706924629244591,
+      "paired_projected_minus_raw_on_fixed_direction": {
+        "mean": -0.007372405831016606,
+        "standard_error": 0.003615102698041559
+      },
+      "elapsed_seconds": 2.1113919999988866,
+      "limitation": "Synthetic shared normalized linear encoder at W=I; not a Transformer or a training experiment."
+    },
+    {
+      "dimension": 128,
+      "own_documents": 8,
+      "frozen_documents": 3,
+      "group": 32,
+      "repeats": 256,
+      "reward": "binary_ndcg_at_5",
+      "mean_sampled_reward": 0.43968460615724325,
+      "raw": {
+        "shared_encoder_noise_variance": 365.1999387274557,
+        "embedding_noise_variance": 364.77947012698013,
+        "shared_encoder_mean_norm": 3.106970885392732
+      },
+      "projected": {
+        "shared_encoder_noise_variance": 3.915277438041978,
+        "embedding_noise_variance": 3.9413774458249184,
+        "shared_encoder_mean_norm": 2.894567692705959
+      },
+      "shared_encoder_variance_ratio": 0.01072091482732669,
+      "paired_projected_minus_raw_on_fixed_direction": {
+        "mean": 0.0077900405461719495,
+        "standard_error": 0.03424184025362032
+      },
+      "elapsed_seconds": 0.40228591699997196,
+      "limitation": "Synthetic shared normalized linear encoder at W=I; not a Transformer or a training experiment."
+    },
+    {
+      "dimension": 1024,
+      "own_documents": 8,
+      "frozen_documents": 3,
+      "group": 32,
+      "repeats": 256,
+      "reward": "binary_ndcg_at_5",
+      "mean_sampled_reward": 0.462474980391562,
+      "raw": {
+        "shared_encoder_noise_variance": 16075.043549651618,
+        "embedding_noise_variance": 16108.047475782458,
+        "shared_encoder_mean_norm": 10.661996886073121
+      },
+      "projected": {
+        "shared_encoder_noise_variance": 23.363136728561635,
+        "embedding_noise_variance": 23.449155095708473,
+        "shared_encoder_mean_norm": 6.9209869465305065
+      },
+      "shared_encoder_variance_ratio": 0.0014533793738349136,
+      "paired_projected_minus_raw_on_fixed_direction": {
+        "mean": -0.06911745804339121,
+        "standard_error": 0.07864132892459476
+      },
+      "elapsed_seconds": 6.037294083998859,
+      "limitation": "Synthetic shared normalized linear encoder at W=I; not a Transformer or a training experiment."
+    }
+  ],
+  "score_smoothing": {
+    "group": 32,
+    "repeats": 8192,
+    "tau": 0.04,
+    "scores": [
+      0.6,
+      0.61
+    ],
+    "analytic_gradient": [
+      2.5624668762742377,
+      -2.5624668762742377
+    ],
+    "score_function_loo": {
+      "mean_gradient": [
+        2.563234194723001,
+        -2.5679618016570425
+      ],
+      "standard_errors": [
+        0.007789120632367059,
+        0.007607899685911502
+      ],
+      "trace_noise_variance": 0.9711660061201084,
+      "relative_error": 0.0015310243225285162
+    },
+    "conditional_integration": {
+      "mean_gradient": [
+        2.5603855937735194,
+        -2.562852928061971
+      ],
+      "standard_errors": [
+        0.0020463057051936153,
+        0.0020652518844710747
+      ],
+      "trace_noise_variance": 0.06924396450135463,
+      "relative_error": 0.0005841215179380964
+    },
+    "variance_ratio": 0.07129982316616519,
+    "graded_five_document_cutoff3_check": {
+      "conditional_draws": 11,
+      "max_absolute_error_vs_interval_integration": 1.7763568394002505e-15
+    },
+    "limitation": "Two-document variance result; partial-integration literature already studies this idea. Not retrieval evidence."
+  }
+}

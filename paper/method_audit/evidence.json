@@ -1,0 +1,186 @@
+{
+  "data_sha256": "f5beddc0cdf47de1b7cc05d8e22fc225ad33c9f1ca1796a387f6cc9ac8dfca39",
+  "torch_version": "2.6.0",
+  "data": {
+    "records": 4963,
+    "candidate_occurrences": 85307,
+    "positive_occurrences": 15830,
+    "multi_positive_records": 3836,
+    "mean_candidate_count": 17.188595607495465,
+    "source_counts": {
+      "biology": 807,
+      "economics": 362,
+      "earth_science": 244,
+      "robotics": 210,
+      "sustainable_living": 54,
+      "stackoverflow": 843,
+      "leetcode": 804,
+      "math-qa": 856,
+      "math-theorem": 783
+    },
+    "source_records_kept_at_microbatch16": {
+      "stackoverflow": 832,
+      "economics": 352,
+      "math-qa": 848,
+      "robotics": 208,
+      "leetcode": 800,
+      "biology": 800,
+      "math-theorem": 768,
+      "earth_science": 240,
+      "sustainable_living": 48
+    },
+    "permanently_dropped_records": 67,
+    "unchanged_in_batch_groups_across_epochs": true,
+    "teacher_top1_binary_negative_records": 1359,
+    "binary_positive_with_zero_teacher_grade": 2063,
+    "binary_negative_with_nonzero_teacher_grade": 34542,
+    "binary_positive_negative_pairs": 207558,
+    "teacher_inverted_binary_pairs": 32339
+  },
+  "tokenization": {
+    "simple_input_ids": {
+      "native": [
+        1944,
+        151643
+      ],
+      "manual_append": [
+        1944,
+        151643,
+        151643
+      ]
+    },
+    "truncated_manual_tail_ids": [
+      1273,
+      1273,
+      1273,
+      151643
+    ],
+    "tokenizer_post_processor": "Sequence(processors=[ByteLevel(add_prefix_space=False, trim_offsets=False, use_regex=False), TemplateProcessing(single=[Sequence(id=A, type_id=0), SpecialToken(id=\"<|endoftext|>\", type_id=0)], pair=[Sequence(id=A, type_id=0), Sequence(id=B, type_id=0), SpecialToken(id=\"<|endoftext|>\", type_id=0)], special_tokens={\"<|endoftext|>\":SpecialToken(id=\"<|endoftext|>\", ids=[151643], tokens=[\"<|endoftext|>\"])})])",
+    "unique_documents": 53782,
+    "query_token_lengths": {
+      "median": 122,
+      "maximum": 6271,
+      "above512": 310,
+      "above8192": 0
+    },
+    "document_token_lengths": {
+      "median": 173,
+      "maximum": 516,
+      "above1024": 0,
+      "above8192": 0
+    }
+  },
+  "policy": {
+    "dim": 8,
+    "group": 32,
+    "repeats": 4096,
+    "kappa": 33.66273349711416,
+    "expected_alignment": 0.9,
+    "sampled_alignment": 0.9000670909881592,
+    "gradient_cosine": 0.9999446272850037,
+    "gradient_relative_error": 0.010704470798373222,
+    "g1_dim": 1024,
+    "g1_kappa_at_alignment090": 4846.286761723768,
+    "expected_squared_distance_at_alignment090": 0.2
+  },
+  "precision": {
+    "baseline_dtype": "torch.bfloat16",
+    "grpo_without_autocast_dtype": "torch.float32",
+    "grpo_with_cpu_autocast_dtype": "torch.bfloat16",
+    "note": "CPU dtype probe only; historical CUDA/DeepSpeed runtime autocast was not inspected."
+  },
+  "results": {
+    "run_count": 75,
+    "selected": {
+      "G1-S-MRR32": {
+        "values": [
+          16.86,
+          18.33,
+          17.94
+        ],
+        "mean": 17.71,
+        "sample_sd": 0.7615116545398368
+      },
+      "G1-S-MRR64": {
+        "values": [
+          18.44,
+          19.24,
+          18.98
+        ],
+        "mean": 18.886666666666667,
+        "sample_sd": 0.4080849584747424
+      },
+      "G1-S-GradedNDCG64": {
+        "values": [
+          18.98,
+          19.3,
+          18.28
+        ],
+        "mean": 18.853333333333335,
+        "sample_sd": 0.5216640042530566
+      },
+      "CL": {
+        "values": [
+          16.96,
+          17.62,
+          17.48
+        ],
+        "mean": 17.353333333333335,
+        "sample_sd": 0.34775470281986604
+      },
+      "LL_graded_scaled_seed42": 19.5
+    }
+  },
+  "model_protocol_sensitivity": {
+    "model_revision": "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3",
+    "dtype": "float32",
+    "device": "cpu",
+    "native_similarity": [
+      [
+        0.764556884765625,
+        0.14142513275146484
+      ],
+      [
+        0.1354977935552597,
+        0.5999547243118286
+      ]
+    ],
+    "double_terminal_similarity": [
+      [
+        0.7462117671966553,
+        0.15108542144298553
+      ],
+      [
+        0.16189000010490417,
+        0.5582383275032043
+      ]
+    ],
+    "same_text_protocol_cosines": [
+      0.9928457736968994,
+      0.9788563251495361,
+      0.9819341897964478,
+      0.9800890684127808
+    ],
+    "note": "Four official model-card example texts; confirms sensitivity, not a BRIGHT improvement."
+  },
+  "conditional_projection_toy": {
+    "dimension": 1024,
+    "group_size": 64,
+    "repeats": 256,
+    "full": {
+      "noise_variance": 1516.9376220703125,
+      "mean_norm": 6.001765727996826,
+      "mean_on_known_signal_axis": 5.480928421020508,
+      "off_signal_mean_norm": 2.445530891418457
+    },
+    "conditional_projection": {
+      "noise_variance": 4.242645263671875,
+      "mean_norm": 5.480928421020508,
+      "mean_on_known_signal_axis": 5.480928421020508,
+      "off_signal_mean_norm": 0.0
+    },
+    "variance_ratio": 0.0027968488630940036,
+    "positive_beats_negative_fraction": 0.906005859375,
+    "note": "Synthetic single-query-action embedding gradient only. Does not establish encoder-gradient variance reduction in the joint G1 product estimator."
+  }
+}

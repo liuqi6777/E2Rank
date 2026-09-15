@@ -1,0 +1,196 @@
+{
+  "Qwen/Qwen3-0.6B": {
+    "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+    "pad_token_id": 151643,
+    "eos_token_id": 151645,
+    "post_processor": "ByteLevel(add_prefix_space=False, trim_offsets=False, use_regex=False)",
+    "examples": {
+      "default": {
+        "ids": [
+          1944
+        ],
+        "attention_mask_tail": [
+          1
+        ],
+        "total_tokens": 1
+      },
+      "manual_pad": {
+        "ids": [
+          1944,
+          151643
+        ],
+        "attention_mask_tail": [
+          1,
+          1
+        ],
+        "total_tokens": 2
+      },
+      "manual_pad_no_special": {
+        "ids": [
+          1944,
+          151643
+        ],
+        "attention_mask_tail": [
+          1,
+          1
+        ],
+        "total_tokens": 2
+      },
+      "long_manual_pad": {
+        "ids": [
+          1273,
+          1273,
+          1273,
+          1273,
+          1273,
+          1273
+        ],
+        "attention_mask_tail": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "total_tokens": 16
+      },
+      "long_default": {
+        "ids": [
+          1273,
+          1273,
+          1273,
+          1273,
+          1273,
+          1273
+        ],
+        "attention_mask_tail": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "total_tokens": 16
+      },
+      "canonical_short": [
+        1944,
+        151643
+      ],
+      "canonical_truncated_tail": [
+        1273,
+        1273,
+        1273,
+        1273,
+        1273,
+        151643
+      ]
+    },
+    "native_matches_canonical_on_empty_short_unicode_long": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "Qwen/Qwen3-Embedding-0.6B": {
+    "revision": "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3",
+    "pad_token_id": 151643,
+    "eos_token_id": 151645,
+    "post_processor": "Sequence(processors=[ByteLevel(add_prefix_space=False, trim_offsets=False, use_regex=False), TemplateProcessing(single=[Sequence(id=A, type_id=0), SpecialToken(id=\"<|endoftext|>\", type_id=0)], pair=[Sequence(id=A, type_id=0), Sequence(id=B, type_id=0), SpecialToken(id=\"<|endoftext|>\", type_id=0)], special_tokens={\"<|endoftext|>\":SpecialToken(id=\"<|endoftext|>\", ids=[151643], tokens=[\"<|endoftext|>\"])})])",
+    "examples": {
+      "default": {
+        "ids": [
+          1944,
+          151643
+        ],
+        "attention_mask_tail": [
+          1,
+          1
+        ],
+        "total_tokens": 2
+      },
+      "manual_pad": {
+        "ids": [
+          1944,
+          151643,
+          151643
+        ],
+        "attention_mask_tail": [
+          1,
+          1,
+          1
+        ],
+        "total_tokens": 3
+      },
+      "manual_pad_no_special": {
+        "ids": [
+          1944,
+          151643
+        ],
+        "attention_mask_tail": [
+          1,
+          1
+        ],
+        "total_tokens": 2
+      },
+      "long_manual_pad": {
+        "ids": [
+          1273,
+          1273,
+          1273,
+          1273,
+          1273,
+          151643
+        ],
+        "attention_mask_tail": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "total_tokens": 16
+      },
+      "long_default": {
+        "ids": [
+          1273,
+          1273,
+          1273,
+          1273,
+          1273,
+          151643
+        ],
+        "attention_mask_tail": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "total_tokens": 16
+      },
+      "canonical_short": [
+        1944,
+        151643
+      ],
+      "canonical_truncated_tail": [
+        1273,
+        1273,
+        1273,
+        1273,
+        1273,
+        151643
+      ]
+    },
+    "native_matches_canonical_on_empty_short_unicode_long": [
+      true,
+      true,
+      true,
+      true
+    ]
+  }
+}
