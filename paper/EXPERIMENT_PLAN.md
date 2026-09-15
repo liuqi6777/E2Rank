@@ -26,8 +26,9 @@ G2/G3 延后，不复刻整个历史搜索矩阵。本次只更新配置、脚�
 尚未逐个审计历史远端运行的 tokenizer/autocast，不能断言所有历史运行具有同一种错误。
 但新主表必须遵守统一的新协议；将旧微调权重换 tokenizer 后重新评测，不能替代新训练。
 
-训练输入为 `data/processed/reasonrank_multi/train.ready.jsonl`，4,963 条，SHA256：
+本地审查的训练输入快照为 `data/processed/reasonrank_multi/train.ready.jsonl`，4,963 条，SHA256：
 `f5beddc0cdf47de1b7cc05d8e22fc225ad33c9f1ca1796a387f6cc9ac8dfca39`。
+该哈希记录本地快照，不作为其他机器的硬编码准入条件。运行时使用配置指向的数据，并校验同目录 manifest 中的训练文件哈希、无 dev 设置及预处理 seed 42；实际哈希写入各 run 合同。三个 seed 和各方法必须使用同一份数据，汇总拒绝合并不同哈希的结果。
 当前 microbatch 16 配置保留 4,896 条，丢弃 67 条（约 1.35%）。记录实际索引数量，不把输入数量写成实际覆盖数量；此事不阻塞本轮训练。
 历史本地 G1 的 75 行分数保留在 [run_summary.csv](_summary/g1_bright/run_summary.csv)，不拼入新 seed 均值。
 

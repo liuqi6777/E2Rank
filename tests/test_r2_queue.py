@@ -2,6 +2,7 @@
 import copy
 from dataclasses import fields
 import json
+import os
 from pathlib import Path
 import random
 import sys
@@ -47,6 +48,81 @@ def save_scores(row, value=.2):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({'scores': {'standard': [
         {'hf_subset': s, 'main_score': value} for s in night.SUBSETS]}}))
+
+
+def save_completion(row, receipts, data_hash='a' * 64):
+    contract = {'data_sha256': data_hash}
+    night.write_json(receipts / row['run_id'] / 'contract.json', contract)
+    night.write_json(receipts / row['run_id'] / 'state.json',
+                     {'evaluation_complete': True, 'contract_sha256': night.fingerprint(contract)})
+
+
+@pytest.fixture
+def prepared_data(row, tmp_path):
+    directory = tmp_path / 'prepared'
+    directory.mkdir()
+    path = directory / 'train.ready.jsonl'
+    path.write_text(json.dumps(dict(schema='embedding_candidates_v2', id='sample', source='biology',
+                                    query='query', document=['positive', 'negative'], relevance=[1, 0])) + '\n')
+    manifest = dict(version=1, selection='fixed_budget_final_checkpoint', positive_selection_seed=42,
+                    artifacts=[dict(role='train', path='/original/preparation/host/train.ready.jsonl',
+                                    sha256=night.experiments.digest(path))])
+    night.write_json(directory / 'manifest.json', manifest)
+    row['config']['data_path'] = str(path)
+    row['dataset_manifest'] = str(directory / 'manifest.json')
+    return row, path, manifest
+
+
+def test_prepared_data_uses_local_manifest_and_resolves_equivalent_paths(prepared_data, monkeypatch, tmp_path):
+    row, path, _ = prepared_data
+    relative = copy.deepcopy(row)
+    relative['config']['data_path'] = os.path.relpath(path, night.ROOT)
+    monkeypatch.chdir(tmp_path)  # Relative data paths remain rooted in the project.
+    assert night.verify_data([row, relative]) == night.experiments.digest(path)
+
+
+def test_prepared_data_rejects_changed_content_and_different_files(prepared_data, tmp_path):
+    row, path, manifest = prepared_data
+    other = copy.deepcopy(row)
+    other['config']['data_path'] = str(tmp_path / 'other.ready.jsonl')
+    with pytest.raises(ValueError, match='same prepared data'):
+        night.verify_data([row, other])
+    path.write_text(path.read_text().replace('positive', 'changed positive'))
+    with pytest.raises(ValueError, match='hash mismatch'):
+        night.verify_data([row])
+    # Even an updated manifest cannot silently switch data in an existing run.
+    old_contract = night.contract_for(row, manifest['artifacts'][0]['sha256'], {})
+    def call(command, log):
+        save_model(row)
+        save_scores(row)
+        return 0
+    receipts = tmp_path / 'receipt'
+    night.execute_job(row, old_contract, receipts, call)
+    manifest['artifacts'][0]['sha256'] = night.experiments.digest(path)
+    night.write_json(path.parent / 'manifest.json', manifest)
+    updated = night.contract_for(row, night.verify_data([row]), {})
+    again = Mock()
+    with pytest.raises(ValueError, match='different config/data/code'):
+        night.execute_job(row, updated, receipts, again)
+    again.assert_not_called()
+
+
+@pytest.mark.parametrize('change', ['dev', 'seed', 'duplicate_train', 'public_train', 'no_hash'])
+def test_prepared_data_requires_matching_preparation_metadata(prepared_data, change):
+    row, path, manifest = prepared_data
+    if change == 'dev':
+        manifest['selection'] = 'independent_dev'
+    elif change == 'seed':
+        manifest['positive_selection_seed'] = 3407
+    elif change == 'duplicate_train':
+        manifest['artifacts'].append(dict(manifest['artifacts'][0]))
+    elif change == 'public_train':
+        manifest['artifacts'][0]['path'] = '/original/host/train.jsonl'
+    else:
+        del manifest['artifacts'][0]['sha256']
+    night.write_json(path.parent / 'manifest.json', manifest)
+    with pytest.raises(ValueError):
+        night.verify_data([row])
 
 
 def test_eval_failure_retries_only_eval_and_completion_skips(row, tmp_path):
@@ -169,10 +245,10 @@ def test_summary_never_averages_missing_seeds(tmp_path):
         row['config']['output_dir'] = str(tmp_path / row['run_id'])
         if row['run_id'] in {night.run_id('RL-MRR64-SF', s) for s in night.SEEDS}:
             save_scores(row, .20)
-            night.write_json(receipts / row['run_id'] / 'state.json', {'evaluation_complete': True})
+            save_completion(row, receipts)
         if row['run_id'] in {night.run_id('RL-MRR64-CP', s) for s in night.SEEDS[:2]}:
             save_scores(row, .22)
-            night.write_json(receipts / row['run_id'] / 'state.json', {'evaluation_complete': True})
+            save_completion(row, receipts)
     report = night.summarize(matrix, receipts)
     groups = {g['method']: g for g in report['groups']}
     assert groups['RL-MRR64-SF']['mean'] == pytest.approx(20)
@@ -296,7 +372,7 @@ def test_partition_summaries_keep_other_seeds_separate_then_combine(tmp_path):
         part = [row for row in full if row['kind'] == 'train' and row['config']['seed'] == seed]
         for row in part:
             save_scores(row, base_score + (.02 if '-CP' in row['run_id'] else 0))
-            night.write_json(receipts / row['run_id'] / 'state.json', {'evaluation_complete': True})
+            save_completion(row, receipts)
         report = night.summarize(part, receipts)
         assert report['seeds'] == [seed]
         assert report['groups'][0]['completed'] == 1
@@ -314,3 +390,50 @@ def test_partition_summaries_keep_other_seeds_separate_then_combine(tmp_path):
     assert combined['paired_cp_minus_sf'][0]['mean_delta'] == pytest.approx(2)
     for seed in night.SEEDS:
         assert (night.queue_directory(receipts, [seed]) / 'summary.json').read_bytes() == reports_before[seed]
+
+
+@pytest.mark.parametrize('mismatch', ['seed', 'estimator'])
+def test_summary_does_not_combine_different_training_data(tmp_path, mismatch):
+    _, matrix = night.resolve_matrix()
+    receipts = tmp_path / 'receipts'
+    for row in matrix:
+        row['config']['output_dir'] = str(tmp_path / row['run_id'])
+        save_scores(row, .22 if '-CP' in row['run_id'] else .20)
+        differs = (row['config']['seed'] == 3407 if mismatch == 'seed' else '-CP' in row['run_id'])
+        save_completion(row, receipts, ('b' if differs else 'a') * 64)
+    report = night.summarize(matrix, receipts)
+    assert not report['data_consistent']
+    assert report['data_sha256'] == ['a' * 64, 'b' * 64]
+    assert all(group['completed'] == 3 and group['mean'] is None and group['sample_sd'] is None
+               for group in report['groups'])
+    assert all(pair['mean_delta'] is None for pair in report['paired_cp_minus_sf'])
+    deltas = [item['delta'] for item in report['paired_cp_minus_sf'][0]['per_seed']]
+    assert deltas == (pytest.approx([2, 2, 2]) if mismatch == 'seed' else [None, None, None])
+    assert all(row['evaluation_complete'] for row in report['runs'])
+
+
+def test_summary_requires_a_matching_saved_data_contract(row, tmp_path):
+    receipts = tmp_path / 'receipts'
+    save_scores(row)
+    save_completion(row, receipts)
+    night.write_json(receipts / row['run_id'] / 'contract.json', {'data_sha256': 'b' * 64})
+    _, matrix = night.resolve_matrix(seeds=[42])
+    matrix = [row if candidate['run_id'] == row['run_id'] else candidate for candidate in matrix]
+    report = night.summarize(matrix, receipts)
+    result = next(item for item in report['runs'] if item['run'] == row['run_id'])
+    assert not result['evaluation_complete']
+    assert result['mean'] is None
+    assert result['error']
+
+
+def test_e0_evaluation_does_not_constrain_training_data_identity(tmp_path):
+    _, matrix = night.resolve_matrix(seeds=[42])
+    receipts = tmp_path / 'receipts'
+    for row in matrix:
+        row['config']['output_dir'] = str(tmp_path / row['run_id'])
+        save_scores(row, .20)
+        save_completion(row, receipts, ('b' if row['kind'] == 'evaluation' else 'a') * 64)
+    report = night.summarize(matrix, receipts)
+    assert report['data_consistent']
+    assert report['data_sha256'] == ['a' * 64]
+    assert all(group['mean'] == pytest.approx(20) for group in report['groups'])

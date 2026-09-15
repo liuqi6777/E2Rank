@@ -133,13 +133,33 @@ def resolve_matrix(settings=SETTINGS, gpus=8, seeds=SEEDS):
 
 
 def verify_data(matrix):
-    cfg = matrix[0]['config']
-    path = experiments.path_at_root(cfg['data_path'])
+    """Check the selected data against its own manifest, independent of host paths."""
+    paths = {experiments.path_at_root(row['config']['data_path']) for row in matrix}
+    if len(paths) != 1:
+        raise ValueError(f'All R2 methods must consume the same prepared data: {sorted(map(str, paths))}')
+    path = paths.pop()
+    manifest_path = path.parent / 'manifest.json'
+    manifest = experiments.read_mapping(manifest_path)
+    if (manifest.get('version') != 1
+            or manifest.get('selection') != 'fixed_budget_final_checkpoint'
+            or manifest.get('positive_selection_seed') != 42):
+        raise ValueError(f'R2 needs a no-dev dataset prepared with positive selection seed 42: {manifest_path}')
+    artifacts = [item for item in manifest.get('artifacts', []) if item.get('role') == 'train']
+    if len(artifacts) != 1 or Path(artifacts[0].get('path', '')).name != path.name:
+        raise ValueError(f'Manifest must identify one prepared train artifact named {path.name}: {manifest_path}')
+    # Artifact paths describe the preparation host. Use the configured local file;
+    # only its content fingerprint and artifact name need to survive relocation.
+    expected = artifacts[0].get('sha256')
+    if not isinstance(expected, str) or len(expected) != 64 or any(c not in '0123456789abcdef' for c in expected):
+        raise ValueError(f'Manifest train artifact needs a valid SHA256: {manifest_path}')
     actual = experiments.digest(path)
-    if actual != matrix[0]['protocol']['expected_train_sha256']:
-        raise ValueError(f'R2 prepared training data hash mismatch: {path}')
-    if any(r['config']['data_path'] != cfg['data_path'] for r in matrix):
-        raise ValueError('All R2 methods must consume the same prepared data')
+    if actual != expected:
+        raise ValueError(
+            f'R2 prepared training data hash mismatch:\n'
+            f'  data: {path}\n  manifest: {manifest_path}\n'
+            f'  expected (manifest): {expected}\n  actual: {actual}\n'
+            'Check G1.data in the selected settings file and copy the matching data/manifest pair.'
+        )
     return actual
 
 
@@ -267,24 +287,34 @@ def summarize(matrix, directory, output_dir=None):
         name = row['run_id']
         state_path = directory / name / 'state.json'
         state = json.loads(state_path.read_text()) if state_path.exists() else {}
-        scores, source, error = None, None, None
+        scores, source, error, data_hash = None, None, None, None
         if state.get('evaluation_complete') and not state.get('last_error'):
             try:
+                contract = experiments.read_mapping(directory / name / 'contract.json')
+                if fingerprint(contract) != state.get('contract_sha256'):
+                    raise ValueError('Saved run contract does not match the completion receipt')
+                data_hash = contract.get('data_sha256')
+                if not data_hash:
+                    raise ValueError('Completed run contract is missing the training data SHA256')
                 scores, source = read_bright(row['config']['output_dir'])
             except (ValueError, OSError, KeyError, TypeError) as exc:
                 error = str(exc)
-        rows.append(dict(run=name, seed=row['config']['seed'], scores=scores, source=source,
+        rows.append(dict(run=name, kind=row['kind'], seed=row['config']['seed'], scores=scores, source=source, data_sha256=data_hash,
                          mean=statistics.mean(scores.values()) if scores else None,
                          train_complete=state.get('train_complete', False),
                          evaluation_complete=bool(scores), error=error or state.get('last_error')))
+    data_hashes = sorted({row['data_sha256'] for row in rows
+                          if row['evaluation_complete'] and row['kind'] == 'train'})
+    data_consistent = len(data_hashes) <= 1
     groups = []
     for method in METHODS:
         members = [next(r for r in rows if r['run'] == run_id(method, seed)) for seed in seeds]
         values = [r['mean'] for r in members if r['mean'] is not None]
+        complete = len(values) == expected_count and data_consistent
         groups.append(dict(method=method, completed=len(values),
-                           mean=statistics.mean(values) if len(values) == expected_count else None,
-                           sample_sd=statistics.stdev(values) if len(values) == expected_count and expected_count > 1 else None,
-                           worst=min(values) if len(values) == expected_count else None))
+                           mean=statistics.mean(values) if complete else None,
+                           sample_sd=statistics.stdev(values) if complete and expected_count > 1 else None,
+                           worst=min(values) if complete else None))
     paired = []
     for reward in ('MRR64', 'BinaryNDCG64', 'GradedNDCG64'):
         differences = []
@@ -292,10 +322,11 @@ def summarize(matrix, directory, output_dir=None):
             sf, cp = [next(r for r in rows if r['run'] == run_id(f'RL-{reward}-{est}', seed))
                       for est in ('SF', 'CP')]
             differences.append(dict(seed=seed, delta=cp['mean']-sf['mean']
-                                    if cp['mean'] is not None and sf['mean'] is not None else None))
+                                    if cp['mean'] is not None and sf['mean'] is not None
+                                    and cp['data_sha256'] == sf['data_sha256'] else None))
         values = [x['delta'] for x in differences if x['delta'] is not None]
         paired.append(dict(reward=reward, per_seed=differences,
-                           mean_delta=statistics.mean(values) if len(values) == expected_count else None))
+                           mean_delta=statistics.mean(values) if len(values) == expected_count and data_consistent else None))
     auxiliary = {}
     event_paths = [output_dir / 'events.jsonl']
     if seeds == SEEDS:
@@ -311,13 +342,15 @@ def summarize(matrix, directory, output_dir=None):
             if event['job'].startswith('gradient_probe') and event['time'] >= auxiliary.get(event['job'], {}).get('time', ''):
                 auxiliary[event['job']] = event
     report = dict(units='BRIGHT nDCG@10 percentage points', seeds=list(seeds), groups=groups, paired_cp_minus_sf=paired,
-                  runs=rows, gradient_probes=auxiliary)
+                  runs=rows, gradient_probes=auxiliary, data_sha256=data_hashes, data_consistent=data_consistent)
     write_json(output_dir / 'summary.json', report)
     def fmt(value):
         return '—' if value is None else f'{value:.3f}'
     lines = ['# G1 R2 overnight results', '', f'Selected seeds: {", ".join(map(str, seeds))}.',
-             'Statistics require all selected seeds; a single seed has no sample SD.', '',
-             '| Method | Complete | Mean | Sample SD | Worst |', '|---|---:|---:|---:|---:|']
+             'Statistics require all selected seeds with identical training data; a single seed has no sample SD.', '']
+    if not data_consistent:
+        lines += ['Training data hashes differ between runs. Aggregate statistics are withheld; see per-run hashes below.', '']
+    lines += ['| Method | Complete | Mean | Sample SD | Worst |', '|---|---:|---:|---:|---:|']
     for g in groups:
         lines.append(f'| {g["method"]} | {g["completed"]}/{expected_count} | {fmt(g["mean"])} | {fmt(g["sample_sd"])} | {fmt(g["worst"])} |')
     lines += ['', '| Reward (CP − SF) | ' + ' | '.join(f'Seed {s}' for s in seeds) + ' | Mean difference |',
@@ -327,6 +360,9 @@ def summarize(matrix, directory, output_dir=None):
     lines += ['', '| Run | Mean | ' + ' | '.join(SUBSETS) + ' |', '|---|---:|' + '---:|'*len(SUBSETS)]
     for r in rows:
         lines.append(f'| {r["run"]} | {fmt(r["mean"])} | ' + ' | '.join(fmt((r['scores'] or {}).get(s)) for s in SUBSETS) + ' |')
+    lines += ['', '## Training data SHA256', '']
+    lines += [f'- {r["run"]}: `{r["data_sha256"]}`' for r in rows
+              if r['evaluation_complete'] and r['kind'] == 'train']
     lines += ['', '## Pending / failed', '']
     lines += [f'- {r["run"]}: {r["error"] or "not complete"}' for r in rows if not r['evaluation_complete']]
     lines += ['', '## Gradient probes', '']
@@ -403,10 +439,14 @@ def main(argv=None):
     directory = Path(matrix[0]['config']['output_dir']).parent / '.r2_batch'
     queue_dir = queue_directory(directory, seeds)
     if args.action == 'summary':
-        summarize(matrix, directory)
+        report = summarize(matrix, directory)
         print(queue_dir / 'summary.md')
-        return 0
+        return 0 if report['data_consistent'] else 1
+    data_path = experiments.path_at_root(matrix[0]['config']['data_path'])
+    print(f'Settings: {args.config.resolve()}\nTraining data: {data_path}\n'
+          f'Data manifest: {data_path.parent / "manifest.json"}', flush=True)
     data_hash = verify_data(matrix)
+    print(f'Training data SHA256: {data_hash}', flush=True)
     sources = source_fingerprint()
     contracts = {row['run_id']: contract_for(row, data_hash, sources) for row in matrix}
     for row in matrix:

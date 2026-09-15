@@ -23,7 +23,6 @@ profiles:
       micro_batch_size: 16
       positive_selection: retain_all_seeded_in_batch_representative
       positive_selection_seed: 42
-      expected_train_sha256: f5beddc0cdf47de1b7cc05d8e22fc225ad33c9f1ca1796a387f6cc9ac8dfca39
 
 execution_stages:
   - name: Original E0 under the new protocol

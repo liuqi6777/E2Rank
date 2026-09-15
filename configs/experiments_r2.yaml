@@ -1,6 +1,9 @@
 # The overnight queue uses this file, not the historical experiments.yaml.
 output_dir: checkpoints/iclr2027-r2
 G1:
+  # Set this to the existing prepared-data directory on the training machine.
+  # Absolute paths are supported; relative paths are based on the project root.
+  # Copy G1.data from the old settings if that machine uses a custom location.
   data: data/processed/reasonrank_multi
   model: Qwen/Qwen3-Embedding-0.6B
   learning_rate: 0.000005
