@@ -2,7 +2,7 @@
 
 ## 当前研究排期（2026-09-16）
 
-研究安排以[新实验计划](../../../paper/EXPERIMENT_PLAN.md)为准：沿用现有数据与采样器，不另划 dev；使用 G64 比较 MRR / binary nDCG / graded nDCG 的 SF/CP，加三个监督基线，共 27 次训练。
+研究安排以[新实验计划](../../../paper/EXPERIMENT_PLAN.md)为准：沿用现有数据与丢尾规则，每个 epoch 在 source 内重新组合 microbatch，不另划 dev；使用 G64 比较 MRR / binary nDCG / graded nDCG 的 SF/CP，加三个监督基线，共 27 次训练。
 新矩阵注册于 [suite_r2.yaml](suite_r2.yaml)，日常设置为 [experiments_r2.yaml](../../experiments_r2.yaml)，使用 `python scripts/run_g1_r2.py` 一次执行全部。
 加 `--seeds 42` / `--seeds 3407` / `--seeds 2026` 可分配到三台机器并行；每台执行九个方法，seed 42 额外负责 E0 与公共梯度诊断。
 命令、失败处理和输出见[夜跑说明](../../../docs/g1_r2_overnight.md)。下文及 `suite.yaml` 继续描述历史矩阵，旧 `execution_stages` 不代表新一轮顺序。

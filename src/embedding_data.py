@@ -233,6 +233,7 @@ class EmbeddingDataset(Dataset):
         self._files: list[dict[str, Any]] = []
         self._locations: list[tuple[int, int]] = []
         self.entries: list[int] = []
+        self.batch_groups: dict[str, tuple[int, ...]] = {}
         self._file_handles: dict[int, Any] = {}
         self._record_sources: dict[str, list[str]] = {}
         self._rng = random.Random()
@@ -461,6 +462,13 @@ class EmbeddingDataset(Dataset):
 
         random.shuffle(ordered_batches)
         self.entries = [loc_id for batch in ordered_batches for loc_id in batch]
+        # Retain the selected rows and their dataset indices for the whole run.
+        # The sampler recombines these indices each epoch; mutating ``entries`` in
+        # the main process would leave persistent DataLoader workers with stale data.
+        positions_by_key: dict[str, list[int]] = defaultdict(list)
+        for position, location_id in enumerate(self.entries):
+            positions_by_key[batch_key_by_location[location_id]].append(position)
+        self.batch_groups = {key: tuple(positions) for key, positions in positions_by_key.items()}
         self.num_batches = len(ordered_batches)
         print(
             f"Indexed {len(self.entries)} {self.split} samples in "
@@ -534,9 +542,10 @@ class EmbeddingDataset(Dataset):
         return converted
 
     def __getitem__(self, index: int) -> dict[str, Any]:
-        # Resolve within the same single-source batch so an unusable BGE-M3 record (no
-        # positive or negative) is replaced by another sample sharing the batch's
-        # source. Variable slate lengths are padded and masked by the collator.
+        # Resolve within the original storage block so an unusable BGE-M3 record
+        # (no positive or negative) is replaced within the same source/length bucket.
+        # This block need not be the current epoch's micro-batch. Variable slate
+        # lengths are padded and masked by the collator.
         batch_start = (index // self.batch_size) * self.batch_size
         batch_end = min(batch_start + self.batch_size, len(self.entries))
         order = [index] + [i for i in range(batch_start, batch_end) if i != index]
@@ -555,30 +564,34 @@ class EmbeddingDataset(Dataset):
 
 
 class SingleSourceBatchSampler(Sampler[int]):
-    """Sample-level sampler that preserves ``EmbeddingDataset``'s per-source batching.
+    """Recombine retained samples into single-source micro-batches each epoch.
 
-    ``EmbeddingDataset`` lays its samples out as consecutive blocks of ``batch_size``
-    drawn from a single source, so that every micro-batch shares one task prompt and
-    in-batch negatives stay in-domain. The HF Trainer's default ``RandomSampler``
-    shuffles at the *sample* level and silently destroys that layout, mixing every
-    source into every batch. This sampler shuffles whole blocks instead, keeping the
-    intra-block order intact.
+    ``EmbeddingDataset`` applies the source cap, optional dev split and per-group
+    tail dropping once. This sampler shuffles the retained indices within each
+    source (and length bucket when enabled), then shuffles the resulting full
+    micro-batches. In-batch companions can change without mixing sources or changing
+    the retained dataset. Dataset indices stay stable for persistent workers.
 
-    The block permutation is derived from ``seed + epoch`` only, so every rank walks
-    the same global batch order; accelerate then hands whole batches to ranks
+    Both permutations use a local generator seeded by ``seed + epoch``, so every
+    rank walks the same global batch order; accelerate hands whole batches to ranks
     round-robin (``split_batches=False``), and each rank still sees single-source
     micro-batches.
     """
 
     def __init__(
         self,
-        dataset: Dataset,
+        dataset: EmbeddingDataset,
         batch_size: int,
         seed: int = 0,
         shuffle: bool = True,
     ):
         if batch_size < 1:
             raise ValueError(f"batch_size must be positive, got {batch_size}")
+        if batch_size != dataset.batch_size:
+            raise ValueError(
+                f"Sampler batch_size={batch_size} must match EmbeddingDataset "
+                f"batch_size={dataset.batch_size} to preserve source/length groups."
+            )
         self.dataset = dataset
         self.batch_size = batch_size
         self.seed = seed
@@ -592,19 +605,23 @@ class SingleSourceBatchSampler(Sampler[int]):
         return len(self.dataset)
 
     def __iter__(self) -> Iterator[int]:
-        num_samples = len(self.dataset)
-        num_blocks = num_samples // self.batch_size
-        if self.shuffle and num_blocks > 1:
-            generator = torch.Generator()
-            generator.manual_seed(self.seed + self.epoch)
-            block_order = torch.randperm(num_blocks, generator=generator).tolist()
-        else:
-            block_order = range(num_blocks)
+        if not self.shuffle:
+            yield from range(len(self.dataset))
+            return
 
-        for block in block_order:
-            yield from range(block * self.batch_size, (block + 1) * self.batch_size)
-        # EmbeddingDataset drops partial per-source batches, so this is normally empty.
-        yield from range(num_blocks * self.batch_size, num_samples)
+        generator = torch.Generator().manual_seed(self.seed + self.epoch)
+        batches: list[list[int]] = []
+        for key in sorted(self.dataset.batch_groups):
+            positions = self.dataset.batch_groups[key]
+            permutation = torch.randperm(len(positions), generator=generator).tolist()
+            shuffled = [positions[i] for i in permutation]
+            batches.extend(
+                shuffled[start : start + self.batch_size]
+                for start in range(0, len(shuffled), self.batch_size)
+            )
+
+        for batch_index in torch.randperm(len(batches), generator=generator).tolist():
+            yield from batches[batch_index]
 
 
 def build_relevance_labels(

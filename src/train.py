@@ -223,8 +223,8 @@ def build_embedding_data(
     frozen_index: FrozenCorpusIndex | FrozenCorpusIndexRouter | None = None,
 ):
     """Train dataset, optional held-out dev dataset, and the shared collator."""
-    # Hold data order fixed across wrappers and model-loading RNG consumption.
-    # This leaves the existing per-source grouping and tail policy unchanged.
+    # Hold the retained rows and stable indices fixed across wrappers and model-loading
+    # RNG consumption. The sampler regroups them each epoch with the same data seed.
     data_seed = getattr(training_args, "data_seed", None)
     if data_seed is not None:
         set_seed(data_seed)

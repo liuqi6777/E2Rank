@@ -99,27 +99,26 @@ def restore_grpo_state(model, checkpoint_dir: str | None) -> None:
 
 
 def build_single_source_sampler(trainer: HFTrainer, train_dataset):
-    """Return a block-preserving sampler for ``EmbeddingDataset``, else ``None``.
+    """Return an epoch-aware single-source sampler for ``EmbeddingDataset``.
 
-    The Trainer's default ``RandomSampler`` shuffles at the sample level, which
-    destroys the per-source pre-batching that ``EmbeddingDataset`` builds (and that
-    in-batch negatives depend on).
+    Regroup samples within their source/length bucket, preserving the grouping
+    needed by in-batch negatives. Other dataset types use the Trainer's default.
     """
     if not isinstance(train_dataset, EmbeddingDataset):
         return None
 
     dataloader_batch_size = getattr(trainer, "_train_batch_size", None) or trainer.args.train_batch_size
     if train_dataset.batch_size != dataloader_batch_size:
-        logger.warning(
-            "EmbeddingDataset was pre-batched with batch_size=%s but the dataloader uses %s; "
-            "batches will span multiple sources. Rebuild the dataset with the dataloader batch size.",
-            train_dataset.batch_size,
-            dataloader_batch_size,
+        raise ValueError(
+            f"EmbeddingDataset batch_size={train_dataset.batch_size} must match "
+            f"the dataloader batch_size={dataloader_batch_size}. "
+            "Rebuild the dataset with the dataloader batch size to preserve source/length groups."
         )
+    data_seed = getattr(trainer.args, "data_seed", None)
     return SingleSourceBatchSampler(
         dataset=train_dataset,
         batch_size=train_dataset.batch_size,
-        seed=trainer.args.seed,
+        seed=trainer.args.seed if data_seed is None else data_seed,
     )
 
 

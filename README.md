@@ -15,7 +15,7 @@ source .venv/bin/activate
 
 2026-09-16 的[新实验计划](paper/EXPERIMENT_PLAN.md)已接入[整批夜跑脚本](docs/g1_r2_overnight.md)：
 3 个监督基线 + MRR / binary nDCG / graded nDCG 各自的 SF/CP，RL 统一 G64，共 9 方法 × 3 seed = 27 次训练。
-沿用现有数据与采样器，不另划 dev；固定 113 步、最终 BRIGHT 评测，G2/G3 暂缓。
+沿用现有数据与丢尾规则，每个 epoch 在 source 内重新组合 microbatch，不另划 dev；固定 113 步、最终 BRIGHT 评测，G2/G3 暂缓。
 
 在已激活训练环境的 8 卡 GPU 机器上，一条命令运行全部：
 

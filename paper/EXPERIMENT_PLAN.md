@@ -5,7 +5,7 @@
 **本轮执行 9 个方法 × 3 个 seed，共 27 次全新训练。RL 沿用历史较稳定的 G64，覆盖 MRR、binary nDCG、graded nDCG，每种奖励配对比较原估计器与条件投影。**
 
 按用户的整批运行安排，不再在单 seed 结束后等待决策。通过 `--seeds` 将 42/3407/2026 分配给三台机器，每台独立完成九方法对照；不传参数则按上述 seed 顺序单机执行全部。
-不另划 dev，保留现有采样器、固定批内同伴和丢尾行为。固定训练 113 步，统一评测最终 checkpoint。
+不另划 dev，保留现有丢尾规则与实际训练样本，每个 epoch 在 source 内重新组合 microbatch。固定训练 113 步，统一评测最终 checkpoint。
 G2/G3 延后，不复刻整个历史搜索矩阵。本次只更新配置、脚本与 CPU 验证，没有启动真实 GPU 实验。
 
 运行入口：[夜跑说明](../docs/g1_r2_overnight.md)、[脚本](../scripts/run_g1_r2.py)、[日常配置](../configs/experiments_r2.yaml)、[28 行注册矩阵](../configs/experiments/iclr2027/suite_r2.yaml)（27 训练 + 1 E0 评测）。
@@ -19,7 +19,7 @@ G2/G3 延后，不复刻整个历史搜索矩阵。本次只更新配置、脚�
 | 新主表的 CL、LambdaLoss、RL | 从原始 E0 重新训练、评测 | 单末尾 token、截断边界、FP32 pooling/评分也影响监督基线，不能只重跑 RL |
 | G2 的旧 D-CL、E-CL、W-CL/RL | 若后续保留，重建相应训练依赖 | 普通 Qwen 也有截断边界/精度变化；新 W0 必须来自新 D-CL |
 | 原始语料、qrels、去污染与清理后的文本 | 哈希和语义一致时复用 | 不重复下载、标注、清理或划分数据 |
-| 当前训练数据和采样器 | 直接复用，不设 dev | 同 seed 方法间保持实际样本、批内同伴和 batch 顺序一致 |
+| 当前训练数据和采样器 | 复用数据与丢尾规则，不设 dev；修复跨 epoch 固定批内同伴 | 同 data seed、同 epoch 的方法间保持实际样本、批内同伴和 batch 顺序一致 |
 | 旧 embedding、索引、评测结果缓存 | 在新协议目录重新构建 | 不能复用旧向量作为新协议结果 |
 | 历史参数搜索、G/alignment 网格、消融 | 保留作配方选择与诊断证据 | 只在新结果指出具体问题时补最小对照 |
 
@@ -62,7 +62,7 @@ MRR64 与 graded nDCG64 的宏平均接近，尚未决出 reward 优劣；LR 减
 | 项目 | 固定值 |
 |---|---|
 | 数据 | 现有多正例 ready 文件；`dev_samples_per_source=0`；不生成新 split |
-| 采样 | 保留现有源内固定分组、跨 epoch 整批重排与丢尾；建数据集之前显式按 data seed 重置 RNG |
+| 采样 | 建数据集前按 data seed 重置 RNG，按现有规则一次性选样和丢尾；每个 epoch 在 source 内重排样本、重组完整 microbatch，再重排整批；启用长度桶时同时保持桶内分组 |
 | seed | training/data：42、3407、2026；RL rollout seed 同值但独立管理；预处理代表正例 seed 固定 42 |
 | 预算 | 113 optimizer steps；8 卡 × microbatch 16，global batch 128；每 run 14,464 次 query 呈现 |
 | 优化器 | AdamW，LR 5e-6，weight decay 0.01，linear schedule，warmup ratio 0.03 |

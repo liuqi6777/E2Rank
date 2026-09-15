@@ -14,6 +14,7 @@ profiles:
     requirements: []
     protocol:
       labels: all_known_positives_binary
+      sampling: per_source_epoch_shuffle_retained_tail_v1
       training_budget: fixed_steps
       max_steps: 113
       learning_rate: 0.000005

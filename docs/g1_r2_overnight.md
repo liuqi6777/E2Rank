@@ -1,7 +1,11 @@
 # G1 新协议整批运行
 
 这批复用旧实验中较稳定的 G64、alignment 0.90 和 LR 5e-6，重新比较三种 reward 与两种梯度估计器。
-实验 seed 为 42/3407/2026，可通过 `--seeds` 选择本机执行哪些；113 optimizer steps、每台机器 8 卡 × microbatch 16；不设 dev，沿用现有采样器和丢尾。
+实验 seed 为 42/3407/2026，可通过 `--seeds` 选择本机执行哪些；113 optimizer steps、每台机器 8 卡 × microbatch 16；不设 dev，沿用现有丢尾规则，每个 epoch 在 source 内重新组合 microbatch。
+
+采样协议为 `per_source_epoch_shuffle_retained_tail_v1`：先按原规则确定本次运行保留的样本，再用 `data_seed + epoch` 的独立 RNG 在 source 内重排样本并重新分批，最后打乱整批顺序。启用长度桶时，重分组也限制在同一长度桶内；只够一个完整 microbatch 的组，其同伴集合自然不变。同 data seed、同 epoch 的各方法和各 rank 生成相同的全局顺序，由 Accelerate 分配完整 microbatch；dataset 索引不变，支持持久化 DataLoader workers。
+
+三台机器应同步到包含此修复的同一个提交后启动，命令不变。运行合同已包含采样协议和源码指纹；若已用固定同伴版本启动过 R2，保留旧结果并修改 `configs/experiments_r2.yaml` 的 `output_dir` 后重跑，脚本会拒绝在原合同下混用两种采样行为。
 
 ## 一条命令启动
 
