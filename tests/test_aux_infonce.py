@@ -265,7 +265,8 @@ def test_auxiliary_resume_contract(tmp_path):
     restore_exploration_state(model, tmp_path)
 
 
-def test_trainer_updates_logs_and_saves_auxiliary_contract(tmp_path):
+@pytest.mark.parametrize("estimator", ["score_function", "conditional_projection"])
+def test_trainer_updates_logs_and_saves_auxiliary_contract(tmp_path, estimator):
     from transformers import BertConfig, BertModel, TrainingArguments
 
     torch.manual_seed(7)
@@ -276,6 +277,7 @@ def test_trainer_updates_logs_and_saves_auxiliary_contract(tmp_path):
     wrapper = GRPOModel(backbone, RLArguments(
         action_components="query;positive,negative", group_size=2, kappa=12,
         aux_infonce_coef=0.3, aux_infonce_temperature=0.2,
+        gradient_estimator=estimator,
     ))
     batch = dict(
         query=tokens([0, 1]), positive_document=tokens([2, 5]),
@@ -303,4 +305,5 @@ def test_trainer_updates_logs_and_saves_auxiliary_contract(tmp_path):
     checkpoint = tmp_path / "checkpoint-1"
     payload = json.loads((checkpoint / "exploration_state.json").read_text())
     assert payload["aux_infonce"]["coefficient"] == 0.3
+    assert payload["estimator"]["gradient_estimator"] == estimator
     restore_exploration_state(wrapper, checkpoint)

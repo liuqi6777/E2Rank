@@ -10,8 +10,10 @@ from torch import Tensor, nn
 from transformers import PreTrainedModel
 from transformers.file_utils import ModelOutput
 
+from score_precision import fp32_scores
 from policy_math import ExplorationSchedule, group_advantages, mean_alignment
 from rollout_rng import RolloutRNG
+from conditional_projection import conditional_projection_loss
 from contrastive import auxiliary_infonce_loss, validate_aux_infonce
 
 from config import (
@@ -21,6 +23,7 @@ from config import (
     RLArguments,
     normalize_action_components,
     validate_document_advantage_baseline,
+    validate_gradient_estimator,
     normalize_advantage_norm_mode,
 )
 from embedding_data import build_slate_inputs
@@ -226,6 +229,7 @@ class GRPO(nn.Module):
         exploration_schedule: str = "fixed",
         rollout_seed: int | None = None,
         document_advantage_baseline: str = "shared",
+        gradient_estimator: str = "score_function",
         aux_infonce_coef: float = 0.0,
         aux_infonce_temperature: float = 0.03,
         aux_infonce_use_in_batch_negatives: bool = False,
@@ -274,6 +278,16 @@ class GRPO(nn.Module):
             reward_combine=reward_combine,
             in_batch_use_sampled_documents=in_batch_use_sampled_documents,
         )
+        validate_gradient_estimator(
+            gradient_estimator, action_components=action_components,
+            sampling_law=sampling_law, sigma_learnable=sigma_learnable, rollout=rollout,
+            advantage_baseline=advantage_baseline, advantage_norm=advantage_norm,
+            reward_combine=reward_combine,
+            in_batch_use_sampled_documents=in_batch_use_sampled_documents,
+            document_advantage_baseline=document_advantage_baseline,
+            document_log_prob_reduction=document_log_prob_reduction,
+        )
+        self.gradient_estimator = gradient_estimator
         reward_terms = normalize_reward_terms(
             reward_terms if reward_terms else reward_type,
             default_k=reward_ndcg_k,
@@ -589,9 +603,8 @@ class GRPO(nn.Module):
         )
         # fp32: the reward ranks candidates by these scores, and bf16 resolves cosines only
         # to ~4e-3 near 1.0 — coarser than the score gaps inside a hard-negative slate. The
-        # resulting ties are broken by topk toward the lowest index, which the collator
-        # always fills with the gold positive, so the round-off biases the reward upward
-        # instead of just adding noise.
+        # resulting ties can make the reward depend on candidate order and the ranking
+        # implementation instead of the actual embedding geometry.
         query_embeddings = F.normalize(query_embeddings.float(), dim=-1)
         document_embeddings = F.normalize(document_embeddings.float(), dim=-1)
 
@@ -611,7 +624,8 @@ class GRPO(nn.Module):
         if document_component.is_active and not diagonal:
             out_spec += "k"
         out_spec += "s"
-        return torch.einsum(f"{query_spec},{doc_spec}->{out_spec}", query_embeddings, document_embeddings)
+        with fp32_scores(query_embeddings.device):
+            return torch.einsum(f"{query_spec},{doc_spec}->{out_spec}", query_embeddings, document_embeddings)
 
     @staticmethod
     def _mask_cross_batch_diagonal(score_table: torch.Tensor, batch_size: int) -> torch.Tensor:
@@ -947,11 +961,39 @@ class GRPO(nn.Module):
             losses.append(-(weighted.sum(-1) if weighted.ndim == 3 else weighted).mean())
             advantages.append(component_advantages.reshape(batch_size, -1))
 
+        if self.gradient_estimator == "conditional_projection":
+            if len(active_components) != 2 or len(document_components) != 1:
+                raise ValueError("Conditional projection requires one query and one joint document group")
+            document = document_components[0]
+            for component in (query_component, document):
+                if not torch.allclose(component.policy_embeddings.detach(), component.rollout_embeddings,
+                                      rtol=1e-5, atol=1e-6):
+                    raise ValueError("Conditional projection requires on-policy mean directions")
+            # Derive the fixed pool from the actual scored/masked tables, including
+            # the union when reward terms use different cross-query candidate pools.
+            fixed, masks = [], []
+            if in_batch_positive_scores is not None:
+                fixed.append(document.rollout_embeddings[:, 0][None].expand(batch_size, -1, -1))
+                masks.append(torch.isfinite(in_batch_positive_scores).any(dim=(1, 2)))
+            if in_batch_candidate_scores is not None:
+                fixed.append(document.rollout_embeddings.reshape(1, -1, document.rollout_embeddings.size(-1)).expand(batch_size, -1, -1))
+                masks.append(torch.isfinite(in_batch_candidate_scores).any(dim=(1, 2)))
+            projected_loss, ranks = conditional_projection_loss(
+                query_component.policy_embeddings, document.policy_embeddings,
+                query_component.sampled_embeddings, document.sampled_embeddings,
+                rewards, query_component.kappa, document.document_mask,
+                frozen_documents=torch.cat(fixed, dim=1) if fixed else None,
+                frozen_mask=torch.cat(masks, dim=1) if masks else None,
+            )
+            losses = [projected_loss]
+            axis_stats["projection/query_span_rank_mean"] = ranks.float().mean()
+            axis_stats["projection/query_span_rank_max"] = ranks.max().float()
+
         # Fraction of (batch-element, component, reward-term) rows whose reward variance
         # is near zero. This diagnostic never thresholds an unnormalized advantage.
         degenerate_frac = torch.cat(degenerate_masks).float().mean()
         reward_stats = self.summarize_tensor(rewards, prefix="reward")
-        with torch.no_grad():
+        with torch.no_grad(), fp32_scores(rewards.device):
             means = torch.cat([c.rollout_embeddings for c in document_components], dim=1)
             deterministic = torch.einsum("bd,bnd->bn", query_component.rollout_embeddings.float(), means.float())
             valid = torch.ones_like(relevance_labels, dtype=torch.bool) if candidate_mask is None else candidate_mask.bool()
@@ -1030,7 +1072,7 @@ class GRPO(nn.Module):
                 f"got policy={tuple(policy_embeddings.shape)} "
                 f"rollout={tuple(rollout_embeddings.shape)}"
             )
-        return F.normalize(policy_embeddings, dim=-1)
+        return F.normalize(policy_embeddings.float(), dim=-1)
 
     def forward(
         self,
@@ -1088,16 +1130,16 @@ class GRPO(nn.Module):
             raise ValueError("candidate_mask must match labels and keep the positive at position 0")
         if candidate_mask.dtype != torch.bool:
             raise ValueError("candidate_mask must be bool")
-        rollout_query_embeddings = F.normalize(rollout_query_embeddings, dim=-1)
+        rollout_query_embeddings = F.normalize(rollout_query_embeddings.float(), dim=-1)
         policy_query_embeddings = self._normalize_policy(
             policy_query_embeddings,
             rollout_query_embeddings,
             "policy_query_embeddings",
             "rollout_query_embeddings",
         )
-        rollout_positive_document_embeddings = F.normalize(rollout_positive_document_embeddings, dim=-1)
-        rollout_negative_document_embeddings = F.normalize(rollout_negative_document_embeddings, dim=-1)
-        document_embeddings = F.normalize(document_embeddings, dim=-1)
+        rollout_positive_document_embeddings = F.normalize(rollout_positive_document_embeddings.float(), dim=-1)
+        rollout_negative_document_embeddings = F.normalize(rollout_negative_document_embeddings.float(), dim=-1)
+        document_embeddings = F.normalize(document_embeddings.float(), dim=-1)
         policy_positive_document_embeddings = self._normalize_policy(
             policy_positive_document_embeddings,
             rollout_positive_document_embeddings,
@@ -1296,6 +1338,7 @@ class GRPOModel(nn.Module):
             rollout_seed=rl_args.rollout_seed,
             document_log_prob_reduction=rl_args.document_log_prob_reduction,
             document_advantage_baseline=rl_args.document_advantage_baseline,
+            gradient_estimator=rl_args.gradient_estimator,
             sigma_learnable=rl_args.sigma_learnable,
             sigma_min=rl_args.sigma_min,
             sigma_max=rl_args.sigma_max,

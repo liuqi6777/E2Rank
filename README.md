@@ -107,7 +107,10 @@ tokens，预留一个位置并在截断后追加指定 token；`append_token: no
 因此 Qwen3 普通模型与 Embedding 模型均只有一个有效末尾读出 token，长输入也不会丢失它。
 训练、MTEB、RAG 和固定语料编码共用实现；所有训练 checkpoint 都保存解析后的 token 协议，
 不依赖 MTEB callback。旧协议 checkpoint 不兼容，旧语料索引须重新编码；MTEB 结果标识新增
-`__tokens-v2`，不会复用旧协议结果。细节和验证见 [模型协议](docs/embedding_protocol.md)。
+`__tokens-v2__pool-fp32`，不会复用旧协议结果。细节和验证见 [模型协议](docs/embedding_protocol.md)。
+
+CL/LL/RL 的归一化和评分统一为 FP32；RL 可用 `gradient_estimator: conditional_projection`
+启用条件投影。使用固定状态配对诊断验证全参数梯度后再做训练对照，见 [梯度估计器](docs/gradient_estimators.md)。
 
 现有固定索引 RAG 工具保留在 `scripts/rag_pipeline.sh`，支持 prepare / encode / candidates / train / tune-eval / eval。
 `configs/rag/` 是底层 RAG 配方；G3 正式运行仍通过 `experiment.py` 检查。

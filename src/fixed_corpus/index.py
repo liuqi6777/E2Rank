@@ -14,7 +14,7 @@ import torch
 import torch.distributed as dist
 import torch.nn.functional as F
 
-from embedding_protocol import TOKENIZATION_VERSION
+from embedding_protocol import TOKENIZATION_VERSION, POOLING_COMPUTE_DTYPE
 
 
 def sha256_file(path: str | os.PathLike[str], chunk_size: int = 8 << 20) -> str:
@@ -55,6 +55,8 @@ def validate_frozen_protocol(
             f"Frozen document tokenization_version must be {TOKENIZATION_VERSION}; "
             "rebuild the index with the current embedding protocol."
         )
+    if manifest.get("pooling_compute_dtype") != POOLING_COMPUTE_DTYPE:
+        raise ValueError("Frozen document pooling_compute_dtype must be float32; rebuild the index")
     expected_model = manifest.get("model_name_or_path")
     if expected_model and expected_model != model_name_or_path:
         raise ValueError(

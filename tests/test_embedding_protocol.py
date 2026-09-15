@@ -137,7 +137,7 @@ def test_corpus_shards_match_native_vectors_and_record_protocol(tmp_path):
             document_prompt_template="{document}", rank=0, world_size=1, device=torch.device("cpu"),
         )
     assert dimension == 16 and len(shards) == 1
-    assert metadata == tokenization_metadata(tok, "pad")
+    assert metadata == {**tokenization_metadata(tok, "pad"), "pooling_compute_dtype": "float32"}
     native = tok(texts, padding=True, truncation=True, max_length=4, return_tensors="pt")
     with torch.inference_mode():
         expected = pool_embeddings(model(**native).last_hidden_state, native["attention_mask"], pooling_method="last")
@@ -158,11 +158,16 @@ def test_checkpoint_save_roundtrip_without_eval_callback(tmp_path):
     restored = AutoTokenizer.from_pretrained(checkpoint, local_files_only=True)
     for key, expected in tokenization_metadata(restored, "pad").items():
         assert saved[key] == expected
+    assert saved["pooling_compute_dtype"] == "float32"
     assert saved["add_special_tokens"] is False
     assert saved["terminal_token_id"] == 1
     assert saved["terminal_after_truncation"] is True
     batch = tokenize_embedding_texts(["word other word other"], restored, saved["append_token"], max_length=3)
     assert batch["input_ids"].tolist() == [[2, 3, 1]]
+    no_precision = {key: value for key, value in saved.items() if key != "pooling_compute_dtype"}
+    (checkpoint / "embedding_protocol.json").write_text(json.dumps(no_precision))
+    with pytest.raises(ValueError, match="pooling precision"):
+        load_embedding_protocol(checkpoint)
     saved.pop("tokenization_version")
     (checkpoint / "embedding_protocol.json").write_text(json.dumps(saved))
     with pytest.raises(ValueError, match="tokenization protocol"):
@@ -174,7 +179,9 @@ def test_old_frozen_indexes_are_rejected(tmp_path):
                     pooling_method="last", padding_side="left", append_token="pad")
     with pytest.raises(ValueError, match="tokenization_version"):
         validate_frozen_protocol({}, **expected)
-    validate_frozen_protocol({"tokenization_version": TOKENIZATION_VERSION}, **expected)
+    with pytest.raises(ValueError, match="pooling_compute_dtype"):
+        validate_frozen_protocol({"tokenization_version": TOKENIZATION_VERSION}, **expected)
+    validate_frozen_protocol({"tokenization_version": TOKENIZATION_VERSION, "pooling_compute_dtype": "float32"}, **expected)
 
     embedder = SimpleNamespace(tokenizer=tokenizer(), append_token="pad", base_model=tiny_model())
     model = SimpleNamespace(model=embedder, mteb_model_meta=SimpleNamespace(revision="fixed-revision"))
@@ -187,3 +194,25 @@ def test_old_frozen_indexes_are_rejected(tmp_path):
     current = PerSubsetCorpusIndex(tmp_path, task_name="toy", encoder_identity=current_identity)
     with pytest.raises(ValueError, match="protocol mismatch"):
         current.begin("subset")
+
+
+def test_frozen_runner_preflight_enforces_pooling_precision(tmp_path):
+    from scripts.experiments.iclr2027 import _check_single_frozen_document_index, digest
+
+    artifacts = {"corpus": "{}\n", "offsets": "0", "document_key_to_ordinal": '{"doc": 0}', "shard": "vector"}
+    for name, contents in artifacts.items():
+        (tmp_path / name).write_text(contents)
+    config = dict(model_name_or_path="tiny", pooling_method="last", padding_side="left", append_token="pad",
+                  document_prompt_template="{document}", query_prompt_template="{query}", d_max_len=8, embedding_max_length=8)
+    manifest = dict(format_version=1, dimension=2, count=1, tokenization_version=TOKENIZATION_VERSION,
+                    pooling_compute_dtype="float32", document_max_length=8,
+                    **{key: value for key, value in config.items() if key != "d_max_len"})
+    for name in ("corpus", "corpus_offsets", "document_key_to_ordinal"):
+        filename = "offsets" if name == "corpus_offsets" else name
+        manifest[f"{name}_path"] = filename
+        manifest[f"{name}_sha256"] = digest(tmp_path / filename)
+    manifest["shards"] = [{"path": "shard", "sha256": digest(tmp_path / "shard")}]
+    path = tmp_path / "index_manifest.json"
+    assert _check_single_frozen_document_index(path, manifest, config) == []
+    manifest.pop("pooling_compute_dtype")
+    assert len(_check_single_frozen_document_index(path, manifest, config)) == 1

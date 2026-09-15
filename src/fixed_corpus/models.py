@@ -10,6 +10,7 @@ import torch.nn.functional as F
 from torch import Tensor, nn
 from transformers.file_utils import ModelOutput
 
+from score_precision import fp32_scores
 from embedding_protocol import pool_embeddings
 from contrastive import auxiliary_infonce_loss
 from fixed_corpus.environment import (
@@ -56,7 +57,8 @@ class FrozenCandidateScorer(nn.Module):
         documents = self.index.lookup_embeddings(safe_ordinals, index_route_ids).detach()
         documents = F.normalize(documents.float(), dim=-1)
         queries = F.normalize(query_embeddings.float(), dim=-1)
-        scores = torch.einsum("bd,bkd->bk", queries, documents)
+        with fp32_scores(queries.device):
+            scores = torch.einsum("bd,bkd->bk", queries, documents)
         return CandidateScoreOutput(
             scores=scores.masked_fill(~candidate_mask.to(scores.device), float("-inf")),
             candidate_mask=candidate_mask.to(scores.device),
@@ -91,11 +93,12 @@ class FrozenCandidateScorer(nn.Module):
             flat_mask &= flat_routes == query_routes
             safe = flat_ordinals.masked_fill(~flat_mask, 0)
         documents = self.index.lookup_embeddings(safe, flat_routes).detach()
-        scores = torch.einsum(
-            "bd,bkd->bk",
-            F.normalize(query_embeddings.float(), dim=-1),
-            F.normalize(documents.float(), dim=-1),
-        ).masked_fill(~flat_mask.to(query_embeddings.device), float("-inf"))
+        with fp32_scores(query_embeddings.device):
+            scores = torch.einsum(
+                "bd,bkd->bk",
+                F.normalize(query_embeddings.float(), dim=-1),
+                F.normalize(documents.float(), dim=-1),
+            ).masked_fill(~flat_mask.to(query_embeddings.device), float("-inf"))
         return CandidateScoreOutput(
             scores=torch.cat((base.scores, scores), dim=-1),
             candidate_mask=torch.cat((base.candidate_mask, flat_mask.to(base.scores.device)), dim=-1),
@@ -330,6 +333,7 @@ class FixedCorpusGRPOModel(QueryEncoderMixin, nn.Module):
             rollout_seed=rl_args.rollout_seed,
             document_log_prob_reduction=rl_args.document_log_prob_reduction,
             document_advantage_baseline=rl_args.document_advantage_baseline,
+            gradient_estimator=rl_args.gradient_estimator,
             sigma_learnable=rl_args.sigma_learnable,
             sigma_min=rl_args.sigma_min,
             sigma_max=rl_args.sigma_max,

@@ -204,7 +204,7 @@ class Qwen3Embedding(Wrapper):
         else:
             model_name = '/'.join(model_name[-2:])
         model_name = kwargs.pop('model_name', model_name)
-        model_name = f"{model_name}__tokens-v{TOKENIZATION_VERSION}"
+        model_name = f"{model_name}__tokens-v{TOKENIZATION_VERSION}__pool-fp32"
         self.model = self._model_class(model, **kwargs)
         self.mteb_model_meta = ModelMeta(
             name=model_name, revision=kwargs.get('revision', None), release_date=None, languages=None, n_parameters=None, memory_usage_mb=None, max_tokens=None, embed_dim=None, license=None, open_weights=False, public_training_code=None, public_training_data=None, framework=["Sentence Transformers"], similarity_fn_name="cosine", use_instructions=True, training_datasets=None

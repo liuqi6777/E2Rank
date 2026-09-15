@@ -8,6 +8,7 @@ sigma_learnable: false
 advantage_norm: none
 sampling_law: vmf
 rollout: product
+gradient_estimator: score_function # Opt in to conditional_projection after paired diagnostics.
 frozen_doc_rescale: true
 advantage_baseline: leave_one_out
 document_log_prob_reduction: sum

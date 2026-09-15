@@ -14,7 +14,7 @@ import torch
 import torch.distributed as dist
 from transformers import AutoConfig, AutoModel, AutoTokenizer
 
-from embedding_protocol import tokenize_embedding_texts, tokenization_metadata, format_embedding_text, pool_embeddings
+from embedding_protocol import POOLING_COMPUTE_DTYPE, tokenize_embedding_texts, tokenization_metadata, format_embedding_text, pool_embeddings
 from fixed_corpus.index import FrozenCorpusIndex, sha256_file, validate_frozen_protocol
 
 
@@ -154,7 +154,8 @@ def encode_corpus_shards(
             or tokenizer.eos_token
             or tokenizer.bos_token
         )
-    token_protocol = tokenization_metadata(tokenizer, append_token)
+    token_protocol = {**tokenization_metadata(tokenizer, append_token),
+                      "pooling_compute_dtype": POOLING_COMPUTE_DTYPE}
     model = AutoModel.from_pretrained(
         model_name_or_path,
         revision=revision,

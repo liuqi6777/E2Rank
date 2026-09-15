@@ -12,6 +12,7 @@ from torch import Tensor
 from transformers import HfArgumentParser, PreTrainedModel, Trainer as HFTrainer, set_seed
 from transformers.file_utils import ModelOutput
 
+from score_precision import fp32_scores
 from contrastive import compute_in_batch_positive_scores, compute_infonce_loss
 from config import (
     BaselineArguments,
@@ -65,6 +66,8 @@ def compute_ranknet_loss(
     """
     if temperature <= 0:
         raise ValueError(f"ranknet temperature must be positive, got {temperature}")
+    if scores.dtype in {torch.float16, torch.bfloat16}:
+        scores = scores.float()
     if scores.shape != rank_labels.shape:
         raise ValueError(
             "scores and rank_labels must have the same shape, "
@@ -125,6 +128,10 @@ def compute_lambdaloss_loss(
             f"got shape={tuple(candidate_mask.shape)} dtype={candidate_mask.dtype}"
         )
 
+    if scores.dtype in {torch.float16, torch.bfloat16}:
+        scores = scores.float()
+    # Remove padding before differences: inf * zero would otherwise become NaN.
+    scores = scores.masked_fill(~candidate_mask, 0)
     labels = relevance_labels.masked_fill(~candidate_mask, 0)
     ranking = scores.masked_fill(~candidate_mask, float("-inf")).argsort(
         dim=-1,
@@ -239,7 +246,8 @@ class BaselineModel(nn.Module):
             slate_length=slate_length,
         )
         document_embeddings = encode_valid_candidates(self.encode, document_inputs, candidate_mask).reshape(batch_size, slate_length, -1)
-        scores = torch.matmul(document_embeddings, query_embeddings.unsqueeze(-1)).squeeze(-1)
+        with fp32_scores(query_embeddings.device):
+            scores = torch.matmul(document_embeddings.float(), query_embeddings.float().unsqueeze(-1)).squeeze(-1)
 
         if self.baseline_args.baseline_use_in_batch_negatives:
             in_batch_scores = compute_in_batch_positive_scores(

@@ -18,9 +18,12 @@ import json
 import math
 import os
 from pathlib import Path
+import resource
 import subprocess
 import sys
+import time
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import torch
 
@@ -37,10 +40,10 @@ class GradientMoments:
     algebraically from the sum of normalized gradients, not a random projection.
     """
 
-    def __init__(self, parameters):
+    def __init__(self, parameters, *, pairwise_cosine=True):
         self.parameters = list(parameters)
         self.sums = [torch.zeros(p.shape, dtype=torch.float32) for _, p in self.parameters]
-        self.unit_sums = [torch.zeros_like(s) for s in self.sums]
+        self.unit_sums = [torch.zeros_like(s) for s in self.sums] if pairwise_cosine else None
         self.norms = []
         self.nonzero = 0
 
@@ -60,13 +63,13 @@ class GradientMoments:
             raise ValueError("Non-finite parameter gradient")
         self.norms.append(norm)
         self.nonzero += int(norm > 0)
-        for (_, parameter), total, unit in zip(self.parameters, self.sums, self.unit_sums):
+        for index, ((_, parameter), total) in enumerate(zip(self.parameters, self.sums)):
             if parameter.grad is None:
                 continue  # Disconnected parameters are zero coordinates, not omitted axes.
             gradient = parameter.grad.detach().to(device="cpu", dtype=torch.float32)
             total.add_(gradient)
-            if norm > 0:
-                unit.add_(gradient, alpha=1 / norm)
+            if norm > 0 and self.unit_sums is not None:
+                self.unit_sums[index].add_(gradient, alpha=1 / norm)
         return norm
 
     def summary(self):
@@ -77,17 +80,25 @@ class GradientMoments:
         mean_norm = math.sqrt(sum_squared) / n
         noise_variance = max(0.0, (sum(x*x for x in self.norms) - sum_squared/n) / (n-1))
         pairwise = None
-        if self.nonzero > 1:
+        if self.nonzero > 1 and self.unit_sums is not None:
             pairwise = (self.square_norm(self.unit_sums) - self.nonzero) / (
                 self.nonzero * (self.nonzero - 1)
             )
             pairwise = max(-1.0, min(1.0, pairwise))
+        # ||sample mean||^2 contains variance/N. Negative corrected estimates
+        # mean the signal is unresolved, not that the true squared norm is negative.
+        signal_squared = mean_norm**2 - noise_variance/n
         return dict(
             draws=n, zero_gradient_draws=n-self.nonzero,
             mean_gradient_norm=mean_norm,
             gradient_norm_mean=sum(self.norms)/n,
             gradient_norm_min=min(self.norms), gradient_norm_max=max(self.norms),
             noise_rms=math.sqrt(noise_variance),
+            noise_variance=noise_variance,
+            mean_gradient_mc_rms_error=math.sqrt(noise_variance/n),
+            signal_squared_unbiased=signal_squared,
+            signal_squared_estimate_positive=signal_squared > 0,
+            noise_to_signal_ratio_corrected=math.sqrt(noise_variance/signal_squared) if signal_squared > 0 else None,
             noise_to_mean_ratio=math.sqrt(noise_variance)/mean_norm if mean_norm > 0 else None,
             mean_pairwise_cosine=pairwise,
         )
@@ -114,7 +125,7 @@ def batch_hash(batch):
         elif torch.is_tensor(value):
             tensor = value.detach().cpu().contiguous()
             digest.update(f"{name}:{tensor.dtype}:{list(tensor.shape)}".encode())
-            digest.update(tensor.numpy().tobytes())
+            digest.update(tensor.reshape(-1).view(torch.uint8).numpy().tobytes())
         else:
             raise TypeError(f"Unexpected batch value at {name}: {type(value)}")
     visit(batch, "batch")
@@ -159,6 +170,148 @@ def probe_gradients(model, batches, seeds, device, dtype):
     return dict(summary=summary, draws=draws)
 
 
+def synchronize(device):
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
+
+
+def timed_gradient_draw(model, batches, seed, device, dtype):
+    """Capture actual actions/reward tables; hash them outside the measured pass."""
+    import grpo as grpo_module
+
+    actions, reward_tables = {}, {}
+    draw_actions, reward_function = model.grpo._draw_actions, grpo_module.compute_reward_terms
+
+    def capture_actions(*args, **kwargs):
+        result = draw_actions(*args, **kwargs)
+        actions[str(len(actions))] = result.detach()
+        return result
+
+    def capture_rewards(*args, **kwargs):
+        result = reward_function(*args, **kwargs)
+        reward_tables[str(len(reward_tables))] = {key: value.detach() for key, value in result.items()}
+        return result
+
+    model.zero_grad(set_to_none=True)
+    model.grpo.rollout_rng.reset(seed)
+    inputs = [to_device(batch, device) for batch in batches]
+    synchronize(device)
+    if device.type == "cuda":
+        torch.cuda.reset_peak_memory_stats(device)
+    started = time.perf_counter()
+    outputs = []
+    with patch.object(model.grpo, "_draw_actions", capture_actions), patch.object(grpo_module, "compute_reward_terms", capture_rewards):
+        for batch in inputs:
+            context = torch.autocast(device_type=device.type, dtype=dtype) if dtype != torch.float32 else nullcontext()
+            with context:
+                output = model(**batch)
+                loss = output.loss / len(inputs)
+            loss.backward()
+            outputs.append((output.loss.detach(), output.reward_mean.detach()))
+            del output, loss
+    synchronize(device)
+    elapsed = time.perf_counter() - started
+    memory = dict(cuda_peak_allocated_bytes=torch.cuda.max_memory_allocated(device),
+                  cuda_peak_reserved_bytes=torch.cuda.max_memory_reserved(device)) if device.type == "cuda" else {}
+    if not actions or not reward_tables:
+        raise ValueError("Paired probe did not capture static GRPO actions and rewards")
+    return dict(
+        rollout_seed=seed, forward_backward_seconds=elapsed, **memory,
+        process_peak_rss_bytes=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * (1 if sys.platform == "darwin" else 1024),
+        action_sha256=batch_hash(actions), reward_table_sha256=batch_hash(reward_tables),
+        loss=sum(float(loss) for loss, _ in outputs)/len(outputs),
+        reward_mean=sum(float(reward) for _, reward in outputs)/len(outputs),
+    )
+
+
+def paired_summary(raw, projected, difference_squared_norms):
+    """Full parameter-space paired moments; no random low-dimensional sketch."""
+    count = len(difference_squared_norms)
+    mean_difference_squared, mean_dot = 0., 0.
+    for left, right in zip(raw.sums, projected.sums):
+        for a, b in zip(left.reshape(-1).split(1 << 20), right.reshape(-1).split(1 << 20)):
+            a, b = a.double()/count, b.double()/count
+            mean_difference_squared += (a-b).square().sum().item()
+            mean_dot += (a*b).sum().item()
+    difference_variance = max(0., (sum(difference_squared_norms) - count*mean_difference_squared)/(count-1))
+    raw_stats, projected_stats = raw.summary(), projected.summary()
+    denominator = raw_stats["mean_gradient_norm"] * projected_stats["mean_gradient_norm"]
+    return dict(
+        score_function=raw_stats, conditional_projection=projected_stats,
+        variance_ratio=(projected_stats["noise_variance"]/raw_stats["noise_variance"]
+                        if raw_stats["noise_variance"] > 0 else None),
+        paired_mean_difference_norm=math.sqrt(mean_difference_squared),
+        paired_difference_noise_variance=difference_variance,
+        paired_mean_difference_mc_rms_error=math.sqrt(difference_variance/count),
+        paired_mean_difference_squared_unbiased=mean_difference_squared-difference_variance/count,
+        sample_mean_cosine=max(-1., min(1., mean_dot/denominator)) if denominator > 0 else None,
+        interpretation="Mean agreement is a finite-sample diagnostic, not a proof of unbiasedness or retrieval improvement.",
+    )
+
+
+def probe_paired_gradients(model, batches, seeds, device, dtype):
+    """Alternate estimator order, resetting only action RNG; never update weights."""
+    from config import validate_gradient_estimator
+
+    head = model.grpo
+    validate_gradient_estimator("conditional_projection", **{key: getattr(head, key) for key in (
+        "action_components", "sampling_law", "sigma_learnable", "rollout", "advantage_baseline",
+        "advantage_norm", "reward_combine", "in_batch_use_sampled_documents",
+        "document_advantage_baseline", "document_log_prob_reduction",
+    )})
+    if head.kl_coef or head.aux_infonce_coef:
+        raise ValueError("Paired estimator probe requires KL=0 and aux_infonce_coef=0 to isolate rollout gradients")
+    if len(seeds) < 2 or len(set(seeds)) != len(seeds):
+        raise ValueError("At least two distinct paired rollout seeds are required")
+    for seed in seeds:
+        validate_rollout_seed(seed)
+    parameters = [(name, p) for name, p in model.named_parameters() if p.requires_grad]
+    variants = ("score_function", "conditional_projection")
+    # Two sums plus one previous gradient: ~7.2 GB host storage for 0.6B,
+    # independent of draw count. GPU gradients are never stored across draws.
+    moments = {name: GradientMoments(parameters, pairwise_cosine=False) for name in variants}
+    differences, draws = [], []
+    original = head.gradient_estimator
+    try:
+        for index, seed in enumerate(seeds):
+            pair, previous = {}, None
+            for variant in variants[::1 if index % 2 == 0 else -1]:
+                head.gradient_estimator = variant
+                wall_started = time.perf_counter()
+                row = timed_gradient_draw(model, batches, seed, device, dtype)
+                row["gradient_norm"] = moments[variant].update()
+                if previous is None:
+                    previous = [p.grad.detach().cpu().float().clone() if p.grad is not None else None for _, p in parameters]
+                else:
+                    difference_squared = 0.
+                    for (_, parameter), before in zip(parameters, previous):
+                        after = parameter.grad
+                        if before is None and after is None:
+                            continue
+                        after = after.detach().cpu().float() if after is not None else None
+                        if before is None or after is None:
+                            difference_squared += GradientMoments.square_norm([after if before is None else before])
+                        else:
+                            for a, b in zip(before.reshape(-1).split(1 << 20), after.reshape(-1).split(1 << 20)):
+                                difference_squared += (a.double()-b.double()).square().sum().item()
+                    differences.append(difference_squared)
+                    previous = None
+                row["wall_seconds_including_statistics"] = time.perf_counter() - wall_started
+                pair[variant] = row
+            for key in ("action_sha256", "reward_table_sha256"):
+                if pair[variants[0]][key] != pair[variants[1]][key]:
+                    raise ValueError(f"Paired estimators used different {key}; comparison is invalid")
+            draws.append(pair)
+            print(json.dumps(dict(draw=index, **pair)), flush=True)
+        result = dict(summary=paired_summary(moments[variants[0]], moments[variants[1]], differences), draws=draws)
+        for variant in variants:
+            result["summary"][variant]["mean_forward_backward_seconds"] = sum(p[variant]["forward_backward_seconds"] for p in draws)/len(draws)
+        return result
+    finally:
+        head.gradient_estimator = original
+        model.zero_grad(set_to_none=True)
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run", default="G1-A-MRRAlign090")
@@ -174,6 +327,10 @@ def parse_args():
     parser.add_argument("--precision", choices=["fp32", "bf16"], default="bf16")
     parser.add_argument("--document-advantage-baseline", choices=["shared", "counterfactual"],
                         help="Override only the document estimator for a fixed-state comparison")
+    estimator_group = parser.add_mutually_exclusive_group()
+    estimator_group.add_argument("--gradient-estimator", choices=["score_function", "conditional_projection"])
+    estimator_group.add_argument("--compare-gradient-estimators", action="store_true",
+                                 help="Paired full-parameter comparison with action/reward SHA256 verification")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if int(os.environ.get("WORLD_SIZE", "1")) != 1:
@@ -197,6 +354,7 @@ def main():
     from experiments import iclr2027 as experiments
     from config import ModelArguments, DataArguments, LoraArguments, RLArguments
     from embedding_data import SingleSourceBatchSampler
+    from embedding_protocol import protocol_from_model_args
     from grpo import GRPOModel
     from train import build_embedding_data, load_backbone_and_tokenizer
     from transformers import set_seed
@@ -207,6 +365,13 @@ def main():
     config = resolved["config"].copy()
     if args.document_advantage_baseline is not None:
         config["document_advantage_baseline"] = args.document_advantage_baseline
+    if args.gradient_estimator is not None:
+        config["gradient_estimator"] = args.gradient_estimator
+    if args.compare_gradient_estimators:
+        # Validate the restricted projection recipe before loading a large model.
+        config["gradient_estimator"] = "conditional_projection"
+        if config.get("aux_infonce_coef", 0):
+            raise ValueError("Paired comparison requires aux_infonce_coef=0")
     if resolved["objective"] != "rl" or config.get("document_encoder_mode") != "joint":
         raise ValueError("This probe supports joint static-candidate GRPO runs")
     if config.get("dynamic_retrieval") or config.get("kl_coef", 0) or config.get("sigma_learnable", False):
@@ -265,6 +430,13 @@ def main():
         data_sha256=file_hash(data_args.data_path),
         git_commit=subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
         git_dirty=bool(subprocess.check_output(["git", "status", "--porcelain"], text=True).strip()),
+        source_sha256={str(p.relative_to(ROOT)): file_hash(p) for p in sorted((ROOT/"src").rglob("*.py"))},
+        diagnostic_sha256=file_hash(__file__),
+        comparison="paired_gradient_estimators" if args.compare_gradient_estimators else "single_estimator",
+        score_precision="fp32",
+        score_tf32=False,
+        embedding_protocol=protocol_from_model_args(model_args, tokenizer),
+        host_memory_note="process_peak_rss_bytes is a cumulative process high-water mark, not a per-estimator allocation peak",
         torch_version=torch.__version__,
         gradient_space="all trainable parameters; raw loss gradient before optimizer/clipping",
         dropout="disabled", microbatch_size=micro,
@@ -290,10 +462,12 @@ def main():
                     tensor_sha256=batch_hash(batch),
                 ))
             print(f"Probe microbatch {index}, averaged microbatches={len(batches)}", flush=True)
-            result = probe_gradients(model, batches, args.rollout_seeds, device, dtype)
+            probe = probe_paired_gradients if args.compare_gradient_estimators else probe_gradients
+            result = probe(model, batches, args.rollout_seeds, device, dtype)
             report["probes"].append(dict(batches=manifests, **result))
             print(json.dumps(result["summary"], indent=2), flush=True)
-        args.output.write_text(json.dumps(report, indent=2, ensure_ascii=False, allow_nan=False)+"\n")
+            # Keep completed fixed batches if a later probe fails or is interrupted.
+            args.output.write_text(json.dumps(report, indent=2, ensure_ascii=False, allow_nan=False)+"\n")
     finally:
         dataset.close()
     print(f"Wrote {args.output}")

@@ -267,6 +267,7 @@ def encode_stage(config, subset, names):
     from transformers import AutoModel, AutoTokenizer
     from embedding_protocol import (
         TOKENIZATION_VERSION,
+        POOLING_COMPUTE_DTYPE,
         tokenize_embedding_texts,
         format_embedding_text,
         load_embedding_protocol,
@@ -326,6 +327,7 @@ def encode_stage(config, subset, names):
             }
         )
         protocol["tokenization_version"] = TOKENIZATION_VERSION
+        protocol["pooling_compute_dtype"] = POOLING_COMPUTE_DTYPE
         identity = {
             "data": data_manifest["signature"],
             "checkpoint": checkpoint_identity(spec),

@@ -6,6 +6,8 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor
 
+from score_precision import fp32_scores
+
 
 def compute_in_batch_positive_scores(
     query_embeddings: Tensor,
@@ -16,10 +18,13 @@ def compute_in_batch_positive_scores(
         raise ValueError("query_embeddings and positive_embeddings must both be 2D")
     if query_embeddings.shape != positive_embeddings.shape:
         raise ValueError("query_embeddings and positive_embeddings must have matching shapes")
+    query_embeddings = query_embeddings.float()
+    positive_embeddings = positive_embeddings.float()
     batch_size = query_embeddings.size(0)
     if batch_size <= 1:
         return query_embeddings.new_empty((batch_size, 0))
-    cross_scores = torch.matmul(query_embeddings, positive_embeddings.detach().T)
+    with fp32_scores(query_embeddings.device):
+        cross_scores = torch.matmul(query_embeddings, positive_embeddings.detach().T)
     off_diagonal = ~torch.eye(batch_size, device=cross_scores.device, dtype=torch.bool)
     return cross_scores.masked_select(off_diagonal).reshape(batch_size, batch_size - 1)
 
@@ -37,6 +42,8 @@ def compute_infonce_loss(
     """
     if temperature <= 0:
         raise ValueError(f"infonce temperature must be positive, got {temperature}")
+    if scores.dtype in {torch.float16, torch.bfloat16}:
+        scores = scores.float()
     valid = torch.ones_like(scores, dtype=torch.bool) if candidate_mask is None else candidate_mask.bool()
     positives = (relevance_labels > 0) & valid
     negatives = valid & ~positives
@@ -90,7 +97,7 @@ def auxiliary_infonce_loss(
 
     # Avoid bf16 matmul rounding before division by a small temperature. This is
     # a differentiable cast, not a detach, and uses the same forward embeddings.
-    with torch.autocast(device_type=query_embeddings.device.type, enabled=False):
+    with fp32_scores(query_embeddings.device):
         queries = query_embeddings.float()
         documents = document_embeddings.float()
         scores = torch.einsum("bd,bmd->bm", queries, documents)

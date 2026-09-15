@@ -21,6 +21,7 @@ SUPPORTED_APPEND_TOKENS = ("none", "eos", "pad")
 SUPPORTED_PADDING_SIDES = ("left", "right")
 EMBEDDING_PROTOCOL_FILENAME = "embedding_protocol.json"
 TOKENIZATION_VERSION = 2
+POOLING_COMPUTE_DTYPE = "float32"
 
 
 def tokenization_metadata(tokenizer, append_token: str) -> dict[str, object]:
@@ -44,6 +45,7 @@ def protocol_from_model_args(model_args, tokenizer) -> dict[str, object]:
     return {
         **tokenization_metadata(tokenizer, model_args.append_token),
         "pooling_method": model_args.pooling_method,
+        "pooling_compute_dtype": POOLING_COMPUTE_DTYPE,
         "padding_side": model_args.padding_side,
         "append_token": model_args.append_token,
         "query_prompt_template": model_args.query_prompt_template,
@@ -74,6 +76,8 @@ def load_embedding_protocol(model_path: str | Path) -> dict[str, object]:
             f"Unsupported tokenization protocol in {protocol_path}; expected version "
             f"{TOKENIZATION_VERSION}. Checkpoints from the old text-append protocol are not supported."
         )
+    if protocol.get("pooling_compute_dtype") != POOLING_COMPUTE_DTYPE:
+        raise ValueError(f"Unsupported pooling precision in {protocol_path}; expected float32")
     return protocol
 
 
@@ -217,8 +221,8 @@ def pool_embeddings(
             batch_indices = torch.arange(last_hidden_states.size(0), device=last_hidden_states.device)
             embeddings = last_hidden_states[batch_indices, sequence_lengths]
     elif pooling_method == "mean":
-        mask = attention_mask.unsqueeze(-1).to(last_hidden_states.dtype)
-        embeddings = (last_hidden_states * mask).sum(dim=1) / mask.sum(dim=1).clamp_min(1)
+        mask = attention_mask.unsqueeze(-1).float()
+        embeddings = (last_hidden_states.float() * mask).sum(dim=1) / mask.sum(dim=1).clamp_min(1)
     elif pooling_method == "cls":
         # Encoder checkpoints conventionally use right padding, leaving CLS at index 0.
         embeddings = last_hidden_states[:, 0]
@@ -228,7 +232,7 @@ def pool_embeddings(
             f"Expected one of {SUPPORTED_POOLING_METHODS}."
         )
 
-    return F.normalize(embeddings, dim=-1, p=2) if normalize else embeddings
+    return F.normalize(embeddings.float(), dim=-1, p=2) if normalize else embeddings
 
 
 def encode_valid_candidates(encode, inputs, candidate_mask):

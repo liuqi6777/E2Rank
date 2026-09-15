@@ -32,6 +32,39 @@ SUPPORTED_ROLLOUTS = ("product", "diagonal")
 
 SUPPORTED_BASELINE_LOSSES = ("infonce", "ranknet", "lambdaloss")
 
+SUPPORTED_GRADIENT_ESTIMATORS = ("score_function", "conditional_projection")
+
+
+def validate_gradient_estimator(
+    mode, *, action_components, sampling_law, sigma_learnable, rollout,
+    advantage_baseline, advantage_norm, reward_combine,
+    in_batch_use_sampled_documents, document_advantage_baseline,
+    document_log_prob_reduction, dynamic_retrieval=False,
+):
+    if mode not in SUPPORTED_GRADIENT_ESTIMATORS:
+        raise ValueError(f"Unsupported gradient_estimator: {mode!r}")
+    if mode == "score_function":
+        return
+    requirements = {
+        "joint query and full-document actions": (
+            len(action_components) == 2 and ("query",) in action_components
+            and any(set(group) == {"positive", "negative"} for group in action_components)
+        ),
+        "sampling_law='vmf'": sampling_law == "vmf",
+        "sigma_learnable=false": not sigma_learnable,
+        "rollout='product'": rollout == "product",
+        "advantage_baseline='leave_one_out'": advantage_baseline == "leave_one_out",
+        "advantage_norm='none'": advantage_norm == "none",
+        "reward_combine='sum'": reward_combine == "sum",
+        "in_batch_use_sampled_documents=false": not in_batch_use_sampled_documents,
+        "document_advantage_baseline='shared'": document_advantage_baseline == "shared",
+        "document_log_prob_reduction='sum'": document_log_prob_reduction == "sum",
+        "static candidates": not dynamic_retrieval,
+    }
+    missing = [name for name, valid in requirements.items() if not valid]
+    if missing:
+        raise ValueError("gradient_estimator='conditional_projection' requires " + ", ".join(missing))
+
 
 def validate_document_advantage_baseline(
     mode, *, action_components, sampling_law, sigma_learnable, rollout,
@@ -447,6 +480,10 @@ class LoraArguments:
 
 @dataclass
 class RLArguments:
+    gradient_estimator: str = field(
+        default="score_function",
+        metadata={"help": "score_function or conditional_projection (joint static vMF product rollouts)"},
+    )
     rollout_seed: Optional[int] = field(
         default=None,
         metadata={"help": "Independent action-sampling seed; None preserves the legacy global RNG"},
@@ -725,6 +762,16 @@ class RLArguments:
             rollout=self.rollout, advantage_baseline=self.advantage_baseline,
             advantage_norm=self.advantage_norm, reward_combine=self.reward_combine,
             in_batch_use_sampled_documents=self.in_batch_use_sampled_documents,
+            dynamic_retrieval=self.dynamic_retrieval,
+        )
+        validate_gradient_estimator(
+            self.gradient_estimator, action_components=self.action_components,
+            sampling_law=self.sampling_law, sigma_learnable=self.sigma_learnable,
+            rollout=self.rollout, advantage_baseline=self.advantage_baseline,
+            advantage_norm=self.advantage_norm, reward_combine=self.reward_combine,
+            in_batch_use_sampled_documents=self.in_batch_use_sampled_documents,
+            document_advantage_baseline=self.document_advantage_baseline,
+            document_log_prob_reduction=self.document_log_prob_reduction,
             dynamic_retrieval=self.dynamic_retrieval,
         )
         # An empty spec means "single term from reward_type", which resolves to exactly the

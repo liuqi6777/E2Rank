@@ -9,6 +9,7 @@ sigma_learnable: false
 advantage_norm: none
 sampling_law: vmf
 rollout: product
+gradient_estimator: score_function # See docs/gradient_estimators.md.
 frozen_doc_rescale: true
 advantage_baseline: leave_one_out
 in_batch_use_sampled_documents: false

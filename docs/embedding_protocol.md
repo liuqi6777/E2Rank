@@ -44,6 +44,7 @@ BGE/E5 的 `append_token: none` 继续保留原生 CLS/SEP 等结构。
 ```json
 {
   "tokenization_version": 2,
+  "pooling_compute_dtype": "float32",
   "add_special_tokens": false,
   "terminal_token_id": 151643,
   "terminal_after_truncation": true
@@ -54,8 +55,12 @@ BGE/E5 的 `append_token: none` 继续保留原生 CLS/SEP 等结构。
 原始 Hugging Face 模型没有项目 sidecar 时，使用模型配置和新的统一 tokenization 规则。
 现有旧权重和结果文件不删除、不重写。
 
+归一化与 mean pooling 的计算精度固定为 FP32；backbone 可继续用混合精度。
+项目 checkpoint 和固定索引必须包含 `pooling_compute_dtype: float32`，否则拒绝读取。
+评测及几何分析的缓存 identity 同样记录该字段，避免与旧精度的向量缓存混用。
+
 固定语料 manifest 记录新 token 元数据，消费旧索引会因版本不符而停止。
-MTEB 结果模型名增加 `__tokens-v2`；MTEB 固定语料 identity 和几何分析 identity 也包含协议版本。
+MTEB 结果模型名增加 `__tokens-v2__pool-fp32`；MTEB 固定语料 identity 和几何分析 identity 也包含协议版本。
 新旧输入协议的 embedding 与结果缓存不能混用，旧语料索引需要重新编码到新目录。
 
 ## 验证

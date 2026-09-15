@@ -490,6 +490,7 @@ def _check_single_frozen_document_index(
         return [f'Invalid frozen document index manifest {path}; missing={missing}']
     expected = {
         'tokenization_version': 2,
+        'pooling_compute_dtype': 'float32',
         'model_name_or_path': config.get('model_name_or_path'),
         'pooling_method': config.get('pooling_method'),
         'padding_side': config.get('padding_side'),
