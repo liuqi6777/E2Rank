@@ -1,5 +1,21 @@
 # Experiment Plan: Reward-Based Optimization of Embedding Retrievers
 
+## 2026-09-15：G1 对比学习的训练随机性重复
+
+为检验现有 seed 方差是否主要来自 4,963 条训练记录的数据规模，而非 RL rollout 独有噪声，
+新增 `G1-J-CL-Seed3407` 与 `G1-J-CL-Seed2026`，复用已完成的 `G1-J-CL`（seed 42）组成
+42/3407/2026 三个 seed。三行保持 joint multi-positive InfoNCE、113 optimizer steps、LR 5e-6、
+global batch 128 / microbatch 16、full FT、相同候选与最终 BRIGHT 协议；只同步改变训练 seed 与
+data seed。三行读取同一个冻结的 `train.ready.jsonl`，预处理阶段选出的 seed-42 in-batch 代表
+正例也不变，因此不会把数据重新构造的差异混入运行时方差。
+
+入口为 `scripts/run_g1_cl_seed_repeats.sh [check|train] [gpus]`。脚本只训练缺失的 3407、2026，
+每行从 E0 独立启动并自动评测最终 checkpoint；不覆盖或续训 seed-42 模型。完成后统一报告三个
+seed 的 BRIGHT 宏平均、样本标准差、最差值和逐领域结果，并与相同 seed 的 RL 重复比较。
+CL 与 RL 都有较大标准差才支持“小数据导致通用不稳定”；CL 稳而 RL 不稳则指向 RL objective、
+rollout 或二者与优化过程的交互。这个对照本身不能因果证明数据量效应；若 CL 也不稳，下一步才做
+固定配方的 25%/50%/100% 数据量 × seed 实验。当前只完成配置与预检，尚未启动训练。
+
 ## 2026-09-15：G1 质量与 seed 稳定性的过夜训练批次
 
 以完整训练的 BRIGHT 均值、seed 标准差和最差成绩为主要判断依据，新增 7 配方 × 3 seed，
@@ -29,7 +45,8 @@
 新增两次 RL 训练：`G1-A-MRRAlign090-Seed3407`、`G1-A-MRRAlign090-Seed2026`，
 与已完成的 seed 42 组成三个 seed。固定 `G1-A-MRRAlign090` 全部训练配方、数据和预算，
 仅同步改变训练 seed/data seed；各自从原始 E0 开始。数据准备保持不变，in-batch 代表
-正例仍使用预处理 seed 42。此次不新增 LL/CL 重复，不改变既定 G2 计划。
+正例仍使用预处理 seed 42。该批次当时未新增 LL/CL 重复；后续已按上方 2026-09-15 计划
+补充 CL 重复，不改变既定 G2 计划。
 
 入口为 `scripts/run_g1_mrr_seed_repeats.sh [check|train] [gpus]`，默认 8 卡，先全部预检，
 再按 3407 → 2026 训练并自动执行最终 BRIGHT。每行使用独立、带实际 seed 后缀的输出目录；

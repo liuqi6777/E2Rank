@@ -1,5 +1,27 @@
 # 三组实验配置指南
 
+## G1 对比学习的 seed 重复（2026-09-15）
+
+为区分“小数据下的通用训练方差”和 RL rollout 特有方差，新增
+`G1-J-CL-Seed3407`、`G1-J-CL-Seed2026`，与已完成的 `G1-J-CL`（seed 42）组成
+同一组 42/3407/2026。三次都是 joint multi-positive InfoNCE；训练预算、LR、global batch、
+候选与标签协议完全相同，只同步改变训练 `seed` 和 `data_seed`。预处理文件及其 seed-42
+in-batch 正例代表保持冻结，因此这里测量的是固定小数据集上的初始化、数据顺序和运行时随机性，
+不把“重新抽了一份训练集”的变化混入结果。
+
+```bash
+bash scripts/run_g1_cl_seed_repeats.sh check 8
+bash scripts/run_g1_cl_seed_repeats.sh train 8
+```
+
+脚本复用已有 seed-42 结果，只按 3407 → 2026 训练两次；每次完成后自动执行最终 BRIGHT。
+输出目录分别为 `G1-J-CL-Seed3407-s3407/` 和 `G1-J-CL-Seed2026-s2026/`。
+完成后对三个 seed 报告 BRIGHT 宏平均的均值、样本标准差、最差值和逐领域结果，不挑最好 seed。
+解释时比较 CL 与匹配 seed 的 RL 分布：若两者都不稳，支持数据量/抽样敏感性；若 CL 明显更稳，
+则更支持 RL 目标、rollout 或优化器交互带来的额外方差。CL 多 seed 本身不能因果证明是数据量；
+若 CL 也不稳，再做固定配方下 25%/50%/100% 数据量 × seed 才能直接检验规模效应。
+当前只完成配置与预检，尚未启动训练；suite 共 92 行（90 次训练、2 次评测）。
+
 ## G1 稳定性过夜批次（2026-09-15）
 
 新增 `G1-S-*` 共 21 行，7 个配方各重复 seed 42/3407/2026，同时设置训练/data/rollout seed。

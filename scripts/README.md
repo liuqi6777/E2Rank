@@ -14,6 +14,7 @@ BRIGHT，`summary` 汇总三 seed 的均值/标准差/最差成绩。无时间�
 | `experiment.py` | G1/G2/G3 的 prepare、encode、list、show、check、train |
 | `experiments/iclr2027.py` | 实验定义解析、预算与依赖检查、实际启动；由公共入口调用 |
 | `run_g1_mrr_seed_repeats.sh` | 预检并顺序运行最终 G1 MRR 配方的 seed 3407、2026；每次训练后自动评测 BRIGHT |
+| `run_g1_cl_seed_repeats.sh` | 预检并顺序运行 G1 joint InfoNCE 的 seed 3407、2026；复用已有 seed 42 |
 | `diagnose_rollout_gradients.py` | 固定 checkpoint 和训练 batch，仅改变 rollout，统计完整参数梯度的噪声与方向一致性 |
 | `run_g1_rollout_seed_repeats.sh` | 固定训练 seed 42，预检并运行独立 rollout seed 42/3407/2026 的对照 |
 | `download_reasonrank_audit.py` | 下载审计使用的 ReasonRank / BRIGHT 原始数据 |

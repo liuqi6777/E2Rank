@@ -64,6 +64,8 @@ profiles:
 execution_stages:
   - name: G1 overnight stability matrix
     runs: [G1-S-MRR32-Seed42, G1-S-MRR32-Seed3407, G1-S-MRR32-Seed2026, G1-S-GradedNDCG64-Seed42, G1-S-GradedNDCG64-Seed3407, G1-S-GradedNDCG64-Seed2026, G1-S-MRR64-Seed42, G1-S-MRR64-Seed3407, G1-S-MRR64-Seed2026, G1-S-GradedNDCG32-Seed42, G1-S-GradedNDCG32-Seed3407, G1-S-GradedNDCG32-Seed2026, G1-S-BinaryNDCG32-Seed42, G1-S-BinaryNDCG32-Seed3407, G1-S-BinaryNDCG32-Seed2026, G1-S-GradedNDCG64LRHalf-Seed42, G1-S-GradedNDCG64LRHalf-Seed3407, G1-S-GradedNDCG64LRHalf-Seed2026, G1-S-MRR64LRHalf-Seed42, G1-S-MRR64LRHalf-Seed3407, G1-S-MRR64LRHalf-Seed2026]
+  - name: G1 CL additional seed repeats
+    runs: [G1-J-CL-Seed3407, G1-J-CL-Seed2026]
   - name: G1 MRR isolated rollout seeds
     runs: [G1-A-MRR090-Rollout42, G1-A-MRR090-Rollout3407, G1-A-MRR090-Rollout2026]
   - name: G1 selected MRR seed repeats
@@ -366,7 +368,16 @@ runs:
     protocol: {labels: all_known_positives_binary}
     overrides: {reward_type: mrr_in_batch, relevance_scheme: binary, target_alignment: 0.90, final_alignment: null, exploration_schedule: fixed, advantage_norm: per_component, document_log_prob_reduction: mean}
   G1-E0: {group: G1, kind: evaluation, scope: reference}
-  G1-J-CL: {group: G1, objective: infonce, scope: joint}
+  # Match the RL training/data seed repeats while reusing the completed seed-42 control.
+  G1-J-CL: &g1_joint_cl {group: G1, objective: infonce, scope: joint}
+  G1-J-CL-Seed3407:
+    <<: *g1_joint_cl
+    seed: 3407
+    control: G1-J-CL
+  G1-J-CL-Seed2026:
+    <<: *g1_joint_cl
+    seed: 2026
+    control: G1-J-CL
   G1-J-RN: {group: G1, objective: ranknet, scope: joint}
   G1-J-LL: {group: G1, objective: lambdaloss, scope: joint}
   G1-J-RL: {group: G1, objective: rl, scope: joint}
