@@ -143,6 +143,10 @@ def apply_settings(suite, path):
                    exploration_schedule='exploration_schedule')
     for group in ('G1', 'G2', 'G3'):
         values = settings.get(group, {})
+        if not values:
+            continue
+        if group not in suite['profiles']:
+            raise ValueError(f'{group}: no profile in the selected suite')
         allowed_data_keys = {'data', 'bge_m3_data'} if group == 'G2' else {'data'}
         unknown = set(values) - set(mapping) - allowed_data_keys
         if unknown:
@@ -239,7 +243,7 @@ def resolve_run(suite, suite_path, run_id, root=ROOT, nproc=1):
                     data_parent / 'reasonrank_frozen_document_indices' / 'index_router_manifest.json'
                 )
                 config['frozen_document_verify_hashes'] = True
-    for key in ('model_name_or_path', 'pooling_method', 'append_token', 'padding_side',
+    for key in ('model_name_or_path', 'model_revision', 'pooling_method', 'append_token', 'padding_side',
                 'query_prompt_template', 'document_prompt_template', 'learning_rate', 'max_steps'):
         if protocol.get(key) is not None:
             config[key] = protocol[key]

@@ -13,7 +13,24 @@ source .venv/bin/activate
 
 ## 实验入口
 
-日常只编辑 [configs/experiments.yaml](configs/experiments.yaml)，使用一个入口：
+2026-09-16 的[新实验计划](paper/EXPERIMENT_PLAN.md)已接入[整批夜跑脚本](docs/g1_r2_overnight.md)：
+3 个监督基线 + MRR / binary nDCG / graded nDCG 各自的 SF/CP，RL 统一 G64，共 9 方法 × 3 seed = 27 次训练。
+沿用现有数据与采样器，不另划 dev；固定 113 步、最终 BRIGHT 评测，G2/G3 暂缓。
+
+在已激活训练环境的 8 卡 GPU 机器上，一条命令运行全部：
+
+```bash
+nohup python -u scripts/run_g1_r2.py > g1_r2_night.log 2>&1 &
+```
+
+新批次配置是 [configs/experiments_r2.yaml](configs/experiments_r2.yaml)。先只预检用 `python scripts/run_g1_r2.py check`；
+结果在 `checkpoints/iclr2027-r2/.r2_batch/summary.md`，重启同一命令会跳过已完成项，评测失败只补评测。
+三台机器可分别添加 `--seeds 42`、`--seeds 3407`、`--seeds 2026`，每台跑九个方法；E0 和公共诊断只由 seed 42 执行。
+分机汇总位于 `.r2_batch/queues/seeds-<seed>/summary.md`；结果汇集后用 `python scripts/run_g1_r2.py summary` 生成三 seed 总表。
+
+### 历史实验入口
+
+下列命令对应 [configs/experiments.yaml](configs/experiments.yaml) 和旧注册矩阵：
 
 ```bash
 python scripts/experiment.py prepare G1
@@ -50,8 +67,9 @@ bash scripts/run_g2_rl.sh train 8
 
 ## 数据
 
-G1 使用 `data/processed/reasonrank_simple/` 中的 4,963 条全量训练数据，无 dev。
-`prepare G1` 每个 query 固定抽一个正例，移除其余已知正例，保留变长负例，生成 `train.ready.jsonl`。
+G1 使用 `data/processed/reasonrank_multi/train.ready.jsonl` 中的 4,963 条训练输入记录，无 dev。
+保留全部已知正例；现有采样器丢尾后的实际索引为 4,896 条，数据哈希及运行约定见[新实验计划](paper/EXPERIMENT_PLAN.md)。
+`prepare G1` 每个 query 固定抽一个正例作为 in-batch 代表，同时保留其余已知正例和变长负例，生成 `train.ready.jsonl`。
 Loader 直接读 ready 文件；collator 动态补齐和生成 mask。公开文本与审计 sidecar 不参与训练加载。
 已有 ready 文件不会自动重写。
 G1 主对照和 RL 消融使用 joint encoder，不需要预先运行 `encode G1`。`G1-DR` 是独立的

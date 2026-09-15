@@ -1,6 +1,6 @@
 # Shared full-fine-tuning budget for all main post-training objectives and
-# embedding-model initializations. The learning rate remains provisional until
-# the equal-budget dev calibration lands.
+# embedding-model initializations. The learning rate is a fixed controlled
+# starting point; any later equal-budget calibration follows paper/EXPERIMENT_PLAN.md.
 bf16: true
 tf32: true
 per_device_train_batch_size: 16

@@ -1,0 +1,12 @@
+_base_: g1.yaml
+model_revision: 97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3
+index_cache_dir: .cache/dataset_index/g1-r2
+dev_samples_per_source: 0
+max_grad_norm: 0.0
+# Keep step 25 for the paired diagnostic, as well as the final model.
+save_total_limit: 5
+# These checkpoints are for diagnosis/evaluation, not optimizer-state resumption.
+save_only_model: true
+load_best_model_at_end: false
+eval_strategy: 'no'
+deepspeed: ./scripts/zero3_no_clip.json

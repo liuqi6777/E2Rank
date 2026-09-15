@@ -49,6 +49,9 @@ checkpoint 会保存估计器名称；恢复训练时不能切换。诊断加载
 
 ## 固定状态配对诊断
 
+新协议 G64 夜跑由 [run_g1_r2.py](../scripts/run_g1_r2.py) 自动安排 E0 与新 LL-Binary step 25 的 MRR 配对诊断；
+配置与日志见[夜跑说明](g1_r2_overnight.md)。单独诊断新矩阵时同时传 `--suite configs/experiments/iclr2027/suite_r2.yaml` 和 `--config configs/experiments_r2.yaml`。
+
 在有真实 prepared data 与足够内存的 GPU 机器上运行：
 
 ```bash

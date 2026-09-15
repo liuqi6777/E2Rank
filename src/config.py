@@ -164,6 +164,10 @@ class ModelArguments:
     model_name_or_path: str = field(
         metadata={"help": "Path to a pretrained model or a Hugging Face model ID"}
     )
+    model_revision: Optional[str] = field(
+        default=None,
+        metadata={"help": "Pinned revision shared by the backbone, config and tokenizer"},
+    )
     config_name: Optional[str] = field(
         default=None,
         metadata={"help": "Optional config path if it differs from model_name_or_path"},

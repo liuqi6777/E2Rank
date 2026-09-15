@@ -1,0 +1,10 @@
+# The overnight queue uses this file, not the historical experiments.yaml.
+output_dir: checkpoints/iclr2027-r2
+G1:
+  data: data/processed/reasonrank_multi
+  model: Qwen/Qwen3-Embedding-0.6B
+  learning_rate: 0.000005
+  steps: 113
+  checkpoint_every: 25
+  batch_size: 128
+  micro_batch_size: 16

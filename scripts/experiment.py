@@ -15,6 +15,7 @@ def main():
     parser.add_argument('action', choices=['prepare', 'encode', 'list', 'show', 'check', 'train'])
     parser.add_argument('run', nargs='?')
     parser.add_argument('--config', type=Path, default=ROOT/'configs/experiments.yaml')
+    parser.add_argument('--suite', type=Path, default=iclr2027.DEFAULT_SUITE)
     parser.add_argument(
         '--gpus', type=int, default=8,
         help='Single-node GPU process count (default: 8)',
@@ -50,9 +51,9 @@ def main():
             write_reasonrank_index_router,
         )
         training_sources = sorted(REASONRANK_TRAINING_SOURCES)
-        suite = iclr2027.apply_settings(iclr2027.load_suite(), args.config)
+        suite = iclr2027.apply_settings(iclr2027.load_suite(args.suite), args.config)
         resolved = iclr2027.resolve_run(
-            suite, iclr2027.DEFAULT_SUITE, 'G1-J-CL', nproc=args.gpus
+            suite, args.suite, 'G1-J-CL', nproc=args.gpus
         )
         config = resolved['config']
         data_path = Path(config['data_path'])
@@ -111,10 +112,10 @@ def main():
         print(f'Validated routed ReasonRank index: {manifest}')
         return 0
     if args.action == 'show' and not args.verbose:
-        suite = iclr2027.apply_settings(iclr2027.load_suite(), args.config)
+        suite = iclr2027.apply_settings(iclr2027.load_suite(args.suite), args.config)
         if args.run not in suite['runs']:
             parser.error('show requires an explicit run ID, e.g. G1-J-RL')
-        resolved = iclr2027.resolve_run(suite, iclr2027.DEFAULT_SUITE, args.run, nproc=args.gpus)
+        resolved = iclr2027.resolve_run(suite, args.suite, args.run, nproc=args.gpus)
         config = resolved['config']
         summary = {key: resolved[key] for key in ['run_id', 'dataset', 'scope', 'objective', 'selection', 'priority', 'execution_stage', 'execution_stage_name']}
         summary.update(seed=config['seed'], data_seed=config['data_seed'],
@@ -136,7 +137,7 @@ def main():
         argv += ['--group', args.run]
     elif args.run:
         argv.append(args.run)
-    argv += ['--settings', str(args.config), '--nproc', str(args.gpus)]
+    argv += ['--settings', str(args.config), '--suite', str(args.suite), '--nproc', str(args.gpus)]
     return iclr2027.main(argv)
 
 

@@ -156,16 +156,19 @@ def setup_logging(training_args: HFTrainingArguments, extra_parameters: dict | N
 
 
 def load_backbone_and_tokenizer(model_args: ModelArguments, lora_args: LoraArguments):
+    revision_kwargs = {"revision": model_args.model_revision} if model_args.model_revision else {}
     config = AutoConfig.from_pretrained(
         model_args.config_name if model_args.config_name else model_args.model_name_or_path,
         trust_remote_code=True,
         cache_dir=model_args.cache_dir,
+        **revision_kwargs,
     )
     backbone = AutoModel.from_pretrained(
         model_args.model_name_or_path,
         config=config,
         cache_dir=model_args.cache_dir,
         trust_remote_code=True,
+        **revision_kwargs,
         # attn_implementation="flash_attention_2",
     )
     tokenizer = AutoTokenizer.from_pretrained(
@@ -173,6 +176,7 @@ def load_backbone_and_tokenizer(model_args: ModelArguments, lora_args: LoraArgum
         padding_side=model_args.padding_side,
         cache_dir=model_args.cache_dir,
         trust_remote_code=True,
+        **revision_kwargs,
     )
 
     if lora_args.lora_enabled:
@@ -219,6 +223,11 @@ def build_embedding_data(
     frozen_index: FrozenCorpusIndex | FrozenCorpusIndexRouter | None = None,
 ):
     """Train dataset, optional held-out dev dataset, and the shared collator."""
+    # Hold data order fixed across wrappers and model-loading RNG consumption.
+    # This leaves the existing per-source grouping and tail policy unchanged.
+    data_seed = getattr(training_args, "data_seed", None)
+    if data_seed is not None:
+        set_seed(data_seed)
     train_dataset = EmbeddingDataset(
         data_args=data_args,
         batch_size=training_args.per_device_train_batch_size,

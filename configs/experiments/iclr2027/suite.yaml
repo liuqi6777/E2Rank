@@ -59,8 +59,9 @@ profiles:
       learning_rate: null
       eval_steps: null
 
-# Advisory order only: launch still requires one explicit run ID.
-# Round 2 explicitly develops configurations using the first-round BRIGHT results.
+# Historical advisory order, superseded by paper/EXPERIMENT_PLAN.md on 2026-09-16.
+# New G1-R2 runs are registered separately in suite_r2.yaml; do not replay this full queue.
+# These historical rounds used BRIGHT results for configuration development.
 execution_stages:
   - name: G1 overnight stability matrix
     runs: [G1-S-MRR32-Seed42, G1-S-MRR32-Seed3407, G1-S-MRR32-Seed2026, G1-S-GradedNDCG64-Seed42, G1-S-GradedNDCG64-Seed3407, G1-S-GradedNDCG64-Seed2026, G1-S-MRR64-Seed42, G1-S-MRR64-Seed3407, G1-S-MRR64-Seed2026, G1-S-GradedNDCG32-Seed42, G1-S-GradedNDCG32-Seed3407, G1-S-GradedNDCG32-Seed2026, G1-S-BinaryNDCG32-Seed42, G1-S-BinaryNDCG32-Seed3407, G1-S-BinaryNDCG32-Seed2026, G1-S-GradedNDCG64LRHalf-Seed42, G1-S-GradedNDCG64LRHalf-Seed3407, G1-S-GradedNDCG64LRHalf-Seed2026, G1-S-MRR64LRHalf-Seed42, G1-S-MRR64LRHalf-Seed3407, G1-S-MRR64LRHalf-Seed2026]

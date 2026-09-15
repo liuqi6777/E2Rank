@@ -1,0 +1,452 @@
+# New-protocol queue: nine methods x three seeds, plus the original E0 reference.
+version: 1
+plan: paper/EXPERIMENT_PLAN.md
+seed: 42
+output_root: checkpoints/iclr2027-r2
+pending: {}
+
+profiles:
+  G1:
+    config: g1_r2.yaml
+    dataset_manifest: data/processed/reasonrank_multi/manifest.json
+    selection: fixed_budget_final_checkpoint
+    final_evaluation: [bright]
+    requirements: []
+    protocol:
+      labels: all_known_positives_binary
+      training_budget: fixed_steps
+      max_steps: 113
+      learning_rate: 0.000005
+      eval_steps: 25
+      global_batch_size: 128
+      micro_batch_size: 16
+      positive_selection: retain_all_seeded_in_batch_representative
+      positive_selection_seed: 42
+      expected_train_sha256: f5beddc0cdf47de1b7cc05d8e22fc225ad33c9f1ca1796a387f6cc9ac8dfca39
+
+execution_stages:
+  - name: Original E0 under the new protocol
+    runs: [G1-R2-E0]
+  - name: All nine methods seed 42
+    runs: [G1-R2-CL, G1-R2-LL-Binary, G1-R2-LL-Graded, G1-R2-RL-MRR64-SF, G1-R2-RL-MRR64-CP, G1-R2-RL-GradedNDCG64-SF, G1-R2-RL-GradedNDCG64-CP, G1-R2-RL-BinaryNDCG64-SF, G1-R2-RL-BinaryNDCG64-CP]
+  - name: All nine methods seed 3407
+    runs: [G1-R2-CL-Seed3407, G1-R2-LL-Binary-Seed3407, G1-R2-LL-Graded-Seed3407, G1-R2-RL-MRR64-SF-Seed3407, G1-R2-RL-MRR64-CP-Seed3407, G1-R2-RL-GradedNDCG64-SF-Seed3407, G1-R2-RL-GradedNDCG64-CP-Seed3407, G1-R2-RL-BinaryNDCG64-SF-Seed3407, G1-R2-RL-BinaryNDCG64-CP-Seed3407]
+  - name: All nine methods seed 2026
+    runs: [G1-R2-CL-Seed2026, G1-R2-LL-Binary-Seed2026, G1-R2-LL-Graded-Seed2026, G1-R2-RL-MRR64-SF-Seed2026, G1-R2-RL-MRR64-CP-Seed2026, G1-R2-RL-GradedNDCG64-SF-Seed2026, G1-R2-RL-GradedNDCG64-CP-Seed2026, G1-R2-RL-BinaryNDCG64-SF-Seed2026, G1-R2-RL-BinaryNDCG64-CP-Seed2026]
+
+runs:
+  G1-R2-E0:
+    group: G1
+    kind: evaluation
+    scope: reference
+  G1-R2-CL:
+    group: G1
+    scope: joint
+    objective: infonce
+    seed: 42
+    protocol: {labels: all_known_positives_binary}
+    overrides:
+      relevance_scheme: binary
+  G1-R2-LL-Binary:
+    group: G1
+    scope: joint
+    objective: lambdaloss
+    seed: 42
+    protocol: {labels: all_known_positives_binary}
+    overrides:
+      relevance_scheme: binary
+      lambdaloss_sigma: 33.333333333333336
+  G1-R2-LL-Graded:
+    group: G1
+    scope: joint
+    objective: lambdaloss
+    seed: 42
+    protocol: {labels: teacher_grades_3_2_1_0}
+    overrides:
+      relevance_scheme: graded
+      lambdaloss_sigma: 33.333333333333336
+  G1-R2-RL-MRR64-SF:
+    group: G1
+    scope: joint
+    objective: rl
+    seed: 42
+    protocol: {labels: all_known_positives_binary}
+    overrides:
+      relevance_scheme: binary
+      reward_type: mrr_in_batch
+      gradient_estimator: score_function
+      rollout_seed: 42
+      group_size: 64
+      target_alignment: 0.90
+      final_alignment: null
+      exploration_schedule: fixed
+      document_advantage_baseline: shared
+      reward_combine: sum
+      aux_infonce_coef: 0.0
+  G1-R2-RL-MRR64-CP:
+    group: G1
+    scope: joint
+    objective: rl
+    seed: 42
+    protocol: {labels: all_known_positives_binary}
+    control: G1-R2-RL-MRR64-SF
+    overrides:
+      relevance_scheme: binary
+      reward_type: mrr_in_batch
+      gradient_estimator: conditional_projection
+      rollout_seed: 42
+      group_size: 64
+      target_alignment: 0.90
+      final_alignment: null
+      exploration_schedule: fixed
+      document_advantage_baseline: shared
+      reward_combine: sum
+      aux_infonce_coef: 0.0
+  G1-R2-RL-GradedNDCG64-SF:
+    group: G1
+    scope: joint
+    objective: rl
+    seed: 42
+    protocol: {labels: teacher_grades_3_2_1_0}
+    overrides:
+      relevance_scheme: graded
+      reward_type: ndcg_in_batch
+      gradient_estimator: score_function
+      rollout_seed: 42
+      group_size: 64
+      target_alignment: 0.90
+      final_alignment: null
+      exploration_schedule: fixed
+      document_advantage_baseline: shared
+      reward_combine: sum
+      aux_infonce_coef: 0.0
+  G1-R2-RL-GradedNDCG64-CP:
+    group: G1
+    scope: joint
+    objective: rl
+    seed: 42
+    protocol: {labels: teacher_grades_3_2_1_0}
+    control: G1-R2-RL-GradedNDCG64-SF
+    overrides:
+      relevance_scheme: graded
+      reward_type: ndcg_in_batch
+      gradient_estimator: conditional_projection
+      rollout_seed: 42
+      group_size: 64
+      target_alignment: 0.90
+      final_alignment: null
+      exploration_schedule: fixed
+      document_advantage_baseline: shared
+      reward_combine: sum
+      aux_infonce_coef: 0.0
+  G1-R2-RL-BinaryNDCG64-SF:
+    group: G1
+    scope: joint
+    objective: rl
+    seed: 42
+    protocol: {labels: all_known_positives_binary}
+    overrides:
+      relevance_scheme: binary
+      reward_type: ndcg_in_batch
+      gradient_estimator: score_function
+      rollout_seed: 42
+      group_size: 64
+      target_alignment: 0.90
+      final_alignment: null
+      exploration_schedule: fixed
+      document_advantage_baseline: shared
+      reward_combine: sum
+      aux_infonce_coef: 0.0
+  G1-R2-RL-BinaryNDCG64-CP:
+    group: G1
+    scope: joint
+    objective: rl
+    seed: 42
+    protocol: {labels: all_known_positives_binary}
+    control: G1-R2-RL-BinaryNDCG64-SF
+    overrides:
+      relevance_scheme: binary
+      reward_type: ndcg_in_batch
+      gradient_estimator: conditional_projection
+      rollout_seed: 42
+      group_size: 64
+      target_alignment: 0.90
+      final_alignment: null
+      exploration_schedule: fixed
+      document_advantage_baseline: shared
+      reward_combine: sum
+      aux_infonce_coef: 0.0
+  G1-R2-CL-Seed3407:
+    group: G1
+    scope: joint
+    objective: infonce
+    seed: 3407
+    protocol: {labels: all_known_positives_binary}
+    overrides:
+      relevance_scheme: binary
+  G1-R2-LL-Binary-Seed3407:
+    group: G1
+    scope: joint
+    objective: lambdaloss
+    seed: 3407
+    protocol: {labels: all_known_positives_binary}
+    overrides:
+      relevance_scheme: binary
+      lambdaloss_sigma: 33.333333333333336
+  G1-R2-LL-Graded-Seed3407:
+    group: G1
+    scope: joint
+    objective: lambdaloss
+    seed: 3407
+    protocol: {labels: teacher_grades_3_2_1_0}
+    overrides:
+      relevance_scheme: graded
+      lambdaloss_sigma: 33.333333333333336
+  G1-R2-RL-MRR64-SF-Seed3407:
+    group: G1
+    scope: joint
+    objective: rl
+    seed: 3407
+    protocol: {labels: all_known_positives_binary}
+    overrides:
+      relevance_scheme: binary
+      reward_type: mrr_in_batch
+      gradient_estimator: score_function
+      rollout_seed: 3407
+      group_size: 64
+      target_alignment: 0.90
+      final_alignment: null
+      exploration_schedule: fixed
+      document_advantage_baseline: shared
+      reward_combine: sum
+      aux_infonce_coef: 0.0
+  G1-R2-RL-MRR64-CP-Seed3407:
+    group: G1
+    scope: joint
+    objective: rl
+    seed: 3407
+    protocol: {labels: all_known_positives_binary}
+    control: G1-R2-RL-MRR64-SF-Seed3407
+    overrides:
+      relevance_scheme: binary
+      reward_type: mrr_in_batch
+      gradient_estimator: conditional_projection
+      rollout_seed: 3407
+      group_size: 64
+      target_alignment: 0.90
+      final_alignment: null
+      exploration_schedule: fixed
+      document_advantage_baseline: shared
+      reward_combine: sum
+      aux_infonce_coef: 0.0
+  G1-R2-RL-GradedNDCG64-SF-Seed3407:
+    group: G1
+    scope: joint
+    objective: rl
+    seed: 3407
+    protocol: {labels: teacher_grades_3_2_1_0}
+    overrides:
+      relevance_scheme: graded
+      reward_type: ndcg_in_batch
+      gradient_estimator: score_function
+      rollout_seed: 3407
+      group_size: 64
+      target_alignment: 0.90
+      final_alignment: null
+      exploration_schedule: fixed
+      document_advantage_baseline: shared
+      reward_combine: sum
+      aux_infonce_coef: 0.0
+  G1-R2-RL-GradedNDCG64-CP-Seed3407:
+    group: G1
+    scope: joint
+    objective: rl
+    seed: 3407
+    protocol: {labels: teacher_grades_3_2_1_0}
+    control: G1-R2-RL-GradedNDCG64-SF-Seed3407
+    overrides:
+      relevance_scheme: graded
+      reward_type: ndcg_in_batch
+      gradient_estimator: conditional_projection
+      rollout_seed: 3407
+      group_size: 64
+      target_alignment: 0.90
+      final_alignment: null
+      exploration_schedule: fixed
+      document_advantage_baseline: shared
+      reward_combine: sum
+      aux_infonce_coef: 0.0
+  G1-R2-RL-BinaryNDCG64-SF-Seed3407:
+    group: G1
+    scope: joint
+    objective: rl
+    seed: 3407
+    protocol: {labels: all_known_positives_binary}
+    overrides:
+      relevance_scheme: binary
+      reward_type: ndcg_in_batch
+      gradient_estimator: score_function
+      rollout_seed: 3407
+      group_size: 64
+      target_alignment: 0.90
+      final_alignment: null
+      exploration_schedule: fixed
+      document_advantage_baseline: shared
+      reward_combine: sum
+      aux_infonce_coef: 0.0
+  G1-R2-RL-BinaryNDCG64-CP-Seed3407:
+    group: G1
+    scope: joint
+    objective: rl
+    seed: 3407
+    protocol: {labels: all_known_positives_binary}
+    control: G1-R2-RL-BinaryNDCG64-SF-Seed3407
+    overrides:
+      relevance_scheme: binary
+      reward_type: ndcg_in_batch
+      gradient_estimator: conditional_projection
+      rollout_seed: 3407
+      group_size: 64
+      target_alignment: 0.90
+      final_alignment: null
+      exploration_schedule: fixed
+      document_advantage_baseline: shared
+      reward_combine: sum
+      aux_infonce_coef: 0.0
+  G1-R2-CL-Seed2026:
+    group: G1
+    scope: joint
+    objective: infonce
+    seed: 2026
+    protocol: {labels: all_known_positives_binary}
+    overrides:
+      relevance_scheme: binary
+  G1-R2-LL-Binary-Seed2026:
+    group: G1
+    scope: joint
+    objective: lambdaloss
+    seed: 2026
+    protocol: {labels: all_known_positives_binary}
+    overrides:
+      relevance_scheme: binary
+      lambdaloss_sigma: 33.333333333333336
+  G1-R2-LL-Graded-Seed2026:
+    group: G1
+    scope: joint
+    objective: lambdaloss
+    seed: 2026
+    protocol: {labels: teacher_grades_3_2_1_0}
+    overrides:
+      relevance_scheme: graded
+      lambdaloss_sigma: 33.333333333333336
+  G1-R2-RL-MRR64-SF-Seed2026:
+    group: G1
+    scope: joint
+    objective: rl
+    seed: 2026
+    protocol: {labels: all_known_positives_binary}
+    overrides:
+      relevance_scheme: binary
+      reward_type: mrr_in_batch
+      gradient_estimator: score_function
+      rollout_seed: 2026
+      group_size: 64
+      target_alignment: 0.90
+      final_alignment: null
+      exploration_schedule: fixed
+      document_advantage_baseline: shared
+      reward_combine: sum
+      aux_infonce_coef: 0.0
+  G1-R2-RL-MRR64-CP-Seed2026:
+    group: G1
+    scope: joint
+    objective: rl
+    seed: 2026
+    protocol: {labels: all_known_positives_binary}
+    control: G1-R2-RL-MRR64-SF-Seed2026
+    overrides:
+      relevance_scheme: binary
+      reward_type: mrr_in_batch
+      gradient_estimator: conditional_projection
+      rollout_seed: 2026
+      group_size: 64
+      target_alignment: 0.90
+      final_alignment: null
+      exploration_schedule: fixed
+      document_advantage_baseline: shared
+      reward_combine: sum
+      aux_infonce_coef: 0.0
+  G1-R2-RL-GradedNDCG64-SF-Seed2026:
+    group: G1
+    scope: joint
+    objective: rl
+    seed: 2026
+    protocol: {labels: teacher_grades_3_2_1_0}
+    overrides:
+      relevance_scheme: graded
+      reward_type: ndcg_in_batch
+      gradient_estimator: score_function
+      rollout_seed: 2026
+      group_size: 64
+      target_alignment: 0.90
+      final_alignment: null
+      exploration_schedule: fixed
+      document_advantage_baseline: shared
+      reward_combine: sum
+      aux_infonce_coef: 0.0
+  G1-R2-RL-GradedNDCG64-CP-Seed2026:
+    group: G1
+    scope: joint
+    objective: rl
+    seed: 2026
+    protocol: {labels: teacher_grades_3_2_1_0}
+    control: G1-R2-RL-GradedNDCG64-SF-Seed2026
+    overrides:
+      relevance_scheme: graded
+      reward_type: ndcg_in_batch
+      gradient_estimator: conditional_projection
+      rollout_seed: 2026
+      group_size: 64
+      target_alignment: 0.90
+      final_alignment: null
+      exploration_schedule: fixed
+      document_advantage_baseline: shared
+      reward_combine: sum
+      aux_infonce_coef: 0.0
+  G1-R2-RL-BinaryNDCG64-SF-Seed2026:
+    group: G1
+    scope: joint
+    objective: rl
+    seed: 2026
+    protocol: {labels: all_known_positives_binary}
+    overrides:
+      relevance_scheme: binary
+      reward_type: ndcg_in_batch
+      gradient_estimator: score_function
+      rollout_seed: 2026
+      group_size: 64
+      target_alignment: 0.90
+      final_alignment: null
+      exploration_schedule: fixed
+      document_advantage_baseline: shared
+      reward_combine: sum
+      aux_infonce_coef: 0.0
+  G1-R2-RL-BinaryNDCG64-CP-Seed2026:
+    group: G1
+    scope: joint
+    objective: rl
+    seed: 2026
+    protocol: {labels: all_known_positives_binary}
+    control: G1-R2-RL-BinaryNDCG64-SF-Seed2026
+    overrides:
+      relevance_scheme: binary
+      reward_type: ndcg_in_batch
+      gradient_estimator: conditional_projection
+      rollout_seed: 2026
+      group_size: 64
+      target_alignment: 0.90
+      final_alignment: null
+      exploration_schedule: fixed
+      document_advantage_baseline: shared
+      reward_combine: sum
+      aux_infonce_coef: 0.0

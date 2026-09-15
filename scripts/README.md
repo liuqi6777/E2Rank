@@ -1,6 +1,10 @@
 # 脚本索引
 
-G1 稳定性过夜批次：`python scripts/run_g1_stability.py check` 预检，`train` 顺序完成 21 次训练与
+当前 G1 新协议批次：`python scripts/run_g1_r2.py check` 预检，`python scripts/run_g1_r2.py` 一次完成
+E0、配对梯度诊断和 27 次训练及最终 BRIGHT；支持跳过完成项和只补失败评测。见[夜跑说明](../docs/g1_r2_overnight.md)。
+三台机器分别传 `--seeds 42`、`--seeds 3407`、`--seeds 2026` 可同时运行；E0/公共诊断由 seed 42 负责，日志和汇总按所选 seed 隔离。
+
+历史 G1 稳定性过夜批次：`python scripts/run_g1_stability.py check` 预检，`train` 顺序完成 21 次训练与
 BRIGHT，`summary` 汇总三 seed 的均值/标准差/最差成绩。无时间自动停止，失败行记录后继续。
 矩阵与命令见[过夜实验计划](../docs/g1_stability_overnight_plan.md)。
 

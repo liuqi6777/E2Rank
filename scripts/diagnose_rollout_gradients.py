@@ -316,6 +316,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run", default="G1-A-MRRAlign090")
     parser.add_argument("--config", type=Path, default=ROOT/"configs/experiments.yaml")
+    parser.add_argument("--suite", type=Path, default=ROOT/"configs/experiments/iclr2027/suite.yaml")
     parser.add_argument("--checkpoint", help="Backbone checkpoint; omit to probe the run's E0 initialization")
     parser.add_argument("--step", type=int, help="Optimizer step; inferred from exploration_state.json, else 0")
     parser.add_argument("--batch-indices", nargs="+", type=int, default=[0, 1, 2],
@@ -360,8 +361,8 @@ def main():
     from transformers import set_seed
 
     os.chdir(ROOT)
-    suite = experiments.apply_settings(experiments.load_suite(), args.config)
-    resolved = experiments.resolve_run(suite, experiments.DEFAULT_SUITE, args.run, nproc=8)
+    suite = experiments.apply_settings(experiments.load_suite(args.suite), args.config)
+    resolved = experiments.resolve_run(suite, args.suite, args.run, nproc=8)
     config = resolved["config"].copy()
     if args.document_advantage_baseline is not None:
         config["document_advantage_baseline"] = args.document_advantage_baseline
@@ -380,6 +381,7 @@ def main():
         raise ValueError("EMA mutates reward state; use a group/leave-one-out recipe for fixed-state probes")
     if args.checkpoint:
         config["model_name_or_path"] = args.checkpoint
+        config["model_revision"] = None
     state_path = Path(config["model_name_or_path"])/"exploration_state.json"
     checkpoint_state = json.loads(state_path.read_text()) if state_path.exists() else None
     step = args.step if args.step is not None else (
@@ -413,7 +415,7 @@ def main():
 
     # Standardize the dataset construction independently of model-loading RNG use.
     set_seed(config["seed"])
-    train_args = SimpleNamespace(per_device_train_batch_size=config["per_device_train_batch_size"],
+    train_args = SimpleNamespace(data_seed=config["data_seed"], per_device_train_batch_size=config["per_device_train_batch_size"],
                                  per_device_eval_batch_size=config.get("per_device_eval_batch_size", 16))
     dataset, _, collator = build_embedding_data(data_args, train_args, tokenizer, model_args)
     micro = train_args.per_device_train_batch_size
