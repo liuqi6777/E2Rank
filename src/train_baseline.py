@@ -378,6 +378,7 @@ def main() -> None:
     )
 
     trainer = BaselineTrainer(
+        model_args=model_args,
         model=model,
         processing_class=tokenizer,
         args=training_args,

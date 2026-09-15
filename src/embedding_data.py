@@ -12,7 +12,7 @@ import torch.nn.functional as F
 import transformers
 from torch.utils.data import Dataset, Sampler
 
-from embedding_protocol import append_configured_token, format_embedding_text
+from embedding_protocol import tokenize_embedding_texts, format_embedding_text
 
 
 def document_key(text):
@@ -731,17 +731,11 @@ class EmbeddingDataCollator:
         print(f"use ``{self.tokenizer.pad_token}`` as pad token for llm")
 
     def __call__(self, instances: Sequence[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
-        queries = append_configured_token(
+        query_inputs = tokenize_embedding_texts(
             [instance["query"] for instance in instances],
             self.tokenizer,
             self.append_token,
-        )
-        query_inputs = self.tokenizer(
-            queries,
-            padding=True,
-            truncation=True,
             max_length=self.query_max_length,
-            return_tensors="pt",
         )
 
         explicit = ["relevance" in instance for instance in instances]
@@ -879,13 +873,9 @@ class EmbeddingDataCollator:
             format_embedding_text(self.document_prompt_template, document)
             for document in [*positive_documents, *negative_documents]
         ]
-        documents = append_configured_token(documents, self.tokenizer, self.append_token)
-        document_inputs = self.tokenizer(
-            documents,
-            padding=True,
-            truncation=True,
+        document_inputs = tokenize_embedding_texts(
+            documents, self.tokenizer, self.append_token,
             max_length=self.doc_max_length,
-            return_tensors="pt",
         )
         result["positive_document"] = {
             key: value[:batch_size] for key, value in document_inputs.items()

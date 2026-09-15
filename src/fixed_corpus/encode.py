@@ -14,7 +14,7 @@ import torch
 import torch.distributed as dist
 from transformers import AutoConfig, AutoModel, AutoTokenizer
 
-from embedding_protocol import append_configured_token, format_embedding_text, pool_embeddings
+from embedding_protocol import tokenize_embedding_texts, tokenization_metadata, format_embedding_text, pool_embeddings
 from fixed_corpus.index import FrozenCorpusIndex, sha256_file, validate_frozen_protocol
 
 
@@ -138,7 +138,7 @@ def encode_corpus_shards(
     world_size: int,
     device: torch.device,
     overwrite: bool = False,
-) -> tuple[int, str | None, list[dict]]:
+) -> tuple[int, str | None, list[dict], dict]:
     """Encode an existing immutable corpus into shared fp16 search shards."""
     if any(value <= 0 for value in (num_shards, batch_size, max_length)):
         raise ValueError("shard, batch, and maximum-length settings must be positive")
@@ -154,6 +154,7 @@ def encode_corpus_shards(
             or tokenizer.eos_token
             or tokenizer.bos_token
         )
+    token_protocol = tokenization_metadata(tokenizer, append_token)
     model = AutoModel.from_pretrained(
         model_name_or_path,
         revision=revision,
@@ -189,13 +190,9 @@ def encode_corpus_shards(
                     format_embedding_text(document_prompt_template, text)
                     for text in texts
                 ]
-                texts = append_configured_token(texts, tokenizer, append_token)
-                inputs = tokenizer(
-                    texts,
-                    padding=True,
-                    truncation=True,
+                inputs = tokenize_embedding_texts(
+                    texts, tokenizer, append_token,
                     max_length=max_length,
-                    return_tensors="pt",
                 ).to(device)
                 with torch.inference_mode():
                     embeddings = pool_embeddings(
@@ -229,7 +226,7 @@ def encode_corpus_shards(
                     "sha256": sha256_file(path),
                 }
             )
-    return dimension, resolved_revision, shards
+    return dimension, resolved_revision, shards, token_protocol
 
 
 def _validate_existing(args, manifest_path: Path) -> None:
@@ -321,7 +318,7 @@ def main() -> None:
     state = json.loads((building / "build_state.json").read_text())
     count = int(state["count"])
 
-    dimension, resolved_revision, shards = encode_corpus_shards(
+    dimension, resolved_revision, shards, token_protocol = encode_corpus_shards(
         corpus_path=building / "corpus.jsonl",
         offsets_path=building / "corpus_offsets.npy",
         output_dir=building,
@@ -344,6 +341,7 @@ def main() -> None:
         offsets_path = building / "corpus_offsets.npy"
         mapping_path = building / "document_key_to_ordinal.json"
         protocol = {
+            **token_protocol,
             "model_name_or_path": args.model,
             "model_revision": args.revision,
             "resolved_model_revision": resolved_revision,

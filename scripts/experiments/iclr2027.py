@@ -489,6 +489,7 @@ def _check_single_frozen_document_index(
     if manifest.get('format_version') != 1 or missing:
         return [f'Invalid frozen document index manifest {path}; missing={missing}']
     expected = {
+        'tokenization_version': 2,
         'model_name_or_path': config.get('model_name_or_path'),
         'pooling_method': config.get('pooling_method'),
         'padding_side': config.get('padding_side'),

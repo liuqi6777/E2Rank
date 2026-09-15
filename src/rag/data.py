@@ -9,7 +9,7 @@ from typing import Any, Iterator, Sequence
 import torch
 from torch.utils.data import Dataset
 
-from embedding_protocol import append_configured_token, format_embedding_text
+from embedding_protocol import tokenize_embedding_texts, format_embedding_text
 
 
 TRAIN_SOURCES = {"nq": ("train", 79168), "hotpotqa": ("train", 90447)}
@@ -140,17 +140,11 @@ class RAGQueryCollator:
         depth = len(records[0]["candidate_passage_ids"])
         if any(len(record["candidate_passage_ids"]) != depth for record in records):
             raise ValueError("All candidate lists in a batch must have the same depth")
-        queries = append_configured_token(
+        tokenized = tokenize_embedding_texts(
             [record["formatted_query"] for record in records],
             self.tokenizer,
             self.append_token,
-        )
-        tokenized = self.tokenizer(
-            queries,
-            padding=True,
-            truncation=True,
             max_length=self.query_max_length,
-            return_tensors="pt",
         )
         answer_mask = torch.tensor(
             [record["answer_positive_mask"] for record in records], dtype=torch.bool

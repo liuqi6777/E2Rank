@@ -102,6 +102,13 @@ NPROC_PER_NODE=1 bash scripts/run_baseline.sh \
 更换模型时需要同步表示协议。`configs/train/posttrain.yaml` 为共享 full FT 参数，
 `configs/train/default.yaml` 是显式选择的 LoRA 示例。
 
+表示协议现使用 `tokenization_version=2`：`append_token: pad/eos` 对正文关闭自动 special
+tokens，预留一个位置并在截断后追加指定 token；`append_token: none` 保留模型原生处理。
+因此 Qwen3 普通模型与 Embedding 模型均只有一个有效末尾读出 token，长输入也不会丢失它。
+训练、MTEB、RAG 和固定语料编码共用实现；所有训练 checkpoint 都保存解析后的 token 协议，
+不依赖 MTEB callback。旧协议 checkpoint 不兼容，旧语料索引须重新编码；MTEB 结果标识新增
+`__tokens-v2`，不会复用旧协议结果。细节和验证见 [模型协议](docs/embedding_protocol.md)。
+
 现有固定索引 RAG 工具保留在 `scripts/rag_pipeline.sh`，支持 prepare / encode / candidates / train / tune-eval / eval。
 `configs/rag/` 是底层 RAG 配方；G3 正式运行仍通过 `experiment.py` 检查。
 RAG 数据准备需要 `hf`，索引需要兼容 CUDA 的 FAISS；答案生成需要单独部署 generator 服务。

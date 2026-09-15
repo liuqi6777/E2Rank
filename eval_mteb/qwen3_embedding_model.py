@@ -24,7 +24,7 @@ SRC_ROOT = Path(__file__).resolve().parents[1] / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from embedding_protocol import append_configured_token, format_embedding_text, pool_embeddings
+from embedding_protocol import TOKENIZATION_VERSION, tokenize_embedding_texts, format_embedding_text, pool_embeddings
 
 logger = logging.getLogger(__name__)
 
@@ -78,9 +78,7 @@ class TransformersTextEmbedder(torch.nn.Module):
     def tokenize(self, texts, max_length: int, prompt=None) -> BatchEncoding:
         if prompt:
             texts = [prompt + t for t in texts]
-        texts = append_configured_token(texts, self.tokenizer, self.append_token)
-        inputs = self.tokenizer(texts, padding=True, truncation=True, max_length=max_length, return_tensors='pt')
-        return inputs
+        return tokenize_embedding_texts(texts, self.tokenizer, self.append_token, max_length=max_length)
 
     def forward(
         self,
@@ -206,6 +204,7 @@ class Qwen3Embedding(Wrapper):
         else:
             model_name = '/'.join(model_name[-2:])
         model_name = kwargs.pop('model_name', model_name)
+        model_name = f"{model_name}__tokens-v{TOKENIZATION_VERSION}"
         self.model = self._model_class(model, **kwargs)
         self.mteb_model_meta = ModelMeta(
             name=model_name, revision=kwargs.get('revision', None), release_date=None, languages=None, n_parameters=None, memory_usage_mb=None, max_tokens=None, embed_dim=None, license=None, open_weights=False, public_training_code=None, public_training_data=None, framework=["Sentence Transformers"], similarity_fn_name="cosine", use_instructions=True, training_datasets=None

@@ -49,7 +49,7 @@ def main() -> None:
             f"Frozen index already exists: {manifest_path}. Use --overwrite to rebuild explicitly."
         )
 
-    dimension, resolved_revision, shards = encode_corpus_shards(
+    dimension, resolved_revision, shards, token_protocol = encode_corpus_shards(
         corpus_path=corpus_path,
         offsets_path=offsets_path,
         output_dir=output_dir,
@@ -69,6 +69,7 @@ def main() -> None:
     )
     if rank == 0:
         index_manifest = {
+            **token_protocol,
             "format_version": 1,
             "source_manifest": os.path.relpath(Path(args.flashrag_manifest).resolve(), output_dir),
             "source_manifest_sha256": sha256_file(Path(args.flashrag_manifest).resolve()),

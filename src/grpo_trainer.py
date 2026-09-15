@@ -17,6 +17,7 @@ from transformers import Trainer as HFTrainer
 
 from embedding_data import EmbeddingDataset, SingleSourceBatchSampler
 from contrastive import aux_infonce_contract
+from embedding_protocol import save_embedding_protocol
 
 
 logger = logging.getLogger(__name__)
@@ -151,6 +152,9 @@ def save_wrapped_backbone(trainer: HFTrainer, output_dir=None, state_dict=None) 
             output_dir,
             safe_serialization=trainer.args.save_safetensors,
         )
+        model_args = getattr(trainer, "embedding_model_args", None)
+        if model_args is not None:
+            save_embedding_protocol(model_args, output_dir, processing_class)
     return output_dir
 
 
@@ -173,7 +177,8 @@ class EmbeddingTrainerMixin:
     train_metric_names: tuple[str, ...] = ()
     train_metric_log_names: dict[str, str] = {}
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, model_args=None, **kwargs):
+        self.embedding_model_args = model_args
         super().__init__(*args, **kwargs)
         self._train_metric_sums: dict[str, torch.Tensor] = {}
         self._train_metric_updates = 0

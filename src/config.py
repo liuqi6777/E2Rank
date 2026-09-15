@@ -155,8 +155,8 @@ class ModelArguments:
         default="pad",
         metadata={
             "help": (
-                "Special token appended to every text before tokenization: none, eos, or pad. "
-                "The default preserves the original Qwen embedding protocol."
+                "Terminal token appended after truncating raw content IDs: none, eos, or pad. "
+                "Explicit terminals disable automatic special tokens; none uses the native tokenizer."
             )
         },
     )

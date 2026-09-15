@@ -7,7 +7,7 @@ import torch
 from peft import PeftModel
 from transformers import AutoModel, AutoTokenizer
 
-from embedding_protocol import append_configured_token, format_embedding_text, pool_embeddings
+from embedding_protocol import tokenize_embedding_texts, format_embedding_text, pool_embeddings
 from rag.data import RAG_TASK_DESCRIPTION
 
 
@@ -61,13 +61,9 @@ class FrozenQueryEncoder:
             )
             for question in questions
         ]
-        texts = append_configured_token(texts, self.tokenizer, self.append_token)
-        inputs = self.tokenizer(
-            texts,
-            padding=True,
-            truncation=True,
+        inputs = tokenize_embedding_texts(
+            texts, self.tokenizer, self.append_token,
             max_length=self.max_length,
-            return_tensors="pt",
         ).to(self.device)
         with torch.inference_mode():
             return pool_embeddings(

@@ -14,6 +14,8 @@ import torch
 import torch.distributed as dist
 import torch.nn.functional as F
 
+from embedding_protocol import TOKENIZATION_VERSION
+
 
 def sha256_file(path: str | os.PathLike[str], chunk_size: int = 8 << 20) -> str:
     digest = hashlib.sha256()
@@ -48,6 +50,11 @@ def validate_frozen_protocol(
     query_prompt_template: str | None = None,
     embedding_max_length: int | None = None,
 ) -> None:
+    if manifest.get("tokenization_version") != TOKENIZATION_VERSION:
+        raise ValueError(
+            f"Frozen document tokenization_version must be {TOKENIZATION_VERSION}; "
+            "rebuild the index with the current embedding protocol."
+        )
     expected_model = manifest.get("model_name_or_path")
     if expected_model and expected_model != model_name_or_path:
         raise ValueError(

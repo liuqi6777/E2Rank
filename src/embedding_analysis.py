@@ -266,7 +266,8 @@ def encode_stage(config, subset, names):
     import torch
     from transformers import AutoModel, AutoTokenizer
     from embedding_protocol import (
-        append_configured_token,
+        TOKENIZATION_VERSION,
+        tokenize_embedding_texts,
         format_embedding_text,
         load_embedding_protocol,
         pool_embeddings,
@@ -324,6 +325,7 @@ def encode_stage(config, subset, names):
                 )
             }
         )
+        protocol["tokenization_version"] = TOKENIZATION_VERSION
         identity = {
             "data": data_manifest["signature"],
             "checkpoint": checkpoint_identity(spec),
@@ -359,15 +361,9 @@ def encode_stage(config, subset, names):
                         )
                         for r in rows[start : start + batch_size]
                     ]
-                    texts = append_configured_token(
-                        texts, tokenizer, protocol["append_token"]
-                    )
-                    inputs = tokenizer(
-                        texts,
-                        padding=True,
-                        truncation=True,
+                    inputs = tokenize_embedding_texts(
+                        texts, tokenizer, protocol["append_token"],
                         max_length=limit,
-                        return_tensors="pt",
                     ).to(device)
                     with torch.inference_mode():
                         hidden = model(**inputs).last_hidden_state

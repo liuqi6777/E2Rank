@@ -39,7 +39,7 @@ from transformers import AutoModel, AutoTokenizer
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 
 from embedding_protocol import (  # noqa: E402
-    append_configured_token,
+    tokenize_embedding_texts,
     format_embedding_text,
     load_embedding_protocol,
     pool_embeddings,
@@ -128,8 +128,7 @@ def encode(model_path, texts, role, protocol, args):
             )
             for t in texts[s : s + args.batch_size]
         ]
-        batch = append_configured_token(batch, tok, protocol["append_token"])
-        inp = tok(batch, padding=True, truncation=True, max_length=args.max_length, return_tensors="pt").to(args.device)
+        inp = tokenize_embedding_texts(batch, tok, protocol["append_token"], max_length=args.max_length).to(args.device)
         with torch.inference_mode():
             hidden = model(**inp).last_hidden_state
             vecs = pool_embeddings(

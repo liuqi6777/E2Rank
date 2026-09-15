@@ -313,7 +313,7 @@ def save_run_artifacts(trainer, training_args: HFTrainingArguments, tokenizer, *
     if trainer.is_world_process_zero():
         tokenizer.save_pretrained(training_args.output_dir)
         if "model_args" in argument_objects:
-            save_embedding_protocol(argument_objects["model_args"], training_args.output_dir)
+            save_embedding_protocol(argument_objects["model_args"], training_args.output_dir, tokenizer)
         torch.save(training_args, os.path.join(training_args.output_dir, "training_args.bin"))
         for name, argument_object in argument_objects.items():
             torch.save(argument_object, os.path.join(training_args.output_dir, f"{name}.bin"))
@@ -395,6 +395,7 @@ def main() -> None:
             logger.warning(warning)
 
     trainer = GRPOTrainer(
+        model_args=model_args,
         model=model,
         processing_class=tokenizer,
         args=training_args,

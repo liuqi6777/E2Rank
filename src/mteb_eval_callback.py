@@ -14,7 +14,6 @@ import torch.distributed as dist
 from transformers import TrainerCallback
 
 from config import MTEBEvalArguments
-from embedding_protocol import save_embedding_protocol
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -316,8 +315,6 @@ class MTEBEvalCallback(TrainerCallback):
         checkpoint_dir = os.path.join(args.output_dir, self.PRETRAIN_TAG)
         if self.trainer is not None:
             self.trainer.save_model(checkpoint_dir)
-        if self._is_world_process_zero(args) and self.model_args is not None:
-            save_embedding_protocol(self.model_args, checkpoint_dir)
         if self._gloo_group is not None:
             dist.barrier(group=self._gloo_group)
 
@@ -328,9 +325,6 @@ class MTEBEvalCallback(TrainerCallback):
         if not self.enabled:
             return control
 
-        checkpoint_dir, _ = self._prepare_paths(args, state)
-        if self._is_world_process_zero(args) and self.model_args is not None:
-            save_embedding_protocol(self.model_args, checkpoint_dir)
         if self._gloo_group is not None:
             dist.barrier(group=self._gloo_group)
         self._dispatch_eval(args, state, **kwargs)

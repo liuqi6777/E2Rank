@@ -13,6 +13,7 @@ from typing import Any, Callable, Sequence
 import numpy as np
 import torch
 from mteb.encoder_interface import PromptType
+from embedding_protocol import tokenization_metadata
 
 
 INDEX_FORMAT_VERSION = 2
@@ -66,6 +67,7 @@ def corpus_encoder_identity(model_name_or_path: str, model: Any) -> dict[str, ob
     except (AttributeError, StopIteration):
         parameter_dtype = None
     return {
+        **tokenization_metadata(embedder.tokenizer, embedder.append_token),
         "model_name_or_path": model_name_or_path,
         "resolved_revision": revision,
         "pooling_method": getattr(embedder, "pooler_type", None),

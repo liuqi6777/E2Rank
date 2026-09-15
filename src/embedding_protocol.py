@@ -20,10 +20,29 @@ SUPPORTED_POOLING_METHODS = ("last", "mean", "cls")
 SUPPORTED_APPEND_TOKENS = ("none", "eos", "pad")
 SUPPORTED_PADDING_SIDES = ("left", "right")
 EMBEDDING_PROTOCOL_FILENAME = "embedding_protocol.json"
+TOKENIZATION_VERSION = 2
 
 
-def protocol_from_model_args(model_args) -> dict[str, object]:
+def tokenization_metadata(tokenizer, append_token: str) -> dict[str, object]:
+    """Describe the actual token boundary, including its tokenizer-resolved ID."""
+    if append_token not in SUPPORTED_APPEND_TOKENS:
+        raise ValueError(f"Unsupported append_token: {append_token!r}")
+    terminal_id = None
+    if append_token != "none":
+        terminal_id = getattr(tokenizer, f"{append_token}_token_id", None)
+        if terminal_id is None:
+            raise ValueError(f"append_token={append_token!r} requires tokenizer.{append_token}_token_id")
     return {
+        "tokenization_version": TOKENIZATION_VERSION,
+        "add_special_tokens": append_token == "none",
+        "terminal_token_id": terminal_id,
+        "terminal_after_truncation": append_token != "none",
+    }
+
+
+def protocol_from_model_args(model_args, tokenizer) -> dict[str, object]:
+    return {
+        **tokenization_metadata(tokenizer, model_args.append_token),
         "pooling_method": model_args.pooling_method,
         "padding_side": model_args.padding_side,
         "append_token": model_args.append_token,
@@ -34,11 +53,11 @@ def protocol_from_model_args(model_args) -> dict[str, object]:
     }
 
 
-def save_embedding_protocol(model_args, output_dir: str | Path) -> None:
+def save_embedding_protocol(model_args, output_dir: str | Path, tokenizer) -> None:
     output_path = Path(output_dir) / EMBEDDING_PROTOCOL_FILENAME
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as handle:
-        json.dump(protocol_from_model_args(model_args), handle, indent=2, ensure_ascii=False)
+        json.dump(protocol_from_model_args(model_args, tokenizer), handle, indent=2, ensure_ascii=False)
         handle.write("\n")
 
 
@@ -50,6 +69,11 @@ def load_embedding_protocol(model_path: str | Path) -> dict[str, object]:
         protocol = json.load(handle)
     if not isinstance(protocol, dict):
         raise ValueError(f"Expected a JSON object in {protocol_path}")
+    if protocol.get("tokenization_version") != TOKENIZATION_VERSION:
+        raise ValueError(
+            f"Unsupported tokenization protocol in {protocol_path}; expected version "
+            f"{TOKENIZATION_VERSION}. Checkpoints from the old text-append protocol are not supported."
+        )
     return protocol
 
 
@@ -124,20 +148,44 @@ def format_embedding_text(
         ) from exc
 
 
-def append_configured_token(
+def tokenize_embedding_texts(
     texts: Sequence[str],
     tokenizer,
     append_token: str,
-) -> list[str]:
-    """Append the configured tokenizer token as text before batch tokenization."""
+    *,
+    max_length: int,
+):
+    """Tokenize every embedding path with one effective terminal after truncation.
+
+    An explicit terminal uses raw content IDs (no tokenizer-added special tokens),
+    reserves one slot, then appends the terminal before padding. With ``none``, the
+    tokenizer's native special-token processing is retained (e.g. BGE/E5 CLS/SEP).
+    """
+    if max_length < 1:
+        raise ValueError("max_length must be positive")
+    if not texts:
+        raise ValueError("Cannot tokenize an empty embedding batch")
+    metadata = tokenization_metadata(tokenizer, append_token)
     if append_token == "none":
-        return list(texts)
-    token = getattr(tokenizer, f"{append_token}_token", None)
-    if not token:
-        raise ValueError(
-            f"append_token={append_token!r} requires tokenizer.{append_token}_token to be set"
+        return tokenizer(
+            list(texts), add_special_tokens=True, padding=True, truncation=True,
+            max_length=max_length, return_tensors="pt",
         )
-    return [text + token for text in texts]
+    terminal_id = metadata["terminal_token_id"]
+    content = (
+        tokenizer(list(texts), add_special_tokens=False, padding=False, truncation=True,
+                  max_length=max_length-1, return_attention_mask=False)["input_ids"]
+        if max_length > 1 else [[] for _ in texts]
+    )
+    rows = []
+    for ids in content:
+        ids = list(ids)
+        # Normalize an existing boundary too, including one exposed by truncation.
+        while ids and ids[-1] == terminal_id:
+            ids.pop()
+        ids.append(terminal_id)
+        rows.append({"input_ids": ids, "attention_mask": [1] * len(ids)})
+    return tokenizer.pad(rows, padding=True, return_tensors="pt", verbose=False)
 
 
 def pool_embeddings(

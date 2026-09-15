@@ -301,6 +301,7 @@ def main() -> None:
     from grpo_trainer import restore_exploration_state
     restore_exploration_state(model, resume_checkpoint)
     trainer = RAGTrainer(
+        model_args=model_args,
         model=model,
         processing_class=tokenizer,
         args=training_args,
