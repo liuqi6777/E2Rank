@@ -11,6 +11,7 @@ from torch import Tensor, nn
 from transformers.file_utils import ModelOutput
 
 from embedding_protocol import pool_embeddings
+from contrastive import auxiliary_infonce_loss
 from fixed_corpus.environment import (
     DynamicRetrievalEnvironment,
     KnownQrelsNDCGRewardProvider,
@@ -348,6 +349,9 @@ class FixedCorpusGRPOModel(QueryEncoderMixin, nn.Module):
             advantage_baseline_momentum=rl_args.advantage_baseline_momentum,
             in_batch_use_sampled_documents=False,
             kl_coef=rl_args.kl_coef,
+            aux_infonce_coef=rl_args.aux_infonce_coef,
+            aux_infonce_temperature=rl_args.aux_infonce_temperature,
+            aux_infonce_use_in_batch_negatives=rl_args.aux_infonce_use_in_batch_negatives,
         )
 
     def forward(
@@ -359,6 +363,7 @@ class FixedCorpusGRPOModel(QueryEncoderMixin, nn.Module):
         candidate_mask: Tensor | None = None,
         in_batch_positive_mask: Tensor | None = None,
         in_batch_candidate_mask: Tensor | None = None,
+        positive_mask: Tensor | None = None,
         index_route_ids: Tensor | None = None,
         **_: Any,
     ):
@@ -387,6 +392,8 @@ class FixedCorpusGRPOModel(QueryEncoderMixin, nn.Module):
             in_batch_candidate_mask=in_batch_candidate_mask,
             policy_query_embeddings=policy_queries,
             reference_query_embeddings=reference_queries,
+            positive_mask=positive_mask,
+            index_route_ids=index_route_ids,
         )
         term_metrics = {key: value for key, value in reward_stats.items() if "/" in key}
         aggregate = {key: value for key, value in reward_stats.items() if "/" not in key}
@@ -437,6 +444,10 @@ class DynamicRetrievalGRPOModel(QueryOnlyRLWrapper):
             exploration_schedule=rl_args.exploration_schedule,
         )
         self.policy.reward_terms = rl_args.reward_terms
+        self.policy.aux_infonce_coef = rl_args.aux_infonce_coef
+        self.policy.aux_infonce_temperature = rl_args.aux_infonce_temperature
+        self.policy.aux_infonce_use_in_batch_negatives = rl_args.aux_infonce_use_in_batch_negatives
+        self.auxiliary_index = index
 
     @staticmethod
     def _summary(values: Tensor, prefix: str) -> dict[str, Tensor]:
@@ -455,12 +466,15 @@ class DynamicRetrievalGRPOModel(QueryOnlyRLWrapper):
         relevance_labels: Tensor,
         candidate_mask: Tensor | None = None,
         index_route_ids: Tensor | None = None,
+        positive_mask: Tensor | None = None,
+        in_batch_positive_mask: Tensor | None = None,
         **_: Any,
     ):
         from grpo import GRPOModelOutput
 
-        output = self.policy_step(
-            query,
+        means = self.encode_query(query)
+        output = self.policy_step_from_embeddings(
+            means,
             route_ids=index_route_ids,
             candidate_ordinals=candidate_ordinals,
             relevance_labels=relevance_labels,
@@ -468,14 +482,38 @@ class DynamicRetrievalGRPOModel(QueryOnlyRLWrapper):
         )
         reward_stats = self._summary(output.rewards, "reward")
         advantage_stats = self._summary(output.advantages, "advantages")
+        metrics = self.policy.exploration_metrics()
+        loss = output.loss
+        if self.policy.aux_infonce_coef > 0:
+            # Supervision uses the supplied offline candidates and binary identities;
+            # dynamic top-k results continue to define only the RL reward.
+            mask = candidate_ordinals >= 0 if candidate_mask is None else candidate_mask.bool()
+            documents = self.auxiliary_index.lookup_embeddings(
+                candidate_ordinals.masked_fill(~mask, 0), index_route_ids,
+            ).detach().float()
+            documents = F.normalize(documents, dim=-1).masked_fill(~mask.unsqueeze(-1), 0)
+            auxiliary = auxiliary_infonce_loss(
+                means, documents, positive_mask, mask,
+                temperature=self.policy.aux_infonce_temperature,
+                use_in_batch_negatives=self.policy.aux_infonce_use_in_batch_negatives,
+                in_batch_positive_mask=in_batch_positive_mask,
+                index_route_ids=index_route_ids,
+            )
+            weighted_auxiliary = self.policy.aux_infonce_coef * auxiliary
+            metrics.update({
+                "train/loss_rl": loss.detach(),
+                "train/loss_infonce": auxiliary.detach(),
+                "train/loss_infonce_weighted": weighted_auxiliary.detach(),
+            })
+            loss = loss + weighted_auxiliary
         zero = output.loss.new_zeros(())
         return GRPOModelOutput(
-            loss=output.loss,
+            loss=loss,
             reward=reward_stats["reward_mean"],
             **reward_stats,
             **advantage_stats,
             advantages_degenerate_frac=output.degenerate_fraction,
             sigma=output.loss.new_tensor(self.policy.kappa**-0.5),
-            reward_terms=self.policy.exploration_metrics(),
+            reward_terms=metrics,
             kl=zero,
         )

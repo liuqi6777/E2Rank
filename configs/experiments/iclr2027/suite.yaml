@@ -106,6 +106,8 @@ execution_stages:
     runs: [G3-E0, G3-CL, G3-AnsRL, G3-RetRL-MRR, G3-RetRL-NDCG]
   - name: Optional exploration and reward diagnostics
     runs: [G1-A-Anneal, G1-A-FixedSmall, G1-A-Gaussion, G1-A-MRR]
+  - name: G1 direct InfoNCE auxiliary loss
+    runs: [G1-A-MRR090-AuxInfoNCE]
 
 runs:
   # Shared recipe: each seed repeat starts independently from E0 and reuses
@@ -151,6 +153,19 @@ runs:
     seed: 42
     control: G1-A-MRR090-Rollout42
     overrides: {<<: *g1_stability_overrides, rollout_seed: 42}
+  # Direct auxiliary loss pilot; 0.1 is an initial coefficient, not a tuned value.
+  G1-A-MRR090-AuxInfoNCE:
+    <<: *g1_stability
+    seed: 42
+    priority: optional
+    control: G1-S-MRR32-Seed42
+    protocol: {labels: all_known_positives_binary, learning_rate: 0.000005, auxiliary_objective: direct_per_positive_infonce_on_policy_means}
+    overrides:
+      <<: *g1_stability_overrides
+      rollout_seed: 42
+      aux_infonce_coef: 0.1
+      aux_infonce_temperature: 0.03
+      aux_infonce_use_in_batch_negatives: true
   G1-S-MRR32-Seed2026:
     <<: *g1_stability
     seed: 2026

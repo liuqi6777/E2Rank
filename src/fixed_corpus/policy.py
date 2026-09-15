@@ -142,6 +142,10 @@ class QueryOnlyRLWrapper(nn.Module):
 
     def policy_step(self, query: dict[str, torch.Tensor], **reward_inputs) -> QueryPolicyOutput:
         means = self.encode_query(query)
+        return self.policy_step_from_embeddings(means, **reward_inputs)
+
+    def policy_step_from_embeddings(self, means: torch.Tensor, **reward_inputs) -> QueryPolicyOutput:
+        """Reuse the same encoder forward for RL and optional direct supervision."""
         actions = self.policy.sample(means)
         rewards = self.reward_provider(actions, **reward_inputs)
         return self.policy.loss(means, actions, rewards)

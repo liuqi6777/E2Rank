@@ -12,6 +12,7 @@ from torch import Tensor
 from transformers import HfArgumentParser, PreTrainedModel, Trainer as HFTrainer, set_seed
 from transformers.file_utils import ModelOutput
 
+from contrastive import compute_in_batch_positive_scores, compute_infonce_loss
 from config import (
     BaselineArguments,
     DataArguments,
@@ -49,60 +50,6 @@ class BaselineModelOutput(ModelOutput):
 
 class BaselineTrainer(EmbeddingTrainerMixin, HFTrainer):
     train_metric_names = ()
-
-
-def compute_in_batch_positive_scores(
-    query_embeddings: Tensor,
-    positive_embeddings: Tensor,
-) -> Tensor:
-    """Score every query against the other samples' detached positives.
-
-    The diagonal is excluded because each query's own positive is already in its
-    listwise slate. Detaching only the cross-query use matches RL's frozen
-    in-batch candidates; the same document still receives gradients through its
-    own sample's slate.
-    """
-    if query_embeddings.dim() != 2 or positive_embeddings.dim() != 2:
-        raise ValueError(
-            "query_embeddings and positive_embeddings must both be 2D, "
-            f"got {tuple(query_embeddings.shape)} and {tuple(positive_embeddings.shape)}"
-        )
-    if query_embeddings.shape != positive_embeddings.shape:
-        raise ValueError(
-            "query_embeddings and positive_embeddings must have matching shapes, "
-            f"got {tuple(query_embeddings.shape)} and {tuple(positive_embeddings.shape)}"
-        )
-
-    batch_size = query_embeddings.size(0)
-    if batch_size <= 1:
-        return query_embeddings.new_empty((batch_size, 0))
-
-    cross_scores = torch.matmul(query_embeddings, positive_embeddings.detach().T)
-    off_diagonal = ~torch.eye(batch_size, device=cross_scores.device, dtype=torch.bool)
-    return cross_scores.masked_select(off_diagonal).reshape(batch_size, batch_size - 1)
-
-
-def compute_infonce_loss(
-    scores: Tensor,
-    relevance_labels: Tensor,
-    temperature: float = 0.03,
-    candidate_mask: Tensor | None = None,
-) -> Tensor:
-    if temperature <= 0:
-        raise ValueError(f"infonce temperature must be positive, got {temperature}")
-
-    # Each positive competes only against valid negatives, never other positives.
-    valid = torch.ones_like(scores, dtype=torch.bool) if candidate_mask is None else candidate_mask.bool()
-    positives = (relevance_labels > 0) & valid
-    negatives = valid & ~positives
-    scaled = scores.masked_fill(~valid, 0) / float(temperature)
-    negative_scores = scaled.masked_fill(~negatives, float('-inf'))
-    has_negative = negatives.any(-1)
-    negative_scores = torch.where(has_negative[:, None], negative_scores, torch.zeros_like(negative_scores))
-    log_negatives = torch.logsumexp(negative_scores, dim=-1, keepdim=True)
-    losses = F.softplus(log_negatives - scaled)
-    losses = losses.masked_fill(~positives | ~has_negative[:, None], 0)
-    return losses.sum(-1) / positives.sum(-1).clamp_min(1)
 
 
 def compute_ranknet_loss(

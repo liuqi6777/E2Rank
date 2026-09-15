@@ -6,6 +6,7 @@ from typing import Optional
 from transformers import TrainingArguments as HFTrainingArguments
 
 from embedding_protocol import validate_embedding_protocol
+from contrastive import validate_aux_infonce
 from rewards import (
     SUPPORTED_REWARD_TYPES,
     normalize_reward_combine_mode,
@@ -572,6 +573,18 @@ class RLArguments:
         default=0.03,
         metadata={"help": "Temperature used by the contrastive/infonce reward"},
     )
+    aux_infonce_coef: float = field(
+        default=0.0,
+        metadata={"help": "Weight of direct multi-positive InfoNCE on unperturbed embeddings; 0 disables it"},
+    )
+    aux_infonce_temperature: float = field(
+        default=0.03,
+        metadata={"help": "Temperature of the direct InfoNCE auxiliary loss, independent of reward temperature"},
+    )
+    aux_infonce_use_in_batch_negatives: bool = field(
+        default=False,
+        metadata={"help": "Append masked, detached cross-query representatives to the auxiliary InfoNCE candidates"},
+    )
     advantage_norm: str = field(
         default="none",
         metadata={
@@ -653,6 +666,7 @@ class RLArguments:
     def __post_init__(self) -> None:
         from policy_math import validate_exploration
         from rollout_rng import validate_rollout_seed
+        validate_aux_infonce(self.aux_infonce_coef, self.aux_infonce_temperature)
         validate_rollout_seed(self.rollout_seed)
         if self.rollout_seed is not None and self.dynamic_retrieval:
             raise ValueError("rollout_seed is currently supported for static-candidate GRPO only")

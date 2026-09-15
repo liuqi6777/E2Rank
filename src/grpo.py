@@ -12,6 +12,7 @@ from transformers.file_utils import ModelOutput
 
 from policy_math import ExplorationSchedule, group_advantages, mean_alignment
 from rollout_rng import RolloutRNG
+from contrastive import auxiliary_infonce_loss, validate_aux_infonce
 
 from config import (
     SUPPORTED_ADVANTAGE_BASELINES,
@@ -225,8 +226,15 @@ class GRPO(nn.Module):
         exploration_schedule: str = "fixed",
         rollout_seed: int | None = None,
         document_advantage_baseline: str = "shared",
+        aux_infonce_coef: float = 0.0,
+        aux_infonce_temperature: float = 0.03,
+        aux_infonce_use_in_batch_negatives: bool = False,
     ):
         super().__init__()
+        validate_aux_infonce(aux_infonce_coef, aux_infonce_temperature)
+        self.aux_infonce_coef = aux_infonce_coef
+        self.aux_infonce_temperature = aux_infonce_temperature
+        self.aux_infonce_use_in_batch_negatives = aux_infonce_use_in_batch_negatives
         self.rollout_rng = RolloutRNG(rollout_seed)
         reward_type = reward_type.lower()
         action_components = normalize_action_components(action_components)
@@ -1040,6 +1048,8 @@ class GRPO(nn.Module):
         candidate_mask: torch.Tensor | None = None,
         in_batch_positive_mask: torch.Tensor | None = None,
         in_batch_candidate_mask: torch.Tensor | None = None,
+        positive_mask: torch.Tensor | None = None,
+        index_route_ids: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, dict[str, torch.Tensor], dict[str, torch.Tensor], torch.Tensor, torch.Tensor]:
         if relevance_labels is None:
             raise ValueError("relevance_labels are required for GRPO training")
@@ -1182,6 +1192,7 @@ class GRPO(nn.Module):
             in_batch_candidate_mask=in_batch_candidate_mask,
         )
 
+        policy_loss = loss
         kl = torch.zeros((), device=loss.device, dtype=torch.float32)
         if self.kl_coef > 0:
             kl_terms = []
@@ -1230,6 +1241,28 @@ class GRPO(nn.Module):
             if kl_terms:
                 kl = torch.stack(kl_terms).sum()
                 loss = loss + self.kl_coef * kl
+
+        if self.aux_infonce_coef > 0:
+            # Match the action scope: unsampled branches supply values, not gradients.
+            auxiliary_queries = policy_query_embeddings if self.sample_query else rollout_query_embeddings.detach()
+            auxiliary_documents = torch.cat((
+                policy_positive_document_embeddings if self.sample_positive else rollout_positive_document_embeddings.detach(),
+                policy_negative_document_embeddings if self.sample_negative else rollout_negative_document_embeddings.detach(),
+            ), dim=1)
+            auxiliary = auxiliary_infonce_loss(
+                auxiliary_queries, auxiliary_documents, positive_mask, candidate_mask,
+                temperature=self.aux_infonce_temperature,
+                use_in_batch_negatives=self.aux_infonce_use_in_batch_negatives,
+                in_batch_positive_mask=in_batch_positive_mask,
+                index_route_ids=index_route_ids,
+            )
+            weighted_auxiliary = self.aux_infonce_coef * auxiliary
+            reward_stats.update({
+                "train/loss_rl": policy_loss.detach(),
+                "train/loss_infonce": auxiliary.detach(),
+                "train/loss_infonce_weighted": weighted_auxiliary.detach(),
+            })
+            loss = loss + weighted_auxiliary
 
         reward_stats["exploration/kappa"] = kappa.detach()
         reward_stats["exploration/mean_alignment"] = kappa.new_tensor(
@@ -1282,6 +1315,9 @@ class GRPOModel(nn.Module):
             advantage_baseline_momentum=rl_args.advantage_baseline_momentum,
             in_batch_use_sampled_documents=rl_args.in_batch_use_sampled_documents,
             kl_coef=rl_args.kl_coef,
+            aux_infonce_coef=rl_args.aux_infonce_coef,
+            aux_infonce_temperature=rl_args.aux_infonce_temperature,
+            aux_infonce_use_in_batch_negatives=rl_args.aux_infonce_use_in_batch_negatives,
         )
 
     def encode(self, model_inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
@@ -1397,6 +1433,7 @@ class GRPOModel(nn.Module):
             reference_query_embeddings=reference_query_embeddings,
             reference_positive_document_embeddings=reference_positive_document_embeddings,
             reference_negative_document_embeddings=reference_negative_document_embeddings,
+            positive_mask=positive_mask,
         )
         # Namespaced keys are the per-term diagnostics; the flat ones (reward_mean/std/min/max
         # and advantages_*) are named exactly like the GRPOModelOutput fields they fill.

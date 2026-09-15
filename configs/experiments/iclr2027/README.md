@@ -1,5 +1,12 @@
 # 三组实验配置指南
 
+## RL 直接 InfoNCE 辅助损失（2026-09-15）
+
+新增可选 `G1-A-MRR090-AuxInfoNCE`，对照 `G1-S-MRR32-Seed42`，在未扰动 embedding 上
+增加权重 0.1、温度 0.03、含 masked in-batch negatives 的多正例直接损失。默认关闭，
+现有 reward 和 stability 队列保持原配置；使用与恢复规则见[辅助损失说明](../../../docs/aux_infonce.md)。
+本次未启动完整训练。
+
 ## G1 对比学习的 seed 重复（2026-09-15）
 
 为区分“小数据下的通用训练方差”和 RL rollout 特有方差，新增
