@@ -60,14 +60,7 @@ def sources():
 
 
 def contract(row, data_hash, source_hashes):
-    result = night.contract_for(row, data_hash, source_hashes)
-    if row['kind'] == 'evaluation':
-        command = result['evaluation_command']
-        index = command.index('--model_kwargs') + 1
-        kwargs = json.loads(command[index])
-        kwargs['model_name'] = row['run_id']
-        command[index] = json.dumps(kwargs)
-    return result
+    return night.contract_for(row, data_hash, source_hashes)
 
 
 def preflight(suite, rows, directory, contracts):

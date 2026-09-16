@@ -173,7 +173,7 @@ def evaluation_command(row):
                   document_prompt_template=cfg['document_prompt_template'],
                   instruction_dict_path=str(ROOT / 'eval_mteb/scripts/task_prompts.json'))
     if reference:
-        kwargs.update(revision=cfg['model_revision'], model_name='G1-R2-E0')
+        kwargs.update(revision=cfg['model_revision'])
     return [sys.executable, str(ROOT / 'eval_mteb/run_mteb.py'),
             '--model', cfg['model_name_or_path'] if reference else cfg['output_dir'],
             '--precision', cfg['mteb_eval_precision'], '--model_kwargs', json.dumps(kwargs),
