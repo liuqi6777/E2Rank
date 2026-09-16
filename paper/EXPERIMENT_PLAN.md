@@ -13,6 +13,11 @@ G2/G3 延后，不复刻整个历史搜索矩阵。本次只更新配置、脚�
 
 ### 2026-09-16 结果后的补充消融
 
+另新增 [reasoning E0 核心实验](../docs/g1_reasoning_e0.md)：DIVER-0.6B 与 ReasonEmbed-4B
+作为两组独立初始化，每组仅 CL / graded LL / graded RL（G64＋CP）×三个 seed。
+复用现有 ReasonRank 数据和 BRIGHT，18 次训练＋两次 E0 评测；独立运行入口
+`scripts/run_g1_reasoning_e0.py`，不加入原夜跑/消融队列。已完成 CPU 预检，尚未启动 GPU 训练。
+
 原 27 次训练及 E0、MRR/graded 探针已完成，结果见 [G1_R2_RESULTS.md](G1_R2_RESULTS.md)。
 后续独立任务已配置，运行方式见 [消融说明](../docs/g1_r2_ablations.md)：
 核心 SF32/CP32/paired 共 9 次；其他机制 21 次；探索 48 次，共 78 次可选新训练。

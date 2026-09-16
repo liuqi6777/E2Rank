@@ -1,0 +1,9 @@
+output_dir: checkpoints/iclr2027-reasoning-e0
+G1:
+  # Use the same prepared data/manifest pair as the completed G1-R2 batch.
+  data: data/processed/reasonrank_multi
+  learning_rate: 0.000005
+  steps: 113
+  checkpoint_every: 25
+  batch_size: 128
+  micro_batch_size: 16

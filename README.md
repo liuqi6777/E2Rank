@@ -13,6 +13,11 @@ source .venv/bin/activate
 
 ## 实验入口
 
+[Reasoning E0 核心实验](docs/g1_reasoning_e0.md)已配置：DIVER-0.6B / ReasonEmbed-4B
+各自比较 E0、CL、graded LL、graded RL（G64＋CP），复用 ReasonRank 与最终 BRIGHT。
+入口：`python scripts/run_g1_reasoning_e0.py check`；GPU 运行去掉 `check`。
+默认两模型×三方法×三 seed，支持 `--models diver` / `--models reasonembed` 和 `--seeds 42` 拆分。
+
 G2-CL 新轮次设计见 [G2_CL_R2_PLAN.md](paper/G2_CL_R2_PLAN.md)：沿用原 D/E/W、seed 42、训练与 MTEB 评测设置，应用昨晚的新协议和 sampler 修复，使用独立输出目录并重建 W0。新配置已准备，尚未启动 GPU 训练；下文 G1 夜跑队列不包含这批任务。
 
 2026-09-16 的[新实验计划](paper/EXPERIMENT_PLAN.md)已接入[整批夜跑脚本](docs/g1_r2_overnight.md)：
