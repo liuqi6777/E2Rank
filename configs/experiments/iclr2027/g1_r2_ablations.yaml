@@ -1,0 +1,110 @@
+# Each variant starts from the validated R2 graded G64 recipe at the same seed.
+# SF-only variants intentionally do not bypass conditional-projection restrictions.
+variants:
+  g32_sf:
+    method: RL-GradedNDCG32-SF
+    estimator: SF
+    overrides: {group_size: 32}
+  g32_cp:
+    method: RL-GradedNDCG32-CP
+    estimator: CP
+    overrides: {group_size: 32}
+  paired:
+    method: RL-GradedNDCG64-SF-Paired
+    estimator: SF
+    overrides: {rollout: diagonal}
+  query_policy:
+    method: RL-GradedNDCG64-SF-QPolicy
+    estimator: SF
+    overrides: {action_components: [[query]]}
+  document_policy:
+    method: RL-GradedNDCG64-SF-DPolicy
+    estimator: SF
+    overrides: {action_components: [[positive, negative]]}
+  norm:
+    method: RL-GradedNDCG64-SF-Norm
+    estimator: SF
+    overrides: {advantage_norm: per_component}
+  doc_mean:
+    method: RL-GradedNDCG64-SF-DocMean
+    estimator: SF
+    overrides: {document_log_prob_reduction: mean}
+  norm_doc_mean:
+    method: RL-GradedNDCG64-SF-NormDocMean
+    estimator: SF
+    overrides: {advantage_norm: per_component, document_log_prob_reduction: mean}
+  no_rescale_sf:
+    method: RL-GradedNDCG64-SF-NoRescale
+    estimator: SF
+    overrides: {frozen_doc_rescale: false}
+  no_rescale_cp:
+    method: RL-GradedNDCG64-CP-NoRescale
+    estimator: CP
+    overrides: {frozen_doc_rescale: false}
+  align080_sf:
+    method: RL-GradedNDCG64-SF-Align080
+    estimator: SF
+    overrides: {target_alignment: 0.80}
+  align040_sf:
+    method: RL-GradedNDCG64-SF-Align040
+    estimator: SF
+    overrides: {target_alignment: 0.40}
+  align040_cp:
+    method: RL-GradedNDCG64-CP-Align040
+    estimator: CP
+    overrides: {target_alignment: 0.40}
+  align053_sf:
+    method: RL-GradedNDCG64-SF-Align053
+    estimator: SF
+    overrides: {target_alignment: 0.53}
+  align053_cp:
+    method: RL-GradedNDCG64-CP-Align053
+    estimator: CP
+    overrides: {target_alignment: 0.53}
+  align065_sf:
+    method: RL-GradedNDCG64-SF-Align065
+    estimator: SF
+    overrides: {target_alignment: 0.65}
+  align065_cp:
+    method: RL-GradedNDCG64-CP-Align065
+    estimator: CP
+    overrides: {target_alignment: 0.65}
+  align080_cp:
+    method: RL-GradedNDCG64-CP-Align080
+    estimator: CP
+    overrides: {target_alignment: 0.80}
+  align095_sf:
+    method: RL-GradedNDCG64-SF-Align095
+    estimator: SF
+    overrides: {target_alignment: 0.95}
+  align095_cp:
+    method: RL-GradedNDCG64-CP-Align095
+    estimator: CP
+    overrides: {target_alignment: 0.95}
+  align098_sf:
+    method: RL-GradedNDCG64-SF-Align098
+    estimator: SF
+    overrides: {target_alignment: 0.98}
+  align098_cp:
+    method: RL-GradedNDCG64-CP-Align098
+    estimator: CP
+    overrides: {target_alignment: 0.98}
+  anneal_sf:
+    method: RL-GradedNDCG64-SF-Anneal080090
+    estimator: SF
+    overrides: {target_alignment: 0.80, final_alignment: 0.90, exploration_schedule: linear}
+  anneal_cp:
+    method: RL-GradedNDCG64-CP-Anneal080090
+    estimator: CP
+    overrides: {target_alignment: 0.80, final_alignment: 0.90, exploration_schedule: linear}
+  vmf_k755:
+    method: RL-GradedNDCG64-SF-Kappa755
+    estimator: SF
+    overrides: {target_alignment: null, kappa: 755}
+  gaussian_k755:
+    method: RL-GradedNDCG64-SF-GaussianMismatch755
+    estimator: SF
+    control_variant: vmf_k755
+    # Historical sampling-fidelity diagnostic, NOT a correct Gaussian score function.
+    # Same kappa does not imply equal mean alignment for the two sampling laws.
+    overrides: {target_alignment: null, kappa: 755, sampling_law: gaussian}

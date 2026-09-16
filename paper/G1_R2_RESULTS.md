@@ -1,6 +1,6 @@
 # G1-R2 实验结果分析
 
-分析日期：2026-09-16。对应 [实验计划](EXPERIMENT_PLAN.md) 与 [夜跑说明](../docs/g1_r2_overnight.md)。
+分析日期：2026-09-16；已纳入结果提交 `cb45a06` 的新 E0 与 graded E0 探针。对应 [实验计划](EXPERIMENT_PLAN.md) 与 [夜跑说明](../docs/g1_r2_overnight.md)。
 
 ## 结论
 
@@ -8,32 +8,33 @@
 
 CP 的收益明显依赖 reward：MRR 均分基本不变，但本次 seed 波动变小；binary nDCG 平均改善，但不是每个 seed 都改善。不能把结论写成“CP 普遍提高检索分数或降低训练 seed 方差”。
 
-固定状态的 MRR 探针给出很强的局部降噪证据：六组全参数梯度方差均下降约 110–419 倍，forward/backward 时间增加约 18%–22%。但诊断没有覆盖 graded reward，也没有覆盖实际 RL 训练轨迹，尚不能直接证明 graded CP 的检索收益由同等幅度的降噪造成。
+新协议 E0 为 **15.10**，graded CP 相对 E0 提升 **5.62 分（约 37.2%）**。新补充的 graded E0 探针在三个固定 batch 上均显示强降噪：全参数梯度方差下降约 **112–172 倍**，forward/backward 时间增加约 **21%–42%**。这补齐了获胜 reward 本身的局部降噪证据；仍未覆盖实际 RL 训练轨迹，不能把检索收益完全归因于方差下降。原 MRR 六组探针的 110–419 倍降噪结论不变。
 
 ## 1. 数据完整性与证据边界
 
 - 两份 CSV 包含 27 个训练 run（9 方法 × 3 seed）和 1 条 E0，每个 run 有 12 个唯一 subset，共 336 条领域分数；未见缺项、重复或非零 errors。
 - run 分数与 12 个已舍入领域分数的宏平均最大相差 0.0067，符合两处分别保留两位小数的精度范围。本文主表使用 run_summary，领域分析使用 subset_summary；末位可能有舍入差。SD 为三个 run 分数的样本标准差（ddof=1）。
-- **E0 暂不纳入新协议增益结论**：此处记录名为 `G1-E0`，路径后缀为 `iclr2027__G1-E0/no_revision_available`，而不是计划的 `G1-R2-E0` 和新协议标识。其 15.07 总分及全部 12 个领域分数与历史 CSV 完全相同。这是来源核对缺口，不能据此直接断言旧缓存被复用，也不能认为已完成新协议重评。
+- **新 E0 已替换历史结果**：记录为 `G1-R2-E0`，总分 15.10，路径含 `tokens-v2__pool-fp32` 和固定 revision `97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3`，12 个领域齐全。结合本次重跑记录，可以纳入新协议比较。历史 E0 为 15.07，总分仅变化 +0.03；这不意味着协议对训练没有影响。原始评测 JSON/日志仍未包含在本次提交中。
 - 27 个训练 run 的结果路径均带 `tokens-v2__pool-fp32`。但本地提供的文件没有逐 run contract/state、原始评测 JSON 和训练日志，因此无法独立确认三机训练数据哈希、最终 step 113、完整训练成本与运行硬件一致性。分数比较已完成，合同审计尚未完成。
-- 两份 probe 的训练数据哈希一致：`59a9b2bc4f2ce7a0a890bc471b8ef784e3f92e01294523b2affd39f285b39a38`。它不同于计划记录的开发机快照，但计划明确允许使用另一份与 manifest 匹配的运行数据；不能仅凭差异判错。仍须用训练合同确认 27 个 run 也使用同一哈希。
-- 两份 probe 记录的源码哈希与当前本地对应源码一致，诊断脚本哈希也一致。运行记录 `git_dirty=true`，因此应保留这些实际文件哈希；不能仅凭 commit 判断工作区内容。
+- 三份 probe 的训练数据哈希一致：`59a9b2bc4f2ce7a0a890bc471b8ef784e3f92e01294523b2affd39f285b39a38`。它不同于计划记录的开发机快照，但计划明确允许使用另一份与 manifest 匹配的运行数据；不能仅凭差异判错。仍须用训练合同确认 27 个 run 也使用同一哈希。
+- 三份 probe 记录的源码哈希与当前本地对应源码一致，诊断脚本哈希也一致。运行记录 `git_dirty=true`，因此应保留这些实际文件哈希；不能仅凭 commit 判断工作区内容。
 
 ## 2. 三 seed 主表
 
-分数为 CSV 中 BRIGHT 宏平均分；seed 顺序固定为 42 / 3407 / 2026。E0 来源待核，不计算相对 E0 增益。
+分数为 CSV 中 BRIGHT 宏平均分；seed 顺序固定为 42 / 3407 / 2026。E0 是一次原始模型评测，不计算训练 seed SD。
 
-| 方法 | 42 | 3407 | 2026 | 均值 ± 样本 SD | 最差 seed |
-|---|---:|---:|---:|---:|---:|
-| RL-GradedNDCG64-CP | 20.27 | 21.15 | 20.75 | 20.72 ± 0.44 | 20.27 |
-| RL-MRR64-SF | 18.54 | 19.78 | 19.87 | 19.40 ± 0.74 | 18.54 |
-| RL-MRR64-CP | 19.33 | 19.36 | 19.44 | 19.38 ± 0.06 | 19.33 |
-| LL-Graded | 19.13 | 19.30 | 19.67 | 19.37 ± 0.28 | 19.13 |
-| RL-BinaryNDCG64-CP | 19.44 | 18.64 | 19.65 | 19.24 ± 0.53 | 18.64 |
-| RL-BinaryNDCG64-SF | 18.33 | 18.88 | 19.07 | 18.76 ± 0.38 | 18.33 |
-| RL-GradedNDCG64-SF | 18.23 | 18.85 | 18.53 | 18.54 ± 0.31 | 18.23 |
-| CL | 17.87 | 17.04 | 18.25 | 17.72 ± 0.62 | 17.04 |
-| LL-Binary | 15.87 | 16.05 | 16.63 | 16.18 ± 0.40 | 15.87 |
+| 方法 | 42 | 3407 | 2026 | 均值 ± 样本 SD | 最差 seed | 相对 E0 |
+|---|---:|---:|---:|---:|---:|---:|
+| RL-GradedNDCG64-CP | 20.27 | 21.15 | 20.75 | 20.72 ± 0.44 | 20.27 | +5.62 |
+| RL-MRR64-SF | 18.54 | 19.78 | 19.87 | 19.40 ± 0.74 | 18.54 | +4.30 |
+| RL-MRR64-CP | 19.33 | 19.36 | 19.44 | 19.38 ± 0.06 | 19.33 | +4.28 |
+| LL-Graded | 19.13 | 19.30 | 19.67 | 19.37 ± 0.28 | 19.13 | +4.27 |
+| RL-BinaryNDCG64-CP | 19.44 | 18.64 | 19.65 | 19.24 ± 0.53 | 18.64 | +4.14 |
+| RL-BinaryNDCG64-SF | 18.33 | 18.88 | 19.07 | 18.76 ± 0.38 | 18.33 | +3.66 |
+| RL-GradedNDCG64-SF | 18.23 | 18.85 | 18.53 | 18.54 ± 0.31 | 18.23 | +3.44 |
+| CL | 17.87 | 17.04 | 18.25 | 17.72 ± 0.62 | 17.04 | +2.62 |
+| LL-Binary | 15.87 | 16.05 | 16.63 | 16.18 ± 0.40 | 15.87 | +1.08 |
+| E0（原始模型） | — | — | — | 15.10 | — | — |
 
 graded CP 最差 seed 的 20.27 也高于其他方法所有单次结果（最高 19.87）。这使它成为清晰的当前候选，但 n=3 和既有 benchmark 开发历史仍不足以支持广泛泛化或充分调优后的最优性结论。
 
@@ -76,11 +77,15 @@ Graded CP 对 SF 在 8/12 个领域平均提升，主要来自 biology、sustain
 
 但 graded CP 对 SF 在 leetcode、aops 和两个 theoremqa subset 上均下降；对 LL-Graded 的短板是 leetcode、aops、theoremqa_questions。不能写成“全面改善推理检索”，更适合表述为本轮 BRIGHT 宏平均及多个知识领域的改善。
 
+相对新 E0，graded CP 在 9/12 个领域平均提升，但 leetcode **−3.21**、aops **−0.33**、theoremqa_theorems **−2.32**。因此其优势也包含领域间的取舍；新 E0 的 theoremqa_theorems 从历史 30.95 升至 32.09，使该领域的退化比使用旧基线时更明显。
+
 MRR 平均差接近零掩盖了明显的结构变化：biology +5.62、stackoverflow +4.11，同时 earth_science −5.76、leetcode −3.29。Binary CP 也有类似方向。因此“降噪没有作用”不是准确解释；可以确认优化后领域表现不同，但为何出现这种分配仍需训练过程和候选池诊断。
 
 ## 5. 梯度探针：降噪强，均值一致性仍是有限样本诊断
 
-两个模型状态分别是固定 revision 的 E0 和新 LL-Binary 的 checkpoint-25。后者 `step=25`、权重文件哈希已记录；`checkpoint_state=null` 是未找到 RL 的 exploration_state，并不代表没有加载 LL checkpoint。两状态使用相同三个 batch（leetcode、stackoverflow、math-qa），每批 16 个独立 rollout seed，共 96 对、192 次 forward/backward。
+### 5.1 原 MRR 探针
+
+原 MRR 探针的两个模型状态分别是固定 revision 的 E0 和新 LL-Binary 的 checkpoint-25。后者 `step=25`、权重文件哈希已记录；`checkpoint_state=null` 是未找到 RL 的 exploration_state，并不代表没有加载 LL checkpoint。两状态使用相同三个 batch（leetcode、stackoverflow、math-qa），每批 16 个独立 rollout seed，共 96 对、192 次 forward/backward。
 
 全部配对的 rollout seed、实际动作 SHA256、完整 reward table SHA256 和 reward mean 一致；记录的梯度范数均有限。探针比较的是全部可训练参数的原始梯度，禁用 dropout，不执行 optimizer 更新。
 
@@ -101,27 +106,48 @@ CP 保留约 0.24%–0.91% 的 SF 方差。把额外计算计入，方差×平�
 
 CUDA allocated 峰值两种估计器基本相同，随 batch 约为 33.08–39.16 GB（十进制）。CPU RSS 是进程累计高水位，不用于分配 SF/CP 各自额外内存。时间含初次调用影响，且是单卡诊断，不能替代 8 卡完整训练成本。
 
+### 5.2 补充 graded nDCG 探针（E0）
+
+新增探针读取 `G1-R2-RL-GradedNDCG64-SF`，配置明确为 `relevance_scheme=graded`、`reward_type=ndcg_in_batch`、nDCG@10、G64、alignment 0.90；模型为固定 revision 的 E0，step 0。三个 batch 各 16 对 draw，共 48 对，均完整。
+
+与原 MRR E0 探针对照，训练数据哈希、样本 ID、dataset positions、sources、rollout seeds 和逐 draw 动作哈希均一致。batch 的 `tensor_sha256` 不同；该哈希包含标签张量，graded 标签改变时并不要求整批哈希相同。各 graded SF/CP 配对内部动作哈希、完整奖励表哈希和 reward mean 全部一致，记录的梯度范数有限。
+
+| batch / source | 方差 CP/SF | 方差下降倍数 | F/B 时间 SF→CP（秒） | 时间增加 | (方差×时间) CP/SF | 均值差 / MC RMS |
+|---|---:|---:|---:|---:|---:|---:|
+| 0 / leetcode | 0.00796 | 125.7× | 8.64 → 10.50 | 21.5% | 0.00967 | 0.996 |
+| 100 / stackoverflow | 0.00580 | 172.5× | 8.58 → 12.23 | 42.5% | 0.00826 | 0.976 |
+| 200 / math-qa | 0.00895 | 111.7× | 10.10 → 13.99 | 38.5% | 0.01240 | 0.956 |
+
+CP 保留约 **0.58%–0.90%** 的 SF 方差，和原 E0 MRR 探针的 0.60%–0.91% 同一量级。因此当前证据不支持“graded 检索收益更大，是因为其降噪倍数远高于 MRR”；两种 reward 都强降噪，最终收益却不同，应进一步研究目标信息、优化轨迹和部署检索之间的关系。
+
+CP 的噪声 RMS / 修正信号范数为 0.50–0.59，SF 为 5.73–7.53；三个 batch 的两种估计器信号平方修正估计均为正。配对均值差 / MC RMS 为 0.956–0.996，均值差平方去噪估计均为负；负值表示有限样本修正后无法分辨出正的平方均值差，不表示数学上存在“负偏差”，也不是无偏性证明。样本均值余弦为 0.49–0.63。
+
+计入平均 F/B 时间后，方差×时间为 SF 的 **0.83%–1.24%**，这一局部成本指标约改善 **81–121 倍**。新实验单 draw 耗时波动明显，例如 stackoverflow 的 CP 为 6.87–16.40 秒，所以时间比只描述这次诊断，不当作稳定的硬件性能结论；也不能直接与旧 MRR 的绝对耗时比较后归因于 reward。CUDA allocated 峰值仍约 33.08–39.16 GB，SF/CP 基本一致。
+
+本次补充已完成最小 graded E0 验证，不需要为了同一问题重复运行。若后续主张整个训练过程均降噪，再选定 RL checkpoint 做同状态比较；若需要更严格的均值一致性证据，再按预定方案增加独立 draws。
+
 ## 6. 为何强降噪没有变成所有 reward 的强检索收益？
 
 现有数据能确认这两者不等价，但尚未识别具体原因。合理的待验证解释是：降噪提高了随机小候选目标的梯度估计精度，而最终 BRIGHT 使用确定性检索；reward 信息、候选覆盖和跨领域迁移仍决定目标是否有效。此外 AdamW 的二阶状态会随噪声改变，所以相同 LR 下的最终更新并非只改变原始梯度方差。
 
-这些是机制假设。当前没有 sampled reward 学习曲线、同池 deterministic 指标、大池检索指标或 optimizer 更新统计，不能声称已定位为目标失配、候选不足或 AdamW 尺度问题。尤其当前探针只测 MRR，不能用它直接给 graded 的 +2.19 分做因果归因。
+这些是机制假设。当前没有 sampled reward 学习曲线、同池 deterministic 指标、大池检索指标或 optimizer 更新统计，不能声称已定位为目标失配、候选不足或 AdamW 尺度问题。现在已有 graded E0 的直接降噪证据，但它仍不能单独给最终 +2.19 分做因果归因，也没有测量 AdamW 的实际参数更新方差。
 
 ## 7. 建议的下一步优先级
 
-1. **先补齐证据归档。** 核对/重新生成新协议 E0；同步 27 run 的 contract/state、原始评测 JSON、事件与训练日志，确认同数据、step 113，并补 train wall time/GPU-hours。这样才能回答 RL 是否值得额外成本。无需因此先推倒已有 27 次训练。
-2. **主线聚焦 graded CP，保留 graded SF 与 LL-Graded 对照。** 在相同固定 batch 和相同模型权重上追加 graded reward 配对探针；优先覆盖 E0 及一个预先指定的 graded RL checkpoint。若强化均值一致性论证，累计至 64 个互不重复的 draws，必要时 256；不同模型状态不能合并计算一个方差。
+1. **先补齐证据归档。** 新协议 E0 已重跑并同步汇总；继续同步 27 run 的 contract/state、原始评测 JSON、事件与训练日志，确认同数据、step 113，并补 train wall time/GPU-hours。这样才能回答 RL 是否值得额外成本。无需因此先推倒已有 27 次训练。
+2. **主线聚焦 graded CP，保留 graded SF 与 LL-Graded 对照。** graded E0 配对探针已完成且支持强降噪，不再列为待办。若要扩大为训练过程主张，再追加一个预先指定的 graded RL checkpoint；若强化均值一致性论证，累计至 64 个互不重复的 draws，必要时 256。两者由论文主张决定，不作为已有结果成立的额外前提；不同模型状态不能合并计算一个方差。
 3. **用已有 checkpoint 做三层机制分析。** 固定 query/候选/标签，对比 sampled reward、未经 RL 均值校准缩放的同池 deterministic 排序、同 source 大池检索。优先解释 graded CP 对 LL 的优势及 leetcode/aops 的损失；MRR CP/SF 可作为强降噪但均分不升的机制对照。这些训练 query 的结果只用于机制。
 4. **需要算力主张时，再补 graded SF/CP × G32。** 复用当前 G64，以相同预算和三 seed 配对比较质量与实测训练成本，不从探针的百倍降噪直接推断训练采样成本。
 5. **确认外部泛化后再扩 G2。** 冻结配方，按计划核对真正未参与选择的任务/查询并预先保存确认集合；若不存在，限定为已知 benchmark 的受控比较。BRIGHT 已参与开发，增加 training seed 不会使它变成未见测试。
 
-当前可写入论文的主张是：在这套固定 G64/LR/步数配方和三个 seed 下，graded CP 提高 BRIGHT 宏平均并超过匹配的 LL-Graded；MRR 固定状态探针显示强全参数梯度降噪。暂不支持普遍提高所有 reward、普遍降低 seed 波动、无偏性已被实验证明、同算力优于监督方法或未见任务泛化已验证。
+当前可写入论文的主张是：在这套固定 G64/LR/步数配方和三个 seed 下，graded CP 提高 BRIGHT 宏平均并超过匹配的 LL-Graded；MRR 的两个固定状态和 graded nDCG 的 E0 探针均显示强全参数梯度降噪。暂不支持普遍提高所有 reward、普遍降低 seed 波动、无偏性已被实验证明、同算力优于监督方法或未见任务泛化已验证。
 
 ## 输入文件
 
 - [run_summary.csv](_summary/g1_r2_bright/run_summary.csv)
 - [subset_summary.csv](_summary/g1_r2_bright/subset_summary.csv)
-- [E0 probe](../outputs/g1_r2_gradient_probe/gradient_probe/attempt-1.json)
+- [Graded E0 probe](../outputs/g1_r2_gradient_probe/gradient_probe_graded/attempt-1.json)
+- [MRR E0 probe](../outputs/g1_r2_gradient_probe/gradient_probe/attempt-1.json)
 - [LL step25 probe](../outputs/g1_r2_gradient_probe/gradient_probe_ll25/attempt-1.json)
 
 本文仅分析本轮 R2，不把历史训练结果拼入三 seed 均值。所有数据核验均在 CPU 上读取现有 CSV/JSON 完成，未重新训练或评测模型。
