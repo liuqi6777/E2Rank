@@ -1,0 +1,24 @@
+{
+  "qwen": {
+    "runs": 109,
+    "trained_runs": 108,
+    "methods": 36,
+    "subset_rows": 1308,
+    "max_macro_rounding_gap": 0.006666666666667709,
+    "input_sha256": {
+      "_summary/g1_r2_bright/run_summary.csv": "12bc3a97dfa417e13fbd3480b1afb37770acf31243fd11810ddcb662cc2eb5c6",
+      "_summary/g1_r2_bright/subset_summary.csv": "811a7aa5779043a00a0df106c569141f63386e31a97f5591c050d50060e0170b"
+    }
+  },
+  "diver": {
+    "runs": 10,
+    "trained_runs": 9,
+    "methods": 3,
+    "subset_rows": 120,
+    "max_macro_rounding_gap": 0.004999999999999005,
+    "input_sha256": {
+      "_summary/g1_r2_bright_diver/run_summary.csv": "09c817dd4f1a2026840898ad1a2da05a27df31ec20b4a397711ef9624f5cd77c",
+      "_summary/g1_r2_bright_diver/subset_summary.csv": "d3be47a4c01047f0a262d52a0f44ffccc2fd8105c5491c15420fb4f41d1ce114"
+    }
+  }
+}
