@@ -81,6 +81,46 @@ seed 42 的 LL-Binary 训练后，追加其 step 25 权重上的同状态配对�
 
 ## 配置与输出
 
+### 结果分析后的 graded nDCG 补充探针
+
+原队列的 `gradient_probe` 和 `gradient_probe_ll25` 都使用 **binary MRR**；
+后者只是把模型权重换成 LL-Binary step 25。补充探针使用 **E0 权重 + graded nDCG@10**，
+直接读取 `G1-R2-RL-GradedNDCG64-SF` 的训练配方，在相同权重上配对比较 SF/CP。
+仍使用 G64、alignment 0.90、epoch-0 batch 0/100/200 和原来的 16 个 rollout seeds，
+共 48 对、96 次 forward/backward，不执行 optimizer 更新。
+
+在训练环境中从项目根目录执行：
+
+```bash
+# 只校验配方、训练数据及 manifest，不加载模型
+python scripts/run_g1_r2_graded_probe.py --check
+
+# 单进程、单张 GPU；不要使用 torchrun
+nohup python -u scripts/run_g1_r2_graded_probe.py > g1_r2_graded_probe.log 2>&1 &
+```
+
+默认使用 `configs/experiments_r2.yaml` 和 `cuda:0`，可用 `--config`、`--device` 覆盖。
+如需选择物理 GPU，可在运行前设置 `CUDA_VISIBLE_DEVICES`，程序仍使用可见设备中的 `cuda:0`。
+该入口只运行补充探针，不启动训练、E0 BRIGHT 评测或旧 MRR 探针，也不改原队列完成状态。
+
+JSON 默认写入配置输出根目录下的
+`.r2_batch/gradient_probe_graded/attempt-1.json`，例如
+`checkpoints/iclr2027-r2/.r2_batch/gradient_probe_graded/attempt-1.json`。
+数据哈希、权重 revision、源码哈希、实际 batch 和逐 draw 的动作/奖励哈希均由底层诊断记录。
+与旧探针比较时先核对数据哈希和实际 batch；graded 标签会改变奖励，不要求跨 reward 的奖励哈希相同。
+
+已有输出不会覆盖，包括中断后保存的部分结果。重试时保留原文件并指定新路径：
+
+```bash
+python -u scripts/run_g1_r2_graded_probe.py \
+  --output checkpoints/iclr2027-r2/.r2_batch/gradient_probe_graded/attempt-2.json
+```
+
+重试使用相同 seeds，不能把两次结果合并当作新增独立 draws。本次补充只覆盖 E0，
+不自动追加 RL checkpoint 或 64/256 draws；完整结果应包含三个 probe，每个有 16 对 draw。
+
+### 原队列配置
+
 - 日常配置：[experiments_r2.yaml](../configs/experiments_r2.yaml)，设置数据路径和独立输出根目录。
 - 矩阵：[suite_r2.yaml](../configs/experiments/iclr2027/suite_r2.yaml)，含 27 条训练和 1 条 E0 评测。
 - 训练设置：[g1_r2.yaml](../configs/experiments/iclr2027/g1_r2.yaml)，固定模型 revision、无 dev、无裁剪和模型 checkpoint 保存规则。
