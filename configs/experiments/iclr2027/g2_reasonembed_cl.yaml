@@ -1,0 +1,7 @@
+_base_:
+  - g2_cl_r2.yaml
+  - ../../dataset/reasonembed.yaml
+  - ../../eval/default.yaml
+# Save intermediate checkpoints; evaluate only the final model on BRIGHT.
+index_cache_dir: .cache/dataset_index/g2-reasonembed-cl
+load_best_model_at_end: false

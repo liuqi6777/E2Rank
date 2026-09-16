@@ -18,6 +18,8 @@ source .venv/bin/activate
 入口：`python scripts/run_g1_reasoning_e0.py check`；GPU 运行去掉 `check`。
 默认两模型×三方法×三 seed，支持 `--models diver` / `--models reasonembed` 和 `--seeds 42` 拆分。
 
+[ReasonEmbed 数据上的 G2 CL](docs/g2_reasonembed_cl.md)已接入独立 D/E/W 队列：每次 1,200 步、最终 BRIGHT，暂不包含 RL。训练机器上先运行 `scripts/prepare_reasonembed.py`，再执行 `bash scripts/run_g2_reasonembed_cl.sh check` / `train`。
+
 G2-CL 新轮次设计见 [G2_CL_R2_PLAN.md](paper/G2_CL_R2_PLAN.md)：沿用原 D/E/W、seed 42、训练与 MTEB 评测设置，应用昨晚的新协议和 sampler 修复，使用独立输出目录并重建 W0。新配置已准备，尚未启动 GPU 训练；下文 G1 夜跑队列不包含这批任务。
 
 2026-09-16 的[新实验计划](paper/EXPERIMENT_PLAN.md)已接入[整批夜跑脚本](docs/g1_r2_overnight.md)：

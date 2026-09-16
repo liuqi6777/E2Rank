@@ -1,0 +1,7 @@
+# Frozen candidates produced by scripts/prepare_reasonembed.py.
+data_path: data/processed/reasonembed_g2/train.jsonl
+relevance_scheme: binary
+slate_size: 16
+per_dataset_max_samples: null
+dev_samples_per_source: 0
+file_glob: '*.jsonl'

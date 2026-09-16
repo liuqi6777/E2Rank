@@ -1,0 +1,40 @@
+version: 1
+plan: docs/g2_reasonembed_cl.md
+seed: 42
+output_root: checkpoints/iclr2027-g2-reasonembed-cl
+pending: {}
+
+profiles:
+  G2:
+    config: g2_reasonembed_cl.yaml
+    dataset: reasonembed
+    dataset_manifest: data/processed/reasonembed_g2/manifest.json
+    selection: fixed_budget_final_checkpoint
+    final_evaluation: [bright]
+    requirements: []
+    protocol:
+      labels: annotated_pos_neg_binary
+      sampling: per_source_epoch_shuffle_retained_tail_v1
+      tokenization_version: 2
+      pooling_compute_dtype: float32
+      training_budget: fixed_steps
+      max_steps: 1200
+      learning_rate: 0.000005
+      eval_steps: 200
+      global_batch_size: 128
+      micro_batch_size: 16
+
+execution_stages:
+  - name: ReasonEmbed CL initialization and warm-up
+    runs: [G2-ReasonEmbed-D-CL, G2-ReasonEmbed-E-CL, G2-ReasonEmbed-W-CL]
+
+runs:
+  G2-ReasonEmbed-D-CL: {group: G2, objective: infonce, scope: joint}
+  G2-ReasonEmbed-E-CL:
+    group: G2
+    objective: infonce
+    scope: joint
+    model_config: ../../model/qwen3_embedding_0.6b.yaml
+    overrides:
+      model_revision: 97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3
+  G2-ReasonEmbed-W-CL: {group: G2, objective: infonce, scope: joint, init_from: G2-ReasonEmbed-D-CL}
