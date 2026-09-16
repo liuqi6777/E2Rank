@@ -1,0 +1,4 @@
+_base_: g2_cl_r2.yaml
+# Match paired CL optimizer, clipping, tokenization and callback settings.
+# RL policy settings belong to suite overrides: the resolver merges GRPO later.
+index_cache_dir: .cache/dataset_index/g2-rl-r2

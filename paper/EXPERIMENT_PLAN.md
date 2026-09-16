@@ -168,6 +168,8 @@ MRR vs binary nDCG、binary vs graded nDCG 已进入本批，不另排重复网�
 
 ## 6. G2、G3 如何安排
 
+2026-09-17：最新 G1-R2 结果已明确选择 graded CP/G64/alignment 0.80；按当前用户安排新增 [G2-RL-R2 计划](G2_RL_R2_PLAN.md)，E2Rank/ReasonEmbed 各 D/E/W 三条 RL，仅 seed 42，与对应新协议 CL 配对。E2Rank 采用 teacher-graded nDCG@10，ReasonEmbed 因公开数据仅有 pos/neg 采用 binary nDCG@10；沿用各自 CL 的预算、优化器和评测。两个脚本分别为 `run_g2_rl_r2.sh`、`run_g2_reasonembed_rl_r2.sh`，不自动启动 CL。此安排替代下文 G2 等待 G1 结果及历史 RL 配方的排期；BGE-M3/G3 不加入本轮。
+
 2026-09-16 已按用户安排设计[新一轮 G2-CL](G2_CL_R2_PLAN.md)：沿用原 D/E/W、seed 42、E2Rank 1200 步与既有 MTEB 评测，应用昨晚的协议和 sampler 修复；独立注册于 `suite_g2_cl_r2.yaml`。先准备三条全新 E2Rank CL 与新 W0，BGE-M3 在候选采样可复现修复后再启动；尚未启动 GPU 训练。此安排更新下文 G2 的 CL 准备排期，RL/G3 不自动加入。
 
 G2 延后到 G1 有可解释结果后，再用 E2Rank 检查初始化依赖：新 D-CL→W0，W-CL/W-RL 从同一新 W0 出发；E-CL/E-RL 从 E0 出发；D-RL 从通用 Qwen 出发。单 seed 最小六次训练，warm-up 成本计入。

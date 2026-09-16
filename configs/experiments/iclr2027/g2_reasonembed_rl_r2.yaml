@@ -1,0 +1,3 @@
+_base_: g2_reasonembed_cl.yaml
+# Binary public labels; no teacher grades or intermediate MTEB callback.
+index_cache_dir: .cache/dataset_index/g2-reasonembed-rl-r2

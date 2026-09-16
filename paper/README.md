@@ -1,5 +1,7 @@
 # Paper workspace
 
+2026-09-17 的 [G2-RL-R2 计划](G2_RL_R2_PLAN.md)已按最新 G1-R2 结果落地：E2Rank graded nDCG、ReasonEmbed binary nDCG，均使用 CP/G64/alignment 0.80；各 D/E/W 三条 RL、仅 seed 42，与现有新协议 CL 配对。两个运行脚本与独立配置已提供，未启动 GPU 训练。
+
 论文正文已于 2026-09-16 同步新协议与 G1-R2 结果：方法部分加入条件投影推导；实验部分报告 27 次训练、三 seed 主表和全参数配对梯度探针；附录包含全部九方法的逐领域结果。G2 与 G3 保持计划状态。当前 PDF：[`iclr2027/build/main.pdf`](iclr2027/build/main.pdf)。结果来源见 [G1_R2_RESULTS.md](G1_R2_RESULTS.md)，后续计划见 [EXPERIMENT_PLAN.md](EXPERIMENT_PLAN.md) 和 [G2_CL_R2_PLAN.md](G2_CL_R2_PLAN.md)。
 
 最新结果文档已于 2026-09-17 扩展到 **117 次训练 + 2 条 E0**：包含全部 G1-R2 消融、动态检索和 DIVER 初始化实验，见 [G1_R2_RESULTS.md](G1_R2_RESULTS.md) 与 [完整附表](g1_r2_results/all_runs.md)。CP 的优势跨 alignment/G 保持；DIVER 上 RL 优于 LL/CL，但仍低于自身 E0。论文 LaTeX/PDF 尚未纳入这批新增结果。用 `python scripts/analyze_g1_r2_results.py` 可重新生成结果支撑表与输入审计。

@@ -1,0 +1,81 @@
+version: 1
+plan: paper/G2_RL_R2_PLAN.md
+seed: 42
+output_root: checkpoints/iclr2027-g2-reasonembed-cl
+pending: {}
+
+profiles:
+  G2:
+    config: g2_reasonembed_rl_r2.yaml
+    dataset: reasonembed
+    dataset_manifest: data/processed/reasonembed_g2/manifest.json
+    selection: fixed_budget_final_checkpoint
+    final_evaluation: [bright]
+    requirements: []
+    protocol:
+      labels: annotated_pos_neg_binary
+      sampling: per_source_epoch_shuffle_retained_tail_v1
+      tokenization_version: 2
+      pooling_compute_dtype: float32
+      training_budget: fixed_steps
+      max_steps: 1200
+      learning_rate: 0.000005
+      eval_steps: 200
+      global_batch_size: 128
+      micro_batch_size: 16
+
+execution_stages:
+  - name: Existing ReasonEmbed CL references (not trained here)
+    runs: [G2-ReasonEmbed-D-CL, G2-ReasonEmbed-E-CL, G2-ReasonEmbed-W-CL]
+  - name: ReasonEmbed binary CP transfer seed 42
+    runs: [G2-R2-ReasonEmbed-E-RL, G2-R2-ReasonEmbed-W-RL, G2-R2-ReasonEmbed-D-RL]
+
+runs:
+  G2-ReasonEmbed-D-CL: {group: G2, kind: reuse, scope: reference}
+  G2-ReasonEmbed-E-CL: {group: G2, kind: reuse, scope: reference}
+  G2-ReasonEmbed-W-CL: {group: G2, kind: reuse, scope: reference}
+  G2-R2-ReasonEmbed-E-RL:
+    group: G2
+    objective: rl
+    scope: joint
+    control: G2-ReasonEmbed-E-CL
+    model_config: ../../model/qwen3_embedding_0.6b.yaml
+    overrides:
+      <<: &cp_recipe
+        relevance_scheme: binary
+        reward_type: ndcg_in_batch
+        reward_ndcg_k: 10
+        ndcg_in_batch_include_negatives: false
+        action_components: [[query], [positive, negative]]
+        sampling_law: vmf
+        rollout: product
+        rollout_seed: 42
+        gradient_estimator: conditional_projection
+        group_size: 64
+        target_alignment: 0.80
+        final_alignment: null
+        exploration_schedule: fixed
+        sigma_learnable: false
+        advantage_baseline: leave_one_out
+        advantage_norm: none
+        document_advantage_baseline: shared
+        document_log_prob_reduction: sum
+        frozen_doc_rescale: true
+        in_batch_use_sampled_documents: false
+        reward_combine: sum
+        kl_coef: 0.0
+        aux_infonce_coef: 0.0
+      model_revision: 97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3
+  G2-R2-ReasonEmbed-W-RL:
+    group: G2
+    objective: rl
+    scope: joint
+    control: G2-ReasonEmbed-W-CL
+    init_from: G2-ReasonEmbed-D-CL
+    overrides: *cp_recipe
+  G2-R2-ReasonEmbed-D-RL:
+    group: G2
+    objective: rl
+    scope: joint
+    control: G2-ReasonEmbed-D-CL
+    overrides: *cp_recipe

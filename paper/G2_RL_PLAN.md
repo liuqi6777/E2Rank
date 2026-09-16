@@ -1,5 +1,7 @@
 # G2 RL 实验计划（2026-09-14）
 
+> 2026-09-17 的当前执行设计见 [G2-RL-R2](G2_RL_R2_PLAN.md)：E2Rank 与 ReasonEmbed 各三条单 seed RL，采用 CP/G64/alignment 0.80。本文的 MRR/0.90 与 BGE-M3 队列为历史配置。
+
 > 历史计划。2026-09-16 的[新实验计划](EXPERIMENT_PLAN.md#6-g2g3-如何安排)已替代本文的排期与旧 W0 复用规则。G2 延后到新 G1 验证之后；本页保留旧配置与当时依据，不能按原队列直接续跑新一轮实验。
 
 本轮建议：沿用 G1 的 `G1-A-MRRAlign090` 配方，先完成 E2Rank 的三条 RL，

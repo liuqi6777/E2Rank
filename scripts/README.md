@@ -27,6 +27,7 @@ BRIGHT，`summary` 汇总三 seed 的均值/标准差/最差成绩。无时间�
 | `run.sh` / `run_baseline.sh` | 通用 RL / supervised torchrun 包装器，显式指定 `NPROC_PER_NODE` |
 | `run_g2_cl.sh` / `run_g2_bge_cl.sh` | 分别串行预检并启动 E2Rank / BGE-M3 的三条 G2 CL |
 | `run_g2_rl.sh` / `run_g2_bge_rl.sh` | 分别预检 E2Rank / BGE-M3 的三条 RL（含 W0），再按 E → W → D 训练与最终 MTEB 评测 |
+| `run_g2_rl_r2.sh` / `run_g2_reasonembed_rl_r2.sh` | 新协议 E2Rank / ReasonEmbed 的单 seed 42 CP/G64/0.80 队列；各三条 RL，与对应 D/E/W CL 配对，见 [G2-RL-R2 计划](../paper/G2_RL_R2_PLAN.md) |
 | `rag_pipeline.sh` | RAG 数据准备、编码、NQ/HotpotQA qrels 构造、候选挖掘、底层训练与评测 |
 | `rag_acceptance.sh` / `rag_toy_distributed.py` | RAG 分布式索引和端到端验收 |
 | `measure_score_gaps.py` | embedding 分数间隔诊断 |
