@@ -2,6 +2,8 @@
 
 ## 当前研究排期（2026-09-16）
 
+G2-CL 新轮次已单独设计，见 [G2_CL_R2_PLAN.md](../../../paper/G2_CL_R2_PLAN.md)：新矩阵 [suite_g2_cl_r2.yaml](suite_g2_cl_r2.yaml)、设置 [experiments_g2_cl_r2.yaml](../../experiments_g2_cl_r2.yaml)。沿用原 D/E/W、seed 42 与训练/评测预算，使用昨晚的新协议；W0 来自新 D-CL。E2Rank 先准备三条，BGE-M3 先等待候选 RNG 修复，未启动 GPU 训练。
+
 研究安排以[新实验计划](../../../paper/EXPERIMENT_PLAN.md)为准：沿用现有数据与丢尾规则，每个 epoch 在 source 内重新组合 microbatch，不另划 dev；使用 G64 比较 MRR / binary nDCG / graded nDCG 的 SF/CP，加三个监督基线，共 27 次训练。
 新矩阵注册于 [suite_r2.yaml](suite_r2.yaml)，日常设置为 [experiments_r2.yaml](../../experiments_r2.yaml)，使用 `python scripts/run_g1_r2.py` 一次执行全部。
 加 `--seeds 42` / `--seeds 3407` / `--seeds 2026` 可分配到三台机器并行；每台执行九个方法，seed 42 额外负责 E0 与公共梯度诊断。

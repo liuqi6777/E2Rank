@@ -1,0 +1,76 @@
+version: 1
+plan: paper/G2_CL_R2_PLAN.md
+seed: 42
+output_root: checkpoints/iclr2027-g2-cl-r2
+pending:
+  bge_seeded_candidates: BGE-M3 candidate RNG is not seeded; seed it or freeze the actual candidate data before launching this dataset.
+
+profiles:
+  G2:
+    config: g2_cl_r2.yaml
+    dataset: e2rank
+    dataset_manifest: data/manifest.json
+    selection: fixed_budget_final_checkpoint
+    final_evaluation: [mteb_eng_v2]
+    requirements: []
+    datasets:
+      bge_m3:
+        dataset_manifest: /mnt/tidal-alsh-share2/dataset/liuqi18/datasets/bge-m3-data/manifest.json
+        runtime_overrides:
+          data_path: /mnt/tidal-alsh-share2/dataset/liuqi18/datasets/bge-m3-data
+          index_cache_dir: .cache/dataset_index/g2-bge-cl-r2
+        protocol:
+          labels: annotated_pos_neg_binary
+          training_budget: one_epoch
+          max_steps: -1
+          eval_steps: 1000
+    protocol:
+      labels: pos_index_binary
+      sampling: per_source_epoch_shuffle_retained_tail_v1
+      tokenization_version: 2
+      pooling_compute_dtype: float32
+      training_budget: fixed_steps
+      max_steps: 1200
+      learning_rate: 0.000005
+      eval_steps: 200
+      global_batch_size: 128
+      micro_batch_size: 16
+
+execution_stages:
+  - name: New E2Rank CL initialization and warm-up
+    runs: [G2-R2-D-CL, G2-R2-E-CL, G2-R2-W-CL]
+  - name: BGE-M3 CL after candidate reproducibility repair
+    runs: [G2-R2-BGE-D-CL, G2-R2-BGE-E-CL, G2-R2-BGE-W-CL]
+
+runs:
+  G2-R2-D-CL: {group: G2, objective: infonce, scope: joint}
+  G2-R2-E-CL:
+    group: G2
+    objective: infonce
+    scope: joint
+    model_config: ../../model/qwen3_embedding_0.6b.yaml
+    overrides:
+      model_revision: 97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3
+  G2-R2-W-CL: {group: G2, objective: infonce, scope: joint, init_from: G2-R2-D-CL}
+  G2-R2-BGE-D-CL:
+    group: G2
+    dataset: bge_m3
+    objective: infonce
+    scope: joint
+    requirements: [bge_seeded_candidates]
+  G2-R2-BGE-E-CL:
+    group: G2
+    dataset: bge_m3
+    objective: infonce
+    scope: joint
+    requirements: [bge_seeded_candidates]
+    model_config: ../../model/qwen3_embedding_0.6b.yaml
+    overrides:
+      model_revision: 97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3
+  G2-R2-BGE-W-CL:
+    group: G2
+    dataset: bge_m3
+    objective: infonce
+    scope: joint
+    requirements: [bge_seeded_candidates]
+    init_from: G2-R2-BGE-D-CL

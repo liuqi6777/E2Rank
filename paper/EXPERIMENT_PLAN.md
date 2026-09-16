@@ -159,6 +159,8 @@ MRR vs binary nDCG、binary vs graded nDCG 已进入本批，不另排重复网�
 
 ## 6. G2、G3 如何安排
 
+2026-09-16 已按用户安排设计[新一轮 G2-CL](G2_CL_R2_PLAN.md)：沿用原 D/E/W、seed 42、E2Rank 1200 步与既有 MTEB 评测，应用昨晚的协议和 sampler 修复；独立注册于 `suite_g2_cl_r2.yaml`。先准备三条全新 E2Rank CL 与新 W0，BGE-M3 在候选采样可复现修复后再启动；尚未启动 GPU 训练。此安排更新下文 G2 的 CL 准备排期，RL/G3 不自动加入。
+
 G2 延后到 G1 有可解释结果后，再用 E2Rank 检查初始化依赖：新 D-CL→W0，W-CL/W-RL 从同一新 W0 出发；E-CL/E-RL 从 E0 出发；D-RL 从通用 Qwen 出发。单 seed 最小六次训练，warm-up 成本计入。
 若宣称估计器收益，补匹配 SF；若宣称优于强排序监督，补标签匹配 LL。不能从 B0 统一配方下失败推断 RL 无法训练 embedding。
 当前 `Qwen/Qwen3-0.6B` 官方标注包含 pretraining/post-training，不能称纯 Base；若研究纯 Base，另定义对应 checkpoint 与整组初始化。[官方模型卡](https://huggingface.co/Qwen/Qwen3-0.6B)

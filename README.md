@@ -13,6 +13,8 @@ source .venv/bin/activate
 
 ## 实验入口
 
+G2-CL 新轮次设计见 [G2_CL_R2_PLAN.md](paper/G2_CL_R2_PLAN.md)：沿用原 D/E/W、seed 42、训练与 MTEB 评测设置，应用昨晚的新协议和 sampler 修复，使用独立输出目录并重建 W0。新配置已准备，尚未启动 GPU 训练；下文 G1 夜跑队列不包含这批任务。
+
 2026-09-16 的[新实验计划](paper/EXPERIMENT_PLAN.md)已接入[整批夜跑脚本](docs/g1_r2_overnight.md)：
 3 个监督基线 + MRR / binary nDCG / graded nDCG 各自的 SF/CP，RL 统一 G64，共 9 方法 × 3 seed = 27 次训练。
 沿用现有数据与丢尾规则，每个 epoch 在 source 内重新组合 microbatch，不另划 dev；固定 113 步、最终 BRIGHT 评测，G2/G3 暂缓。
