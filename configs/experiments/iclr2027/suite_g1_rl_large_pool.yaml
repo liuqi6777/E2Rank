@@ -1,4 +1,4 @@
-# CP at alignment 0.80, three seeds, with the Strong CL candidate pool.
+# CP at alignment 0.90, three seeds, with the Strong CL candidate pool.
 version: 1
 plan: docs/g1_r2_large_pool.md
 seed: 42
@@ -23,7 +23,7 @@ profiles:
       positive_selection: retain_all_seeded_in_batch_representative
       positive_selection_seed: 42
 runs:
-  G1-R2-RL-GradedNDCG64-CP-Align080-LargePool: &cp
+  G1-R2-RL-GradedNDCG64-CP-Align090-LargePool: &cp
     group: G1
     scope: joint
     objective: rl
@@ -37,17 +37,17 @@ runs:
       gradient_estimator: conditional_projection
       rollout_seed: 42
       group_size: 64
-      target_alignment: 0.80
+      target_alignment: 0.90
       final_alignment: null
       exploration_schedule: fixed
       document_advantage_baseline: shared
       reward_combine: sum
       aux_infonce_coef: 0.0
-  G1-R2-RL-GradedNDCG64-CP-Align080-LargePool-Seed3407:
+  G1-R2-RL-GradedNDCG64-CP-Align090-LargePool-Seed3407:
     <<: *cp
     seed: 3407
     overrides: {<<: *cp_overrides, rollout_seed: 3407}
-  G1-R2-RL-GradedNDCG64-CP-Align080-LargePool-Seed2026:
+  G1-R2-RL-GradedNDCG64-CP-Align090-LargePool-Seed2026:
     <<: *cp
     seed: 2026
     overrides: {<<: *cp_overrides, rollout_seed: 2026}

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G1-R2 pure CP RL over the Strong CL pool; alignment 0.80, three seeds."""
+"""G1-R2 pure CP RL over the Strong CL pool; alignment 0.90, three seeds."""
 import argparse
 from pathlib import Path
 import subprocess
@@ -14,7 +14,7 @@ def main():
     parser.add_argument('--seeds', nargs='+', type=int, choices=[42, 3407, 2026], default=[42, 3407, 2026])
     parser.add_argument('--config', type=Path, default=ROOT / 'configs/experiments_r2.yaml')
     args = parser.parse_args()
-    runs = ['G1-R2-RL-GradedNDCG64-CP-Align080-LargePool'
+    runs = ['G1-R2-RL-GradedNDCG64-CP-Align090-LargePool'
             + (f'-Seed{seed}' if seed != 42 else '')
             for seed in dict.fromkeys(args.seeds)]
     if args.action == 'train':

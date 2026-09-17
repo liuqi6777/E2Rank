@@ -16,7 +16,6 @@ from conditional_projection import conditional_projection_loss, project_span, pr
 from config import RLArguments
 from contrastive import cross_document_mask
 from experiments import iclr2027 as experiments
-from run_g1_r2_ablations import resolve as resolve_ablations
 from grpo import GRPO, GRPOModel, _ActionComponent
 from grpo_trainer import restore_exploration_state, rollout_rng_contract
 from policy_math import mean_alignment
@@ -179,18 +178,20 @@ def test_cross_device_rl_matches_global_gradient_with_uneven_tails(tmp_path, est
         args=(str(tmp_path / 'rendezvous'), estimator), nprocs=2, join=True)
 
 
-def test_large_pool_recipes_match_align080_cp_except_pool():
+def test_large_pool_recipes_match_default_cp_except_pool():
     path = ROOT / 'configs/experiments/iclr2027/suite_g1_rl_large_pool.yaml'
     suite = experiments.apply_settings(experiments.load_suite(path), ROOT / 'configs/experiments_r2.yaml')
-    original = {row['run_id']: row['config'] for row in resolve_ablations(variants=('align080_cp',))[0]}
+    base_path = ROOT / 'configs/experiments/iclr2027/suite_r2.yaml'
+    original = experiments.apply_settings(experiments.load_suite(base_path), ROOT / 'configs/experiments_r2.yaml')
     assert len(suite['runs']) == 3
     seeds = set()
     for name in suite['runs']:
         cfg = experiments.resolve_run(suite, path, name, nproc=8)['config']
-        base = original[name.replace('-LargePool', '')]
+        base_name = name.replace('-Align090-LargePool', '')
+        base = experiments.resolve_run(original, base_path, base_name, nproc=8)['config']
         args = RLArguments(**{f.name: cfg[f.name] for f in fields(RLArguments) if f.name in cfg})
         assert args.aux_infonce_coef == 0 and args.reward_cross_device_negatives
-        assert args.gradient_estimator == 'conditional_projection' and args.target_alignment == 0.80
+        assert args.gradient_estimator == 'conditional_projection' and args.target_alignment == 0.90
         seeds.add(cfg['seed'])
         assert {k for k in cfg.keys() | base.keys() if cfg.get(k) != base.get(k)} == {
             'run_name', 'output_dir', 'ndcg_in_batch_include_negatives', 'reward_cross_device_negatives'}
