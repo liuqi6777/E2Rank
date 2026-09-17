@@ -1,6 +1,12 @@
 # 三组实验配置指南
 
-## 当前研究排期（2026-09-16）
+ReasonEmbed 最新配置（2026-09-18）：[CL/Strong suite](suite_g2_reasonembed_cl.yaml) 六条训练，加 [RL suite](suite_g2_reasonembed_rl_r2.yaml) 三条训练；均为 `training_budget: one_epoch`、`max_steps: -1`、`num_train_epochs: 1`。对应两份日常配置的 `steps: -1`，输出根目录均为 `checkpoints/iclr2027-g2-reasonembed-1epoch`。完整矩阵见 [ReasonEmbed 方案](../../../docs/g2_reasonembed_cl.md)。
+
+## 当前状态（2026-09-18）
+
+E2Rank G2-R2 的 D/E/W × CL / CL-Strong / RL 九条结果已同步，见 [结果与呈现建议](../../../paper/G2_R2_RESULTS.md)。原脚本与配置完整保留：CL 队列 D → E → W，RL 队列 E → W → D，Strong CL 支持 D/E/W，W 依赖同数据 D-CL 的最终权重。本轮只更新文档，不重跑实验；论文正文取舍不改变注册矩阵。
+
+## 原研究排期（2026-09-16）
 
 G2-CL 新轮次已单独设计，见 [G2_CL_R2_PLAN.md](../../../paper/G2_CL_R2_PLAN.md)：新矩阵 [suite_g2_cl_r2.yaml](suite_g2_cl_r2.yaml)、设置 [experiments_g2_cl_r2.yaml](../../experiments_g2_cl_r2.yaml)。沿用原 D/E/W、seed 42 与训练/评测预算，使用昨晚的新协议；W0 来自新 D-CL。E2Rank 先准备三条，BGE-M3 先等待候选 RNG 修复，未启动 GPU 训练。
 

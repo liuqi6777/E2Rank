@@ -1,7 +1,7 @@
 version: 1
-plan: paper/G2_RL_R2_PLAN.md
+plan: docs/g2_reasonembed_cl.md
 seed: 42
-output_root: checkpoints/iclr2027-g2-reasonembed-cl
+output_root: checkpoints/iclr2027-g2-reasonembed-1epoch
 pending: {}
 
 profiles:
@@ -17,8 +17,8 @@ profiles:
       sampling: per_source_epoch_shuffle_retained_tail_v1
       tokenization_version: 2
       pooling_compute_dtype: float32
-      training_budget: fixed_steps
-      max_steps: 1200
+      training_budget: one_epoch
+      max_steps: -1
       learning_rate: 0.000005
       eval_steps: 200
       global_batch_size: 128

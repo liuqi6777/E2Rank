@@ -1,5 +1,9 @@
 # 脚本索引
 
+ReasonEmbed 当前使用 [每阶段 1 epoch 的九条训练方案](../docs/g2_reasonembed_cl.md)：普通 CL 用 `run_g2_reasonembed_cl.sh`；Strong CL 用 `run_g2_reasonembed_cl_strong.py check/train/eval`（支持 `--branches D E W`）；binary CP 用 `run_g2_reasonembed_rl_r2.sh`。W 统一依赖新目录下普通 D-CL 的最终权重，每条最终评测 BRIGHT。
+
+2026-09-18：E2Rank G2-R2 九条结果已同步，见 [结果文档](../paper/G2_R2_RESULTS.md)。脚本保持原行为：`run_g2_cl_r2.sh` 运行 D → E → W，`run_g2_rl_r2.sh` 运行 E → W → D，Strong CL 支持 D/E/W；W 保留同数据 D-CL 初始化依赖。本次没有启动训练，以下入口说明不表示需要重跑已完成实验。
+
 当前 G1 新协议批次：`python scripts/run_g1_r2.py check` 预检，`python scripts/run_g1_r2.py` 一次完成
 E0、配对梯度诊断和 27 次训练及最终 BRIGHT；支持跳过完成项和只补失败评测。见[夜跑说明](../docs/g1_r2_overnight.md)。
 三台机器分别传 `--seeds 42`、`--seeds 3407`、`--seeds 2026` 可同时运行；E0/公共诊断由 seed 42 负责，日志和汇总按所选 seed 隔离。

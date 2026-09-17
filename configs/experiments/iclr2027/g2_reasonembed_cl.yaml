@@ -3,5 +3,7 @@ _base_:
   - ../../dataset/reasonembed.yaml
   - ../../eval/default.yaml
 # Save intermediate checkpoints; evaluate only the final model on BRIGHT.
+num_train_epochs: 1
+max_steps: -1
 index_cache_dir: .cache/dataset_index/g2-reasonembed-cl
 load_best_model_at_end: false

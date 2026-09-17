@@ -1,5 +1,9 @@
 # G2-RL-R2 实验计划（2026-09-17）
 
+> 2026-09-18 后续安排：ReasonEmbed 改为 D/E/W × CL / CL-Strong / binary CP，每阶段 **1 epoch**，以 [ReasonEmbed 当前方案](../docs/g2_reasonembed_cl.md)为准。本页以下 1200-step ReasonEmbed 预算是历史设计；E2Rank 已完成结果不重跑。
+
+> 2026-09-18 状态更新：E2Rank 的 D/E/W × CL / CL-Strong / RL 九条结果已同步，见 [G2-R2 结果](G2_R2_RESULTS.md)。三个分支的 RL Retrieval 均值均低于两种 CL。本轮撤回 E+D 精简所做的代码改动，保留原 D/E/W 入口和 W0 依赖，仅更新文档，不新增训练。正文聚焦 D、附录保留全表是呈现建议，尚未写入 LaTeX/PDF；ReasonEmbed 完成状态不能由本表推断。下文为 2026-09-17 的原执行设计，“未启动/待测/待同步”均为当时状态，不是新的运行安排。
+
 本轮新增 **E2Rank、ReasonEmbed 各 D/E/W 三条 RL，共六次训练，只有 seed 42**。目标是检查已选定的 CP 配方相对同初始化 CL 的收益，以及收益是否随初始化和训练数据变化。仅交付计划、配置和两个运行脚本，不启动 GPU 训练。
 
 ## 1. 最新提交的依据与配方选择

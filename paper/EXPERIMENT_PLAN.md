@@ -168,6 +168,14 @@ MRR vs binary nDCG、binary vs graded nDCG 已进入本批，不另排重复网�
 
 ## 6. G2、G3 如何安排
 
+2026-09-18 后续决定：在 ReasonEmbed 上进行 D/E/W × CL / CL-Strong / RL 九条 seed 42 训练，每阶段 **1 epoch**，固定最终模型评测 BRIGHT。RL 使用 binary nDCG / CP / G64 / alignment 0.80，W 三方法共享本轮普通 D-CL 的最终权重。新目录 `checkpoints/iclr2027-g2-reasonembed-1epoch` 隔离旧 1200-step 产物。完整方案和运行命令见 [ReasonEmbed 文档](../docs/g2_reasonembed_cl.md)。本地缺少数据和 W0，当前未启动训练；以下 E2Rank 的“不新增训练”仅指已完成的 E2Rank 批次。
+
+2026-09-18：用户已完成并同步 E2Rank G2-R2 的 D/E/W × CL / CL-Strong / RL 九条总分，见 [G2-R2 结果](G2_R2_RESULTS.md)。RL 相对普通 CL 的 Retrieval 差值在 E/D/W 分别为 −1.84 / −2.21 / −0.75；相对 Strong CL 也均为负。D 的全任务均值 61.00 与 Strong CL 60.99 接近，但 Retrieval 49.26 低于 51.52，不能作为 RL 检索优势。公开 E0 仅作外部参考，同协议初始分数尚缺。
+
+当前处理：撤回本轮 E+D 精简对代码的改动，保留原 D/E/W、W0 依赖和 Strong CL 入口，只更新文档，不安排新训练。正文若需要直接训练实验，可聚焦 D 并引用附录完整 E/D/W 表；这是呈现建议，LaTeX/PDF 尚未同步。G2 用于报告适用边界，不承担正向迁移主张。ReasonEmbed/BGE-M3 的执行状态不能从本表推断。
+
+以下 9 月 16–17 日内容保留为历史设计及依赖记录，不是再次启动已完成 E2Rank 队列的安排。
+
 2026-09-17：最新 G1-R2 结果已明确选择 graded CP/G64/alignment 0.80；按当前用户安排新增 [G2-RL-R2 计划](G2_RL_R2_PLAN.md)，E2Rank/ReasonEmbed 各 D/E/W 三条 RL，仅 seed 42，与对应新协议 CL 配对。E2Rank 采用 teacher-graded nDCG@10，ReasonEmbed 因公开数据仅有 pos/neg 采用 binary nDCG@10；沿用各自 CL 的预算、优化器和评测。两个脚本分别为 `run_g2_rl_r2.sh`、`run_g2_reasonembed_rl_r2.sh`，不自动启动 CL。此安排替代下文 G2 等待 G1 结果及历史 RL 配方的排期；BGE-M3/G3 不加入本轮。
 
 2026-09-16 已按用户安排设计[新一轮 G2-CL](G2_CL_R2_PLAN.md)：沿用原 D/E/W、seed 42、E2Rank 1200 步与既有 MTEB 评测，应用昨晚的协议和 sampler 修复；独立注册于 `suite_g2_cl_r2.yaml`。先准备三条全新 E2Rank CL 与新 W0，BGE-M3 在候选采样可复现修复后再启动；尚未启动 GPU 训练。此安排更新下文 G2 的 CL 准备排期，RL/G3 不自动加入。

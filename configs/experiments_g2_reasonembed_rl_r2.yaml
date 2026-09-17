@@ -1,10 +1,10 @@
-# Share the ReasonEmbed CL root to resolve this dataset's D-CL final weights.
-output_dir: checkpoints/iclr2027-g2-reasonembed-cl
+# Share the one-epoch CL root; W0 must come from this round's D-CL.
+output_dir: checkpoints/iclr2027-g2-reasonembed-1epoch
 G2:
   data: data/processed/reasonembed_g2
   model: Qwen/Qwen3-0.6B
   learning_rate: 0.000005
-  steps: 1200
+  steps: -1  # Use num_train_epochs: 1; no fixed-step override.
   checkpoint_every: 200
   batch_size: 128
   micro_batch_size: 16

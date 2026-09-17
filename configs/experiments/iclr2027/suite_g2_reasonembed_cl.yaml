@@ -1,7 +1,7 @@
 version: 1
 plan: docs/g2_reasonembed_cl.md
 seed: 42
-output_root: checkpoints/iclr2027-g2-reasonembed-cl
+output_root: checkpoints/iclr2027-g2-reasonembed-1epoch
 pending: {}
 
 profiles:
@@ -17,8 +17,8 @@ profiles:
       sampling: per_source_epoch_shuffle_retained_tail_v1
       tokenization_version: 2
       pooling_compute_dtype: float32
-      training_budget: fixed_steps
-      max_steps: 1200
+      training_budget: one_epoch
+      max_steps: -1
       learning_rate: 0.000005
       eval_steps: 200
       global_batch_size: 128
@@ -27,6 +27,8 @@ profiles:
 execution_stages:
   - name: ReasonEmbed CL initialization and warm-up
     runs: [G2-ReasonEmbed-D-CL, G2-ReasonEmbed-E-CL, G2-ReasonEmbed-W-CL]
+  - name: ReasonEmbed Strong CL at matched initializations
+    runs: [G2-ReasonEmbed-D-CL-Strong, G2-ReasonEmbed-E-CL-Strong, G2-ReasonEmbed-W-CL-Strong]
 
 runs:
   G2-ReasonEmbed-D-CL: {group: G2, objective: infonce, scope: joint}
@@ -38,3 +40,29 @@ runs:
     overrides:
       model_revision: 97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3
   G2-ReasonEmbed-W-CL: {group: G2, objective: infonce, scope: joint, init_from: G2-ReasonEmbed-D-CL}
+  G2-ReasonEmbed-D-CL-Strong:
+    group: G2
+    objective: infonce
+    scope: joint
+    control: G2-ReasonEmbed-D-CL
+    overrides: &strong_cl
+      baseline_in_batch_include_negatives: true
+      baseline_cross_device_negatives: true
+      baseline_detach_in_batch_documents: false
+  G2-ReasonEmbed-E-CL-Strong:
+    group: G2
+    objective: infonce
+    scope: joint
+    control: G2-ReasonEmbed-E-CL
+    model_config: ../../model/qwen3_embedding_0.6b.yaml
+    overrides:
+      <<: *strong_cl
+      model_revision: 97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3
+  G2-ReasonEmbed-W-CL-Strong:
+    group: G2
+    objective: infonce
+    scope: joint
+    control: G2-ReasonEmbed-W-CL
+    # Share ordinary D-CL's W0 with W-CL and W-RL.
+    init_from: G2-ReasonEmbed-D-CL
+    overrides: *strong_cl

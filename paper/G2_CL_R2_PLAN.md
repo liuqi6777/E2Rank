@@ -1,5 +1,7 @@
 # G2-CL 新一轮实验设计（2026-09-16）
 
+> 2026-09-18 状态更新：E2Rank 的 D/E/W 普通 CL、Strong CL 及对应 RL 结果均已同步，详见 [G2-R2 结果](G2_R2_RESULTS.md)。脚本和配置恢复为原 D/E/W 版本，W 和 Strong CL 分支保留；本次仅更新文档，不重新训练。下文保存原设计、命令和当时验证记录，BGE-M3 完成状态不能由这份 E2Rank 汇总推断。
+
 沿用原 G2 的 D/E/W 初始化、数据、训练预算、优化器和评测设置，应用昨晚的统一输入/数值协议与跨 epoch 重分组修复。先准备 E2Rank 三条全新 CL，seed 42；BGE-M3 三条作为后续同配方复现，在候选采样可复现问题解决后启动。本次完成设计与独立配置，不启动 GPU 训练。
 
 配置：[日常设置](../configs/experiments_g2_cl_r2.yaml)、[新矩阵](../configs/experiments/iclr2027/suite_g2_cl_r2.yaml)、[训练预设](../configs/experiments/iclr2027/g2_cl_r2.yaml)。使用现有 `scripts/experiment.py`，显式传入新 suite/settings；旧 `run_g2_cl.sh` / `run_g2_bge_cl.sh` 仍指向历史目录。

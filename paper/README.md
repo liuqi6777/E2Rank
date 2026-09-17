@@ -1,8 +1,10 @@
 # Paper workspace
 
-2026-09-17 的 [G2-RL-R2 计划](G2_RL_R2_PLAN.md)已按最新 G1-R2 结果落地：E2Rank graded nDCG、ReasonEmbed binary nDCG，均使用 CP/G64/alignment 0.80；各 D/E/W 三条 RL、仅 seed 42，与现有新协议 CL 配对。两个运行脚本与独立配置已提供，未启动 GPU 训练。
+2026-09-18 后续：新增 [ReasonEmbed 三方法实验](../docs/g2_reasonembed_cl.md)，D/E/W 各 CL、CL-Strong、binary CP，共九条 seed 42 训练，**每阶段 1 epoch**，最终 BRIGHT；新输出根目录隔离旧 1200-step 产物。配置和入口已准备，尚未启动训练。下文 E2Rank 的结果与呈现建议保持不变。
 
-论文正文已于 2026-09-16 同步新协议与 G1-R2 结果：方法部分加入条件投影推导；实验部分报告 27 次训练、三 seed 主表和全参数配对梯度探针；附录包含全部九方法的逐领域结果。G2 与 G3 保持计划状态。当前 PDF：[`iclr2027/build/main.pdf`](iclr2027/build/main.pdf)。结果来源见 [G1_R2_RESULTS.md](G1_R2_RESULTS.md)，后续计划见 [EXPERIMENT_PLAN.md](EXPERIMENT_PLAN.md) 和 [G2_CL_R2_PLAN.md](G2_CL_R2_PLAN.md)。
+2026-09-18：E2Rank G2-R2 的 **D/E/W × CL / CL-Strong / RL 九条结果已同步**，见 [结果与呈现建议](G2_R2_RESULTS.md) 和 [原始总分表](_summary/g2_r2_mteb_v2/run_summary.csv)。三个分支的 RL Retrieval 均值均低于两种 CL；建议正文若讨论直接训练则聚焦 D，附录保留完整结果。脚本和配置已恢复原 D/E/W 版本，本次只更新文档，没有重跑或新增训练。LaTeX/PDF 尚未同步 G2 结果。
+
+论文正文已于 2026-09-16 同步新协议与 G1-R2 结果：方法部分加入条件投影推导；实验部分报告 27 次训练、三 seed 主表和全参数配对梯度探针；附录包含全部九方法的逐领域结果。该版正文仍将 G2/G3 列为计划；G2 最新结果以上述 2026-09-18 文档为准。当前 PDF：[`iclr2027/build/main.pdf`](iclr2027/build/main.pdf)。结果来源见 [G1_R2_RESULTS.md](G1_R2_RESULTS.md)，后续计划见 [EXPERIMENT_PLAN.md](EXPERIMENT_PLAN.md) 和 [G2_CL_R2_PLAN.md](G2_CL_R2_PLAN.md)。
 
 最新结果文档已于 2026-09-17 扩展到 **117 次训练 + 2 条 E0**：包含全部 G1-R2 消融、动态检索和 DIVER 初始化实验，见 [G1_R2_RESULTS.md](G1_R2_RESULTS.md) 与 [完整附表](g1_r2_results/all_runs.md)。CP 的优势跨 alignment/G 保持；DIVER 上 RL 优于 LL/CL，但仍低于自身 E0。论文 LaTeX/PDF 尚未纳入这批新增结果。用 `python scripts/analyze_g1_r2_results.py` 可重新生成结果支撑表与输入审计。
 

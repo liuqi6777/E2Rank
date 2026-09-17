@@ -13,18 +13,20 @@ source .venv/bin/activate
 
 ## 实验入口
 
+2026-09-18：E2Rank G2-R2 的 D/E/W × CL / CL-Strong / RL 九条结果已同步，见 [结果与论文呈现建议](paper/G2_R2_RESULTS.md)。三个分支的 RL Retrieval 均值均低于两种 CL。脚本与配置保持原 D/E/W 入口和 W0 依赖，本次仅更新文档，不重跑实验；正文是否聚焦 D 不改变完整结果记录。
+
 [Reasoning E0 核心实验](docs/g1_reasoning_e0.md)已配置：DIVER-0.6B / ReasonEmbed-4B
 各自比较 E0、CL、graded LL、graded RL（G64＋CP），复用 ReasonRank 与最终 BRIGHT。
 入口：`python scripts/run_g1_reasoning_e0.py check`；GPU 运行去掉 `check`。
 默认两模型×三方法×三 seed，支持 `--models diver` / `--models reasonembed` 和 `--seeds 42` 拆分。
 
-[ReasonEmbed 数据上的 G2 CL](docs/g2_reasonembed_cl.md)已接入独立 D/E/W 队列：每次 1,200 步、最终 BRIGHT，暂不包含 RL。训练机器上先运行 `scripts/prepare_reasonembed.py`，再执行 `bash scripts/run_g2_reasonembed_cl.sh check` / `train`。
+[ReasonEmbed 数据上的 G2](docs/g2_reasonembed_cl.md)现为 D/E/W × CL / CL-Strong / binary CP，共九条 seed 42 训练，**每阶段 1 epoch**、最终 BRIGHT。新目录 `checkpoints/iclr2027-g2-reasonembed-1epoch` 隔离原 1200-step 产物。训练入口为 `run_g2_reasonembed_cl.sh`、`run_g2_reasonembed_cl_strong.py`、`run_g2_reasonembed_rl_r2.sh`；完整顺序与补评方式见方案文档。
 
-G2-CL 新轮次设计见 [G2_CL_R2_PLAN.md](paper/G2_CL_R2_PLAN.md)：沿用原 D/E/W、seed 42、训练与 MTEB 评测设置，应用昨晚的新协议和 sampler 修复，使用独立输出目录并重建 W0。新配置已准备，尚未启动 GPU 训练；下文 G1 夜跑队列不包含这批任务。
+G2-CL 新轮次设计见 [G2_CL_R2_PLAN.md](paper/G2_CL_R2_PLAN.md)：沿用原 D/E/W、seed 42、训练与 MTEB 评测设置，应用昨晚的新协议和 sampler 修复，使用独立输出目录并重建 W0。这是 2026-09-16 的原计划；E2Rank 已同步结果，当前状态以上文为准。下文 G1 夜跑队列不包含这批任务。
 
 2026-09-16 的[新实验计划](paper/EXPERIMENT_PLAN.md)已接入[整批夜跑脚本](docs/g1_r2_overnight.md)：
 3 个监督基线 + MRR / binary nDCG / graded nDCG 各自的 SF/CP，RL 统一 G64，共 9 方法 × 3 seed = 27 次训练。
-沿用现有数据与丢尾规则，每个 epoch 在 source 内重新组合 microbatch，不另划 dev；固定 113 步、最终 BRIGHT 评测，G2/G3 暂缓。
+沿用现有数据与丢尾规则，每个 epoch 在 source 内重新组合 microbatch，不另划 dev；固定 113 步、最终 BRIGHT 评测，当时 G2/G3 暂缓；G2 最新状态见上文。
 
 在已激活训练环境的 8 卡 GPU 机器上，一条命令运行全部：
 
@@ -63,7 +65,7 @@ READY 表示启动前检查通过，不代表已完成 GPU 训练。入口只启
 详细参数、run IDs、预算与输出规则见 [实验配置指南](configs/experiments/iclr2027/README.md)。
 研究设计见 [实验计划](paper/EXPERIMENT_PLAN.md)。
 
-G2 RL 使用固定 MRR@10 / G=32 / alignment 0.90 配方，按 E → W → D 执行：
+历史 G2 RL 使用固定 MRR@10 / G=32 / alignment 0.90 配方，按 E → W → D 执行：
 
 ```bash
 bash scripts/run_g2_rl.sh check 8
