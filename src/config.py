@@ -406,6 +406,24 @@ class BaselineArguments:
             )
         },
     )
+    baseline_in_batch_include_negatives: bool = field(
+        default=False,
+        metadata={"help": "Reuse all other queries' candidates, rather than only representative positives"},
+    )
+    baseline_cross_device_negatives: bool = field(
+        default=False,
+        metadata={"help": "Gather cross-query candidates across the data-parallel process group"},
+    )
+    baseline_detach_in_batch_documents: bool = field(
+        default=True,
+        metadata={"help": "Stop document gradients from cross-query negative scores"},
+    )
+
+    @property
+    def extended_negative_pool(self) -> bool:
+        return (self.baseline_in_batch_include_negatives
+                or self.baseline_cross_device_negatives
+                or not self.baseline_detach_in_batch_documents)
 
     def __post_init__(self) -> None:
         self.baseline_loss = self.baseline_loss.strip().lower()
@@ -419,6 +437,10 @@ class BaselineArguments:
                 "baseline_temperature must be positive, "
                 f"got {self.baseline_temperature}"
             )
+        if self.extended_negative_pool and (
+            self.baseline_loss != "infonce" or not self.baseline_use_in_batch_negatives
+        ):
+            raise ValueError("Extended baseline negatives require InfoNCE and baseline_use_in_batch_negatives=true")
         if self.baseline_ndcg_k <= 0:
             raise ValueError(
                 f"baseline_ndcg_k must be positive, got {self.baseline_ndcg_k}"

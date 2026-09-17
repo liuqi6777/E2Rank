@@ -1,4 +1,4 @@
-# New-protocol queue: nine methods x three seeds, plus the original E0 reference.
+# Matched queue: nine methods x three seeds, plus E0; Strong CL runs separately.
 version: 1
 plan: paper/EXPERIMENT_PLAN.md
 seed: 42
@@ -34,7 +34,46 @@ execution_stages:
   - name: All nine methods seed 2026
     runs: [G1-R2-CL-Seed2026, G1-R2-LL-Binary-Seed2026, G1-R2-LL-Graded-Seed2026, G1-R2-RL-MRR64-SF-Seed2026, G1-R2-RL-MRR64-CP-Seed2026, G1-R2-RL-GradedNDCG64-SF-Seed2026, G1-R2-RL-GradedNDCG64-CP-Seed2026, G1-R2-RL-BinaryNDCG64-SF-Seed2026, G1-R2-RL-BinaryNDCG64-CP-Seed2026]
 
+  - name: Additional Strong CL across three seeds
+    runs: [G1-R2-CL-Strong, G1-R2-CL-Strong-Seed3407, G1-R2-CL-Strong-Seed2026]
+
 runs:
+  G1-R2-CL-Strong:
+    group: G1
+    scope: joint
+    objective: infonce
+    seed: 42
+    priority: optional
+    protocol: {labels: all_known_positives_binary}
+    overrides:
+      relevance_scheme: binary
+      baseline_in_batch_include_negatives: true
+      baseline_cross_device_negatives: true
+      baseline_detach_in_batch_documents: false
+  G1-R2-CL-Strong-Seed3407:
+    group: G1
+    scope: joint
+    objective: infonce
+    seed: 3407
+    priority: optional
+    protocol: {labels: all_known_positives_binary}
+    overrides:
+      relevance_scheme: binary
+      baseline_in_batch_include_negatives: true
+      baseline_cross_device_negatives: true
+      baseline_detach_in_batch_documents: false
+  G1-R2-CL-Strong-Seed2026:
+    group: G1
+    scope: joint
+    objective: infonce
+    seed: 2026
+    priority: optional
+    protocol: {labels: all_known_positives_binary}
+    overrides:
+      relevance_scheme: binary
+      baseline_in_batch_include_negatives: true
+      baseline_cross_device_negatives: true
+      baseline_detach_in_batch_documents: false
   G1-R2-E0:
     group: G1
     kind: evaluation

@@ -715,6 +715,7 @@ class EmbeddingDataCollator:
         document_key_to_ordinal: dict[str, int] | None = None,
         document_id_to_ordinal_by_source: dict[str, dict[str, int]] | None = None,
         source_to_index_route_id: dict[str, int] | None = None,
+        include_cross_batch_metadata: bool = False,
         **_: Any,
     ):
         if relevance_scheme not in {"binary", "graded"}:
@@ -728,6 +729,7 @@ class EmbeddingDataCollator:
         self.document_key_to_ordinal = document_key_to_ordinal
         self.document_id_to_ordinal_by_source = document_id_to_ordinal_by_source
         self.source_to_index_route_id = source_to_index_route_id
+        self.include_cross_batch_metadata = include_cross_batch_metadata
         if (document_id_to_ordinal_by_source is None) != (source_to_index_route_id is None):
             raise ValueError(
                 "Routed frozen collation requires both document ID mappings and source routes"
@@ -853,6 +855,16 @@ class EmbeddingDataCollator:
             "in_batch_positive_mask": cross_masks[0][..., 0],
             "in_batch_candidate_mask": cross_masks[1],
         }
+        if self.include_cross_batch_metadata:
+            # Keep identity metadata available to the training process so that
+            # remote candidates receive the same false-negative filters as local ones.
+            result["cross_batch_metadata"] = [
+                dict(keys=keys, ids=ids, source=instance.get("source"),
+                     known_ids=list(known_ids), known_positive_keys=list(positive_keys))
+                for instance, keys, ids, known_ids, positive_keys in zip(
+                    instances, ordered_keys, ordered_ids, known_id_sets, known_positive_key_sets
+                )
+            ]
         if self.document_id_to_ordinal_by_source is not None:
             ordinals = []
             route_ids = []

@@ -4,6 +4,21 @@
 
 配置：[日常设置](../configs/experiments_g2_cl_r2.yaml)、[新矩阵](../configs/experiments/iclr2027/suite_g2_cl_r2.yaml)、[训练预设](../configs/experiments/iclr2027/g2_cl_r2.yaml)。使用现有 `scripts/experiment.py`，显式传入新 suite/settings；旧 `run_g2_cl.sh` / `run_g2_bge_cl.sh` 仍指向历史目录。
 
+## 新增强化版 CL（2026-09-17）
+
+新增 `G2-R2-D-CL-Strong` / `G2-R2-E-CL-Strong` / `G2-R2-W-CL-Strong`，在原配方上启用全部候选的跨卡负样本池和完整文档梯度，保留去重/已知正例过滤。其余设置、seed 42、1200 步、temperature 0.03、callback 与最终 MTEB 均沿用对应原 CL；不把这次实现强化描述为经过 dev 调优的最优 CL。
+
+W-CL-Strong 从原 `G2-R2-D-CL` 的 W0 初始化，与 W-CL/W-RL 保持同一起点；不从 D-CL-Strong 初始化。默认跑 D/E/W，W0 尚未就绪时可先选 D/E。
+
+```bash
+python scripts/run_g2_cl_strong_r2.py check
+python -u scripts/run_g2_cl_strong_r2.py train
+python -u scripts/run_g2_cl_strong_r2.py train --branches D E
+python -u scripts/run_g2_cl_strong_r2.py eval --branches E
+```
+
+该独立入口只检查实际数据文件、W0 权重和输出目录，不调用 manifest/hash/receipt 校验或旧队列恢复逻辑。配置展开到输出根目录的 `.cl_strong_configs/`；最终模型和评测按 Strong run ID 保存。`eval` 只补评现有权重。原 `run_g2_cl_r2.sh` 保持原三条 CL 的启动行为。
+
 ## 1. 矩阵与依赖
 
 | 顺序 | E2Rank run ID | 初始化 | 预算与用途 |

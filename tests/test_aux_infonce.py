@@ -1,6 +1,7 @@
 """CPU gradient checks; no model downloads, training data, or accelerator needed."""
 
 import json
+from datetime import timedelta
 from pathlib import Path
 import sys
 from types import SimpleNamespace
@@ -12,11 +13,12 @@ import torch.nn.functional as F
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from config import RLArguments
-from contrastive import auxiliary_infonce_loss, aux_infonce_contract, compute_infonce_loss
+from config import BaselineArguments, RLArguments
+from contrastive import auxiliary_infonce_loss, aux_infonce_contract, compute_infonce_loss, cross_query_scores
 from grpo import GRPO, GRPOModel
 from grpo_trainer import GRPOTrainer, restore_exploration_state
 from fixed_corpus.models import FixedCorpusGRPOModel, DynamicRetrievalGRPOModel
+from train_baseline import BaselineModel
 
 
 def test_multi_positive_loss_and_padding_gradients():
@@ -307,3 +309,112 @@ def test_trainer_updates_logs_and_saves_auxiliary_contract(tmp_path, estimator):
     assert payload["aux_infonce"]["coefficient"] == 0.3
     assert payload["estimator"]["gradient_estimator"] == estimator
     restore_exploration_state(wrapper, checkpoint)
+
+
+def negative_metadata(keys, ids=None, source='s', known_ids=(), positives=()):
+    return dict(keys=keys, ids=ids or [None] * len(keys), source=source,
+                known_ids=list(known_ids), known_positive_keys=list(positives))
+
+
+def test_strong_negative_filter_and_document_gradient_scope():
+    queries = torch.tensor([[1., 0.], [0., 1.]], requires_grad=True)
+    documents = torch.randn(2, 5, 2, requires_grad=True)
+    metadata = [
+        negative_metadata(['own', 'own-negative', None, None, None], known_ids=['relevant-id'], positives=['known-positive']),
+        negative_metadata(['other-positive', 'other-negative', 'known-positive', 'own-negative', 'id-match'],
+                          ids=[None, None, None, None, 'relevant-id']),
+    ]
+    scores, valid, weight = cross_query_scores(
+        queries, documents, metadata, include_negatives=True, cross_device=False, detach_documents=False,
+    )
+    assert weight == 1
+    assert valid[0].tolist() == [False] * 5 + [True, True, False, False, False]
+    (scores[0] * valid[0]).sum().backward()
+    assert documents.grad[1, 0].norm() > 0 and documents.grad[1, 1].norm() > 0
+    assert documents.grad[0].norm() == 0 and documents.grad[1, 2:].norm() == 0
+    documents.grad = None
+    detached, valid, _ = cross_query_scores(
+        queries, documents, metadata, include_negatives=True, cross_device=False, detach_documents=True,
+    )
+    detached.masked_select(valid).sum().backward()
+    assert documents.grad is None
+    positive_scores, positive_valid, _ = cross_query_scores(
+        queries, documents, metadata, include_negatives=False, cross_device=False, detach_documents=False,
+    )
+    assert positive_scores.shape == (2, 2)
+    assert positive_valid.tolist() == [[False, True], [True, False]]
+
+
+def _strong_batch(start, stop, width):
+    rows = [[3, 6, 7], [4, 8, 9], [5, 10, 0]][start:stop]
+    ids = torch.tensor(rows)[:, :width]
+    candidate_mask = torch.ones_like(ids, dtype=torch.bool)
+    if stop == 3 and width == 3:
+        candidate_mask[-1, -1] = False
+    def tokens(values):
+        values = torch.as_tensor(values).reshape(-1, 1)
+        return dict(input_ids=values, attention_mask=torch.ones_like(values))
+    positives = torch.zeros_like(candidate_mask)
+    positives[:, 0] = True
+    if start <= 1 < stop:
+        positives[1 - start, 1] = True  # Multi-positive query.
+    return dict(query=tokens(range(start, stop)), positive_document=tokens(ids[:, 0]),
+                negative_document=tokens(ids[:, 1:]), candidate_mask=candidate_mask,
+                positive_mask=positives, relevance_labels=positives.float(),
+                cross_batch_metadata=[negative_metadata(
+                    [f'd{x}' if valid else None for x, valid in zip(row.tolist(), mask.tolist())]
+                ) for row, mask in zip(ids, candidate_mask)])
+
+
+def _distributed_strong_worker(rank, rendezvous, uneven):
+    import torch.distributed as dist
+    from torch.nn.parallel import DistributedDataParallel
+    dist.init_process_group('gloo', init_method=f'file://{rendezvous}', rank=rank, world_size=2,
+                            timeout=timedelta(seconds=30))
+    try:
+        torch.manual_seed(702)
+        args = BaselineArguments(baseline_use_in_batch_negatives=True, baseline_temperature=.5,
+                                 baseline_in_batch_include_negatives=True, baseline_cross_device_negatives=True,
+                                 baseline_detach_in_batch_documents=False)
+        model = BaselineModel(TinyEncoder(), args)
+        parallel = DistributedDataParallel(model)
+        if uneven:
+            start, stop, width = ((0, 2, 3) if rank == 0 else (2, 3, 2))
+            total = 3
+        else:
+            start, stop, width = rank, rank + 1, 3
+            total = 2
+        loss = parallel(**_strong_batch(start, stop, width)).loss
+        loss.backward()
+        actual_gradient = model.model.table.weight.grad.clone()
+        dist.all_reduce(loss.detach())  # Compare averaged rank losses below.
+        global_loss = loss.detach() / 2
+
+        # An independent single-process global objective with complete document gradients.
+        torch.manual_seed(702)
+        reference = TinyEncoder()
+        global_batch = _strong_batch(0, total, 3)
+        queries = F.normalize(reference.table(torch.arange(total)).float(), dim=-1)
+        doc_ids = torch.tensor([[3, 6, 7], [4, 8, 9], [5, 10, 0]])[:total]
+        documents = F.normalize(reference.table(doc_ids).float(), dim=-1)
+        own_scores = torch.einsum('bd,bmd->bm', queries, documents)
+        cross_scores = queries @ documents.reshape(-1, 5).T
+        valid = global_batch['candidate_mask']
+        cross_valid = valid.reshape(1, -1).expand(total, -1).clone()
+        for i in range(total):
+            cross_valid[i, i * 3:(i + 1) * 3] = False
+        scores = torch.cat((own_scores, cross_scores), dim=-1)
+        positives = torch.cat((global_batch['positive_mask'], torch.zeros_like(cross_valid)), dim=-1)
+        expected = compute_infonce_loss(scores, positives, .5, torch.cat((valid, cross_valid), dim=-1)).mean()
+        expected.backward()
+        torch.testing.assert_close(global_loss, expected.detach(), atol=1e-6, rtol=1e-6)
+        torch.testing.assert_close(actual_gradient, reference.table.weight.grad, atol=1e-6, rtol=1e-5)
+        assert actual_gradient[6:11].norm() > 0
+    finally:
+        dist.destroy_process_group()
+
+
+@pytest.mark.parametrize('uneven', [False, True])
+def test_cross_device_strong_cl_matches_global_loss_and_encoder_gradients(tmp_path, uneven):
+    torch.multiprocessing.spawn(_distributed_strong_worker,
+                               args=(str(tmp_path / 'rendezvous'), uneven), nprocs=2, join=True)

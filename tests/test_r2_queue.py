@@ -227,6 +227,65 @@ def test_matrix_parses_real_arguments_and_pairs_rewards():
         assert cfg['relevance_scheme'] == ('graded' if 'Graded' in row['run_id'] else 'binary') or row['kind'] == 'evaluation'
 
 
+def test_strong_cl_suite_preserves_training_budget_and_shared_initializations():
+    e = night.experiments
+    for filename, settings in [('suite_r2.yaml', night.SETTINGS),
+                               ('suite_g2_cl_r2.yaml', ROOT / 'configs/experiments_g2_cl_r2.yaml')]:
+        suite_path = ROOT / 'configs/experiments/iclr2027' / filename
+        suite = e.apply_settings(e.load_suite(suite_path), settings)
+        strong_names = [name for name in e.ordered_run_ids(suite) if '-CL-Strong' in name]
+        assert len(strong_names) == 3
+        for name in strong_names:
+            strong = e.resolve_run(suite, suite_path, name, nproc=8)
+            matched = e.resolve_run(suite, suite_path, name.replace('-CL-Strong', '-CL'), nproc=8)
+            baseline = parsed(BaselineArguments, strong['config'])
+            assert baseline.baseline_in_batch_include_negatives and baseline.baseline_cross_device_negatives
+            assert not baseline.baseline_detach_in_batch_documents
+            assert strong['dependency'] == matched['dependency']
+            differences = {key for key in set(strong['config']) | set(matched['config'])
+                           if strong['config'].get(key) != matched['config'].get(key)}
+            assert differences == {'baseline_in_batch_include_negatives', 'baseline_cross_device_negatives',
+                                   'baseline_detach_in_batch_documents', 'output_dir', 'run_name'}
+            classes = (ModelArguments, DataArguments, LoraArguments, TrainingArguments, MTEBEvalArguments, BaselineArguments)
+            assert not set(strong['config']) - {f.name for cls in classes for f in fields(cls)}
+
+
+def test_simple_baseline_runner_launches_and_retries_eval_without_hash_contracts(tmp_path, monkeypatch):
+    e = night.experiments
+    data = tmp_path / 'train.ready.jsonl'
+    data.write_text('{}\n')
+    settings = tmp_path / 'settings.yaml'
+    settings.write_text(json.dumps({'output_dir': str(tmp_path / 'models'), 'G1': {'data': str(tmp_path)}}))
+    suite_path = ROOT / 'configs/experiments/iclr2027/suite_r2.yaml'
+    suite = e.apply_settings(e.load_suite(suite_path), settings)
+    name = 'G1-R2-CL-Strong'
+    row = e.resolve_run(suite, suite_path, name, nproc=8)
+    calls = []
+    def invoke(command, **kwargs):
+        calls.append(command)
+        if command[0] == 'torchrun':
+            cfg = json.loads(Path(command[-1]).read_text())
+            assert parsed(BaselineArguments, cfg).baseline_cross_device_negatives
+            out = Path(cfg['output_dir'])
+            out.mkdir(parents=True)
+            (out / 'config.json').write_text('{}')
+    def forbidden_hash(*args, **kwargs):
+        raise AssertionError('Simple launch must not require hashes or manifests')
+    monkeypatch.setattr(e.subprocess, 'run', invoke)
+    monkeypatch.setattr(e, 'digest', forbidden_hash)
+    monkeypatch.setattr(e, 'check_manifest', forbidden_hash)
+    e.run_simple_baselines(suite_path, settings, [name], 'check')
+    assert not calls
+    e.run_simple_baselines(suite_path, settings, [name], 'train')
+    expected_eval = e.post_train_commands_for(row)
+    assert calls[1:] == expected_eval
+    # Evaluation retries need neither training inputs nor their preparation manifest.
+    data.unlink()
+    calls.clear()
+    e.run_simple_baselines(suite_path, settings, [name], 'eval')
+    assert calls == expected_eval
+
+
 def test_e0_evaluation_pins_revision_and_does_not_load_checkpoint_output():
     row = night.resolve_matrix()[1][0]
     args = night.evaluation_command(row)

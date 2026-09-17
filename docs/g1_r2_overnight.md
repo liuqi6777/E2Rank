@@ -53,6 +53,22 @@ E0 评测和两次公共诊断只属于 seed 42 的队列；其他机器不等�
 单 seed 汇总显示该 seed 的分数和 CP−SF 差，不计算样本 SD。不同 seed 可以共用输出根目录，互不覆盖事件、汇总或运行状态。
 文件锁按 seed 分配，包含相同 seed 的两份队列不能同时运行；全量队列会占用三个 seed 的锁。
 
+## 强化版 CL
+
+新增 `G1-R2-CL-Strong` 与 seed 3407/2026 两条重复，使用全部跨卡候选作为负样本，跨 query 文档正常接收梯度，保留去重和已知正例过滤。沿用原初始化、数据、113 步、LR 5e-6、temperature 0.03 和最终 BRIGHT；本次未做额外超参数选择。
+
+独立入口直接展开 suite 配置并运行训练/最终评测，不调用旧队列的 hash、manifest、receipt 或恢复校验。默认跑三个 seed，可单独选 seed；原夜跑入口仍只执行原来的九种方法。
+
+```bash
+python scripts/run_g1_cl_strong_r2.py check
+python -u scripts/run_g1_cl_strong_r2.py train
+# 单个 seed，或只补最终评测
+python -u scripts/run_g1_cl_strong_r2.py train --seeds 42
+python -u scripts/run_g1_cl_strong_r2.py eval --seeds 42
+```
+
+输出仍在 `configs/experiments_r2.yaml` 的 `output_dir` 下，以 Strong run ID 区分；展开配置保存在 `.cl_strong_configs/`。只检查实际训练文件、依赖权重和输出目录，不要求准备机的绝对路径或源码 hash 一致。训练要求输出目录为空；已有最终权重时用 `eval` 补评，不自动恢复训练。
+
 三台使用共享输出根目录时，全部完成后直接运行 `python scripts/run_g1_r2.py summary`，生成 `.r2_batch/summary.md` 的三 seed 汇总。
 若使用独立磁盘，先把每个 run 的 `mteb_eval/bright/`、对应 `.r2_batch/<run ID>/` 状态/合同，以及 `queues/` 和公共诊断结果按原目录结构汇集到同一个输出根目录，再执行该命令；仅汇总分数不需要复制模型权重。
 

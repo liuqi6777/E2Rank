@@ -13,7 +13,7 @@ from transformers import HfArgumentParser, PreTrainedModel, Trainer as HFTrainer
 from transformers.file_utils import ModelOutput
 
 from score_precision import fp32_scores
-from contrastive import compute_in_batch_positive_scores, compute_infonce_loss
+from contrastive import compute_in_batch_positive_scores, compute_infonce_loss, cross_query_scores
 from config import (
     BaselineArguments,
     DataArguments,
@@ -234,6 +234,7 @@ class BaselineModel(nn.Module):
         candidate_mask: Tensor = None,
         in_batch_positive_mask: Tensor = None,
         in_batch_candidate_mask: Tensor = None,
+        cross_batch_metadata: list[dict] = None,
     ) -> BaselineModelOutput:
         batch_size, slate_length = relevance_labels.shape
         if candidate_mask is None:
@@ -249,7 +250,15 @@ class BaselineModel(nn.Module):
         with fp32_scores(query_embeddings.device):
             scores = torch.matmul(document_embeddings.float(), query_embeddings.float().unsqueeze(-1)).squeeze(-1)
 
-        if self.baseline_args.baseline_use_in_batch_negatives:
+        loss_weight = 1.0
+        if self.baseline_args.extended_negative_pool:
+            in_batch_scores, extra_mask, loss_weight = cross_query_scores(
+                query_embeddings, document_embeddings, cross_batch_metadata,
+                include_negatives=self.baseline_args.baseline_in_batch_include_negatives,
+                cross_device=self.baseline_args.baseline_cross_device_negatives,
+                detach_documents=self.baseline_args.baseline_detach_in_batch_documents,
+            )
+        elif self.baseline_args.baseline_use_in_batch_negatives:
             in_batch_scores = compute_in_batch_positive_scores(
                 query_embeddings=query_embeddings,
                 positive_embeddings=document_embeddings[:, 0],
@@ -259,6 +268,7 @@ class BaselineModel(nn.Module):
             else:
                 off_diagonal = ~torch.eye(batch_size, device=scores.device, dtype=torch.bool)
                 extra_mask = in_batch_positive_mask[off_diagonal].reshape(batch_size, -1)
+        if self.baseline_args.baseline_use_in_batch_negatives:
             candidate_mask = torch.cat((candidate_mask, extra_mask), dim=-1)
             scores = torch.cat((scores, in_batch_scores), dim=-1)
             relevance_labels = torch.cat(
@@ -306,7 +316,7 @@ class BaselineModel(nn.Module):
             raise ValueError(
                 f"Unsupported baseline loss: {self.baseline_args.baseline_loss}"
             )
-        return BaselineModelOutput(loss=per_sample_loss.mean())
+        return BaselineModelOutput(loss=per_sample_loss.mean() * loss_weight)
 
     def gradient_checkpointing_enable(self, *args, **kwargs):
         self.model.gradient_checkpointing_enable(*args, **kwargs)
@@ -339,6 +349,8 @@ def main() -> None:
         base_slots=BASELINE_CONFIG_SLOTS,
     )
 
+    if baseline_args.extended_negative_pool and model_args.document_encoder_mode != "joint":
+        raise ValueError("Extended CL baseline requires document_encoder_mode=joint")
     guard_output_dir(training_args)
     setup_logging(
         training_args,
@@ -384,6 +396,7 @@ def main() -> None:
         model_args,
         frozen_index=frozen_index,
     )
+    data_collator.include_cross_batch_metadata = baseline_args.extended_negative_pool
 
     trainer = BaselineTrainer(
         model_args=model_args,

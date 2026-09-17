@@ -19,7 +19,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT / "src")]
 
 from config import ModelArguments
-from embedding_data import EmbeddingDataCollator
+from contrastive import cross_query_scores
+from embedding_data import EmbeddingDataCollator, document_key
 from embedding_protocol import (
     TOKENIZATION_VERSION, load_embedding_protocol, pool_embeddings,
     tokenization_metadata, tokenize_embedding_texts,
@@ -44,6 +45,22 @@ def tokenizer(kind="embedding", padding_side="left"):
     return PreTrainedTokenizerFast(tokenizer_object=backend, unk_token="[UNK]", pad_token="[PAD]",
                                   cls_token="[CLS]", sep_token="[SEP]", eos_token="[SEP]",
                                   padding_side=padding_side, model_input_names=["input_ids", "attention_mask"])
+
+
+def test_strong_cl_metadata_preserves_collator_false_negative_filters():
+    collator = EmbeddingDataCollator(tokenizer=tokenizer(), include_cross_batch_metadata=True)
+    records = [dict(query='word', document=['word', 'other'], ranking=[1, 2], pos_index=1, source='s',
+                    document_ids=['a', 'b'], original_relevant_docids=['c']),
+               dict(query='other', document=['word word', 'word other', 'other word'],
+                    ranking=[1, 2, 3], pos_index=1, source='s', document_ids=['c', 'd', 'e'],
+                    known_positive_keys=[document_key('other')])]
+    batch = collator(records)
+    assert batch['candidate_mask'].tolist() == [[True, True, False], [True, True, True]]
+    _, valid, _ = cross_query_scores(torch.randn(2, 5), torch.randn(2, 3, 5), batch['cross_batch_metadata'],
+                                    include_negatives=True, cross_device=False, detach_documents=False)
+    assert torch.equal(valid.reshape(2, 2, 3), batch['in_batch_candidate_mask'])
+    collator.include_cross_batch_metadata = False
+    assert 'cross_batch_metadata' not in collator(records)
 
 
 @pytest.mark.parametrize("kind", ["base", "embedding"])

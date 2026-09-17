@@ -90,7 +90,7 @@ def resolve_matrix(settings=SETTINGS, gpus=8, seeds=SEEDS):
         raise ValueError('The matched overnight recipe requires 8 GPUs (16 queries per device)')
     suite = experiments.apply_settings(experiments.load_suite(SUITE), settings)
     matrix = [experiments.resolve_run(suite, SUITE, name, nproc=gpus)
-              for name in experiments.ordered_run_ids(suite)]
+              for name in experiments.ordered_run_ids(suite) if '-CL-Strong' not in name]
     expected_ids = ['G1-R2-E0'] + [run_id(method, seed) for seed in SEEDS for method in METHODS]
     if [row['run_id'] for row in matrix] != expected_ids:
         raise ValueError('R2 must contain E0 followed by nine methods for each of the three seeds')

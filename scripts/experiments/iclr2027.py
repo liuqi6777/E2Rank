@@ -9,6 +9,7 @@ import argparse
 import copy
 import hashlib
 import json
+import os
 from pathlib import Path
 import shlex
 import subprocess
@@ -544,6 +545,45 @@ def command_for(resolved, runtime_path, nproc):
     if nproc < 1:
         raise ValueError('nproc must be positive')
     return ['torchrun', '--standalone', f'--nproc_per_node={nproc}', resolved['entrypoint'], str(runtime_path)]
+
+
+def run_simple_baselines(suite_path, settings_path, run_ids, action, nproc=8):
+    """Direct baseline launch/evaluation, without manifest hashes or queue receipts."""
+    suite = apply_settings(load_suite(suite_path), settings_path)
+    rows = [resolve_run(suite, suite_path, name, nproc=nproc) for name in run_ids]
+    env = os.environ.copy()
+    env.setdefault('WANDB_MODE', 'offline')
+    env.setdefault('TOKENIZERS_PARALLELISM', 'false')
+    for row in rows:
+        cfg = row['config']
+        print(f'{row["run_id"]}: model={cfg["model_name_or_path"]}, '
+              f'data={cfg["data_path"]}, output={cfg["output_dir"]}', flush=True)
+        if action != 'eval' and not path_at_root(cfg['data_path']).is_file():
+            raise ValueError(f'Missing training data: {path_at_root(cfg["data_path"])}')
+        model_dir = Path(row['dependency']) if row['dependency'] and action != 'eval' else None
+        if model_dir is not None and not (
+            (model_dir / 'config.json').is_file()
+            and (list(model_dir.glob('*.safetensors')) or list(model_dir.glob('pytorch_model*.bin')))
+        ):
+            raise ValueError(f'Missing shared W0 model: {model_dir}; finish the original D-CL first')
+    if action == 'check':
+        print(f'Checked {len(rows)} runs; no hashes, receipts, downloads or GPU jobs.', flush=True)
+        return
+    for row in rows:
+        cfg = row['config']
+        out = Path(cfg['output_dir'])
+        if action == 'train':
+            if out.exists() and any(out.iterdir()):
+                raise ValueError(f'Training output already exists: {out}; use eval to retry evaluation or choose a new output_dir')
+            config_dir = out.parent / '.cl_strong_configs'
+            config_dir.mkdir(parents=True, exist_ok=True)
+            runtime = config_dir / f'{out.name}.json'
+            runtime.write_text(json.dumps(cfg, indent=2) + '\n')
+            subprocess.run(command_for(row, runtime, nproc), cwd=ROOT, env=env, check=True)
+        elif not (out / 'config.json').is_file():
+            raise ValueError(f'Missing trained model for evaluation: {out}')
+        for command in post_train_commands_for(row):
+            subprocess.run(command, cwd=ROOT, env=env, check=True)
 
 
 def _frozen_document_revision(resolved, root=ROOT):

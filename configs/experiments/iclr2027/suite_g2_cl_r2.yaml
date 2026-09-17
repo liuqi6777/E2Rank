@@ -41,8 +41,41 @@ execution_stages:
     runs: [G2-R2-D-CL, G2-R2-E-CL, G2-R2-W-CL]
   - name: BGE-M3 CL after candidate reproducibility repair
     runs: [G2-R2-BGE-D-CL, G2-R2-BGE-E-CL, G2-R2-BGE-W-CL]
+  - name: Additional E2Rank Strong CL at matched initializations
+    runs: [G2-R2-D-CL-Strong, G2-R2-E-CL-Strong, G2-R2-W-CL-Strong]
 
 runs:
+  G2-R2-D-CL-Strong:
+    group: G2
+    objective: infonce
+    scope: joint
+    priority: optional
+    overrides:
+      baseline_in_batch_include_negatives: true
+      baseline_cross_device_negatives: true
+      baseline_detach_in_batch_documents: false
+  G2-R2-E-CL-Strong:
+    group: G2
+    objective: infonce
+    scope: joint
+    priority: optional
+    overrides:
+      baseline_in_batch_include_negatives: true
+      baseline_cross_device_negatives: true
+      baseline_detach_in_batch_documents: false
+      model_revision: 97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3
+    model_config: ../../model/qwen3_embedding_0.6b.yaml
+  G2-R2-W-CL-Strong:
+    group: G2
+    objective: infonce
+    scope: joint
+    priority: optional
+    overrides:
+      baseline_in_batch_include_negatives: true
+      baseline_cross_device_negatives: true
+      baseline_detach_in_batch_documents: false
+    # Reuse the same W0 as the paired W-CL/W-RL, not D-CL-Strong's weights.
+    init_from: G2-R2-D-CL
   G2-R2-D-CL: {group: G2, objective: infonce, scope: joint}
   G2-R2-E-CL:
     group: G2

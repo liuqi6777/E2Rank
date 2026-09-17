@@ -3,6 +3,8 @@
 import math
 
 import torch
+import torch.distributed as dist
+from torch.distributed.nn.functional import all_gather
 import torch.nn.functional as F
 from torch import Tensor
 
@@ -140,3 +142,83 @@ def aux_infonce_contract(head) -> dict | None:
         "temperature": head.aux_infonce_temperature,
         "use_in_batch_negatives": head.aux_infonce_use_in_batch_negatives,
     }
+
+
+def cross_document_mask(local_metadata, pool_metadata, width, own_offset, device):
+    """Exclude own slate, known positives/IDs and duplicate cross-query documents."""
+    mask = torch.zeros((len(local_metadata), len(pool_metadata), width), dtype=torch.bool)
+    for i, query in enumerate(local_metadata):
+        seen = {key for key in query["keys"] if key is not None}
+        seen.update(query["known_positive_keys"])
+        known_ids = set(query["known_ids"])
+        for j, other in enumerate(pool_metadata):
+            if j == own_offset + i:
+                continue
+            for k, key in enumerate(other["keys"][:width]):
+                if key is None:
+                    continue
+                candidate_id = other["ids"][k]
+                known = (candidate_id not in (None, "")
+                         and query["source"] == other["source"]
+                         and candidate_id in known_ids)
+                if key not in seen and not known:
+                    mask[i, j, k] = True
+                    seen.add(key)
+    return mask.reshape(len(local_metadata), -1).to(device)
+
+
+def cross_query_scores(
+    queries: Tensor,
+    documents: Tensor,
+    metadata: list[dict],
+    *,
+    include_negatives: bool,
+    cross_device: bool,
+    detach_documents: bool,
+) -> tuple[Tensor, Tensor, float]:
+    """Local query losses over a gathered document pool, preserving remote gradients.
+
+    Differentiable all_gather sums document gradients from all query ranks.
+    Normal DDP/ZeRO gradient averaging then gives the global mean query loss;
+    no extra world-size multiplier is needed. Both batch and slate tails are padded
+    for collectives and excluded from scoring via identity metadata.
+    """
+    batch, slate_width, _ = documents.shape
+    if metadata is None or len(metadata) != batch or any(
+        len(row["keys"]) != slate_width or len(row["ids"]) != slate_width for row in metadata
+    ):
+        raise ValueError("Extended baseline negatives require collated cross_batch_metadata")
+    width = slate_width if include_negatives else 1
+    documents = documents[:, :width]
+    if detach_documents:
+        documents = documents.detach()
+    pool_metadata = metadata
+    own_offset = 0
+    global_query_count = batch
+    if cross_device and dist.is_initialized() and dist.get_world_size() > 1:
+        rank = dist.get_rank()
+        payloads = [None] * dist.get_world_size()
+        dist.all_gather_object(payloads, dict(metadata=metadata, width=width))
+        sizes = [len(payload["metadata"]) for payload in payloads]
+        global_query_count = sum(sizes)
+        max_batch = max(sizes)
+        width = max(payload["width"] for payload in payloads)
+        padded = torch.nn.functional.pad(
+            documents, (0, 0, 0, width - documents.size(1), 0, max_batch - batch)
+        ).contiguous()
+        if detach_documents:
+            parts = [torch.empty_like(padded) for _ in payloads]
+            dist.all_gather(parts, padded)
+        else:
+            parts = all_gather(padded)
+        documents = torch.cat([part[:size] for part, size in zip(parts, sizes)], dim=0)
+        pool_metadata = [row for payload in payloads for row in payload["metadata"]]
+        own_offset = sum(sizes[:rank])
+    valid = cross_document_mask(metadata, pool_metadata, width, own_offset, queries.device)
+    with fp32_scores(queries.device):
+        scores = queries.float() @ documents.float().reshape(-1, documents.size(-1)).T
+    # Rank-local mean losses need this correction if retained tails have unequal
+    # query counts. Subsequent DDP averaging becomes a global query mean.
+    loss_weight = (dist.get_world_size() * batch / global_query_count
+                   if cross_device and dist.is_initialized() else 1.0)
+    return scores, valid, loss_weight
