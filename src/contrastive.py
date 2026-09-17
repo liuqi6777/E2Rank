@@ -189,8 +189,7 @@ def cross_document_mask(local_metadata, pool_metadata, width, own_offset, device
     return mask.reshape(len(local_metadata), -1).to(device)
 
 
-def cross_query_scores(
-    queries: Tensor,
+def cross_query_document_pool(
     documents: Tensor,
     metadata: list[dict],
     *,
@@ -198,7 +197,7 @@ def cross_query_scores(
     cross_device: bool,
     detach_documents: bool,
 ) -> tuple[Tensor, Tensor, float]:
-    """Local query losses over a gathered document pool, preserving remote gradients.
+    """Gather documents and the shared CL/RL identity mask.
 
     Differentiable all_gather sums document gradients from all query ranks.
     Normal DDP/ZeRO gradient averaging then gives the global mean query loss;
@@ -209,7 +208,7 @@ def cross_query_scores(
     if metadata is None or len(metadata) != batch or any(
         len(row["keys"]) != slate_width or len(row["ids"]) != slate_width for row in metadata
     ):
-        raise ValueError("Extended baseline negatives require collated cross_batch_metadata")
+        raise ValueError("Cross-query document pools require collated cross_batch_metadata")
     width = slate_width if include_negatives else 1
     documents = documents[:, :width]
     if detach_documents:
@@ -236,11 +235,28 @@ def cross_query_scores(
         documents = torch.cat([part[:size] for part, size in zip(parts, sizes)], dim=0)
         pool_metadata = [row for payload in payloads for row in payload["metadata"]]
         own_offset = sum(sizes[:rank])
-    valid = cross_document_mask(metadata, pool_metadata, width, own_offset, queries.device)
-    with fp32_scores(queries.device):
-        scores = queries.float() @ documents.float().reshape(-1, documents.size(-1)).T
+    valid = cross_document_mask(metadata, pool_metadata, width, own_offset, documents.device)
     # Rank-local mean losses need this correction if retained tails have unequal
     # query counts. Subsequent DDP averaging becomes a global query mean.
     loss_weight = (dist.get_world_size() * batch / global_query_count
                    if cross_device and dist.is_initialized() else 1.0)
+    return documents.reshape(-1, documents.size(-1)), valid, loss_weight
+
+
+def cross_query_scores(
+    queries: Tensor,
+    documents: Tensor,
+    metadata: list[dict],
+    *,
+    include_negatives: bool,
+    cross_device: bool,
+    detach_documents: bool,
+) -> tuple[Tensor, Tensor, float]:
+    """Score the shared document pool, preserving caller-selected gradients."""
+    pool, valid, loss_weight = cross_query_document_pool(
+        documents, metadata, include_negatives=include_negatives,
+        cross_device=cross_device, detach_documents=detach_documents,
+    )
+    with fp32_scores(queries.device):
+        scores = queries.float() @ pool.float().T
     return scores, valid, loss_weight

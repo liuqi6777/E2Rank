@@ -434,6 +434,31 @@ def _temperature_scaled_logsumexp(
     return torch.where(finite_mask.any(dim=-1), aggregated_values, default_values)
 
 
+def compute_reward_terms_over_fixed_pool(
+    reward_terms, *, scores, relevance_labels, cross_scores,
+    candidate_mask=None, rank_labels=None,
+):
+    """Evaluate [B,Gq,Gd,M] scores over ALL fixed distractors in bounded chunks.
+
+    Cross scores are [B,Gq,P] and independent of document actions. Slicing the
+    query-action axis avoids materializing [B,Gq,Gd,P]; original candidate order
+    and topk tie behavior are preserved, including ties with labeled documents.
+    """
+    if scores.ndim != 4 or cross_scores.ndim != 3 or scores.shape[:2] != cross_scores.shape[:2]:
+        raise ValueError("Fixed-pool reward requires product scores and query-action cross scores")
+    parts = {term.name: [] for term in reward_terms}
+    for draw in range(scores.size(1)):
+        extra = cross_scores[:, draw:draw+1, None, :].expand(-1, -1, scores.size(2), -1)
+        evaluated = compute_reward_terms(
+            reward_terms, scores=scores[:, draw:draw+1], relevance_labels=relevance_labels,
+            candidate_mask=candidate_mask, rank_labels=rank_labels,
+            in_batch_candidate_scores=extra,
+        )
+        for name, reward in evaluated.items():
+            parts[name].append(reward)
+    return {name: torch.cat(values, dim=1) for name, values in parts.items()}
+
+
 def compute_reward_from_scores(
     scores: torch.Tensor,
     relevance_labels: torch.Tensor,

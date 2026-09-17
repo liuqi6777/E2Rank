@@ -1,0 +1,53 @@
+# CP at alignment 0.80, three seeds, with the Strong CL candidate pool.
+version: 1
+plan: docs/g1_r2_large_pool.md
+seed: 42
+output_root: checkpoints/iclr2027-r2
+pending: {}
+profiles:
+  G1:
+    config: g1_r2.yaml
+    dataset_manifest: data/processed/reasonrank_multi/manifest.json
+    selection: fixed_budget_final_checkpoint
+    final_evaluation: [bright]
+    requirements: []
+    protocol:
+      labels: teacher_grades_3_2_1_0
+      sampling: per_source_epoch_shuffle_retained_tail_v1
+      training_budget: fixed_steps
+      max_steps: 113
+      learning_rate: 0.000005
+      eval_steps: 25
+      global_batch_size: 128
+      micro_batch_size: 16
+      positive_selection: retain_all_seeded_in_batch_representative
+      positive_selection_seed: 42
+runs:
+  G1-R2-RL-GradedNDCG64-CP-Align080-LargePool: &cp
+    group: G1
+    scope: joint
+    objective: rl
+    seed: 42
+    overrides: &cp_overrides
+      relevance_scheme: graded
+      reward_type: ndcg_in_batch
+      reward_ndcg_k: 10
+      ndcg_in_batch_include_negatives: true
+      reward_cross_device_negatives: true
+      gradient_estimator: conditional_projection
+      rollout_seed: 42
+      group_size: 64
+      target_alignment: 0.80
+      final_alignment: null
+      exploration_schedule: fixed
+      document_advantage_baseline: shared
+      reward_combine: sum
+      aux_infonce_coef: 0.0
+  G1-R2-RL-GradedNDCG64-CP-Align080-LargePool-Seed3407:
+    <<: *cp
+    seed: 3407
+    overrides: {<<: *cp_overrides, rollout_seed: 3407}
+  G1-R2-RL-GradedNDCG64-CP-Align080-LargePool-Seed2026:
+    <<: *cp
+    seed: 2026
+    overrides: {<<: *cp_overrides, rollout_seed: 2026}

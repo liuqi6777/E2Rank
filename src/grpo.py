@@ -14,7 +14,7 @@ from score_precision import fp32_scores
 from policy_math import ExplorationSchedule, group_advantages, mean_alignment
 from rollout_rng import RolloutRNG
 from conditional_projection import conditional_projection_loss
-from contrastive import auxiliary_infonce_loss, validate_aux_infonce
+from contrastive import auxiliary_infonce_loss, validate_aux_infonce, cross_query_document_pool
 
 from config import (
     SUPPORTED_ADVANTAGE_BASELINES,
@@ -24,6 +24,7 @@ from config import (
     normalize_action_components,
     validate_document_advantage_baseline,
     validate_gradient_estimator,
+    validate_reward_cross_device_negatives,
     normalize_advantage_norm_mode,
 )
 from embedding_data import build_slate_inputs
@@ -31,6 +32,7 @@ from embedding_protocol import pool_embeddings, encode_valid_candidates
 from rewards import (
     SUPPORTED_REWARD_TYPES,
     compute_reward_terms,
+    compute_reward_terms_over_fixed_pool,
     normalize_reward_combine_mode,
     normalize_reward_terms,
     reward_terms_need_in_batch_candidates,
@@ -212,6 +214,7 @@ class GRPO(nn.Module):
         reward_combine: str = "sum",
         reward_ndcg_k: int = 10,
         ndcg_in_batch_include_negatives: bool = False,
+        reward_cross_device_negatives: bool = False,
         contrastive_use_in_batch_negatives: bool = False,
         contrastive_temperature: float = 0.03,
         advantage_norm: str | bool = "none",
@@ -298,6 +301,13 @@ class GRPO(nn.Module):
             default_ndcg_in_batch_include_negatives=ndcg_in_batch_include_negatives,
             default_contrastive_use_in_batch_negatives=contrastive_use_in_batch_negatives,
         )
+        validate_reward_cross_device_negatives(
+            reward_cross_device_negatives, reward_terms=reward_terms,
+            action_components=action_components, rollout=rollout,
+            in_batch_use_sampled_documents=in_batch_use_sampled_documents,
+            document_advantage_baseline=document_advantage_baseline,
+        )
+        self.reward_cross_device_negatives = reward_cross_device_negatives
         if advantage_baseline == "ema" and reward_combine == "normalized_sum" and len(reward_terms) > 1:
             # The EMA baseline is one global scalar; it cannot track several reward scales at
             # once, so per-term standardization would baseline every term against the same
@@ -724,6 +734,7 @@ class GRPO(nn.Module):
         candidate_mask=None,
         in_batch_positive_mask=None,
         in_batch_candidate_mask=None,
+        cross_batch_metadata=None,
     ) -> tuple[torch.Tensor, dict[str, torch.Tensor], torch.Tensor, torch.Tensor]:
         active_components = tuple(component for component in components if component.is_active)
         query_components = [component for component in components if component.role == "query"]
@@ -806,6 +817,21 @@ class GRPO(nn.Module):
 
         in_batch_positive_scores = None
         in_batch_candidate_scores = None
+        cross_pool = cross_pool_mask = None
+        cross_scores = None
+        loss_weight = 1.0
+        if self.reward_cross_device_negatives:
+            means = torch.cat([component.rollout_embeddings for component in document_components], dim=1)
+            cross_pool, cross_pool_mask, loss_weight = cross_query_document_pool(
+                means, cross_batch_metadata, include_negatives=True,
+                cross_device=True, detach_documents=True,
+            )
+            with torch.no_grad(), fp32_scores(scores.device):
+                queries = F.normalize(query_component.sampled_embeddings.float(), dim=-1)
+                cross_scores = queries @ F.normalize(cross_pool.float(), dim=-1).T
+                if frozen_doc_scale is not None:
+                    cross_scores = cross_scores * frozen_doc_scale
+                cross_scores = cross_scores.masked_fill(~cross_pool_mask[:, None], -torch.inf)
         # The cross-batch tables do not depend on the reward term, so they are built once from
         # the UNION of what the terms ask for and shared by all of them.
         if batch_size > 1 and reward_terms_need_in_batch_positives(self.reward_terms):
@@ -815,7 +841,7 @@ class GRPO(nn.Module):
                 in_batch_positive_scores = in_batch_positive_scores.masked_fill(
                     ~in_batch_positive_mask.reshape(shape), float("-inf"))
 
-        if batch_size > 1 and reward_terms_need_in_batch_candidates(self.reward_terms):
+        if not self.reward_cross_device_negatives and batch_size > 1 and reward_terms_need_in_batch_candidates(self.reward_terms):
             tables, start = [], 0
             for component in document_components:
                 table = score_grid(component, cross=True)
@@ -828,9 +854,13 @@ class GRPO(nn.Module):
                 start += length
             in_batch_candidate_scores = torch.cat(tables, dim=-1)
 
-        term_rewards = {
-            name: reward.float()
-            for name, reward in compute_reward_terms(
+        if cross_scores is not None:
+            evaluated = compute_reward_terms_over_fixed_pool(
+                self.reward_terms, scores=scores, relevance_labels=relevance_labels,
+                candidate_mask=candidate_mask, rank_labels=rank_labels, cross_scores=cross_scores,
+            )
+        else:
+            evaluated = compute_reward_terms(
                 self.reward_terms,
                 scores=scores,
                 relevance_labels=relevance_labels,
@@ -838,8 +868,8 @@ class GRPO(nn.Module):
                 rank_labels=rank_labels,
                 in_batch_positive_scores=in_batch_positive_scores,
                 in_batch_candidate_scores=in_batch_candidate_scores,
-            ).items()
-        }
+            )
+        term_rewards = {name: reward.float() for name, reward in evaluated.items()}
 
         rewards = None
         for term in self.reward_terms:
@@ -977,15 +1007,19 @@ class GRPO(nn.Module):
             if in_batch_positive_scores is not None:
                 fixed.append(document.rollout_embeddings[:, 0][None].expand(batch_size, -1, -1))
                 masks.append(torch.isfinite(in_batch_positive_scores).any(dim=(1, 2)))
-            if in_batch_candidate_scores is not None:
+            if cross_pool is not None:
+                fixed.append(cross_pool[None].expand(batch_size, -1, -1))
+                masks.append(cross_pool_mask)
+            elif in_batch_candidate_scores is not None:
                 fixed.append(document.rollout_embeddings.reshape(1, -1, document.rollout_embeddings.size(-1)).expand(batch_size, -1, -1))
                 masks.append(torch.isfinite(in_batch_candidate_scores).any(dim=(1, 2)))
             projected_loss, ranks = conditional_projection_loss(
                 query_component.policy_embeddings, document.policy_embeddings,
                 query_component.sampled_embeddings, document.sampled_embeddings,
                 rewards, query_component.kappa, document.document_mask,
-                frozen_documents=torch.cat(fixed, dim=1) if fixed else None,
-                frozen_mask=torch.cat(masks, dim=1) if masks else None,
+                frozen_documents=(fixed[0] if len(fixed) == 1 else torch.cat(fixed, dim=1)) if fixed else None,
+                frozen_mask=(masks[0] if len(masks) == 1 else torch.cat(masks, dim=1)) if masks else None,
+                stream_frozen=self.reward_cross_device_negatives,
             )
             losses = [projected_loss]
             axis_stats["projection/query_span_rank_mean"] = ranks.float().mean()
@@ -995,6 +1029,11 @@ class GRPO(nn.Module):
         # is near zero. This diagnostic never thresholds an unnormalized advantage.
         degenerate_frac = torch.cat(degenerate_masks).float().mean()
         reward_stats = self.summarize_tensor(rewards, prefix="reward")
+        if cross_pool_mask is not None:
+            counts = cross_pool_mask.sum(-1).float()
+            reward_stats["reward_pool/cross_candidates_mean"] = counts.mean()
+            reward_stats["reward_pool/cross_candidates_max"] = counts.max()
+            reward_stats["reward_pool/zero_reward_frac"] = (rewards == 0).float().mean()
         with torch.no_grad(), fp32_scores(rewards.device):
             means = torch.cat([c.rollout_embeddings for c in document_components], dim=1)
             deterministic = torch.einsum("bd,bnd->bn", query_component.rollout_embeddings.float(), means.float())
@@ -1036,7 +1075,7 @@ class GRPO(nn.Module):
                 reward_stats[f"reward/{term.name}/group_std"] = (
                     term_reward.reshape(batch_size, -1).std(dim=-1, unbiased=False).mean()
                 )
-        return sum(losses), reward_stats, torch.cat(advantages, dim=1), degenerate_frac
+        return sum(losses) * loss_weight, reward_stats, torch.cat(advantages, dim=1), degenerate_frac
 
     @staticmethod
     def _kl_term(
@@ -1235,6 +1274,7 @@ class GRPO(nn.Module):
             candidate_mask=candidate_mask,
             in_batch_positive_mask=in_batch_positive_mask,
             in_batch_candidate_mask=in_batch_candidate_mask,
+            cross_batch_metadata=cross_batch_metadata,
         )
 
         policy_loss = loss
@@ -1353,6 +1393,7 @@ class GRPOModel(nn.Module):
             reward_ndcg_k=rl_args.reward_ndcg_k,
             reward_rbo_p=rl_args.reward_rbo_p,
             ndcg_in_batch_include_negatives=rl_args.ndcg_in_batch_include_negatives,
+            reward_cross_device_negatives=rl_args.reward_cross_device_negatives,
             contrastive_use_in_batch_negatives=rl_args.contrastive_use_in_batch_negatives,
             contrastive_temperature=rl_args.contrastive_temperature,
             advantage_norm=rl_args.advantage_norm,

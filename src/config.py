@@ -35,6 +35,23 @@ SUPPORTED_BASELINE_LOSSES = ("infonce", "ranknet", "lambdaloss")
 SUPPORTED_GRADIENT_ESTIMATORS = ("score_function", "conditional_projection")
 
 
+def validate_reward_cross_device_negatives(enabled, *, reward_terms, action_components,
+                                         rollout, in_batch_use_sampled_documents,
+                                         document_advantage_baseline, dynamic_retrieval=False):
+    if not enabled:
+        return
+    if (dynamic_retrieval or rollout != "product" or in_batch_use_sampled_documents
+            or document_advantage_baseline != "shared"
+            or tuple(map(tuple, action_components)) != (("query",), ("positive", "negative"))):
+        raise ValueError("Cross-device reward negatives require static joint product rollouts with fixed cross documents")
+    if not reward_terms or any(
+        term.type not in {"ndcg_in_batch", "mrr_in_batch"}
+        or not term.ndcg_in_batch_include_negatives or term.k is None or term.k <= 0
+        for term in reward_terms
+    ):
+        raise ValueError("Cross-device reward negatives require in-batch nDCG/MRR with all candidates and a positive cutoff")
+
+
 def validate_gradient_estimator(
     mode, *, action_components, sampling_law, sigma_learnable, rollout,
     advantage_baseline, advantage_norm, reward_combine,
@@ -628,6 +645,10 @@ class RLArguments:
         default=False,
         metadata={"help": "Append all candidates from other samples, not only positives, for ndcg_in_batch"},
     )
+    reward_cross_device_negatives: bool = field(
+        default=False,
+        metadata={"help": "Use the Strong CL cross-device document pool for static joint ranking RL"},
+    )
     contrastive_use_in_batch_negatives: bool = field(
         default=False,
         metadata={"help": "Use positives from other samples as extra negatives for contrastive reward"},
@@ -813,6 +834,13 @@ class RLArguments:
             default_rbo_p=self.reward_rbo_p,
             default_ndcg_in_batch_include_negatives=self.ndcg_in_batch_include_negatives,
             default_contrastive_use_in_batch_negatives=self.contrastive_use_in_batch_negatives,
+        )
+        validate_reward_cross_device_negatives(
+            self.reward_cross_device_negatives, reward_terms=self.reward_terms,
+            action_components=self.action_components, rollout=self.rollout,
+            in_batch_use_sampled_documents=self.in_batch_use_sampled_documents,
+            document_advantage_baseline=self.document_advantage_baseline,
+            dynamic_retrieval=self.dynamic_retrieval,
         )
         if (
             len(self.reward_terms) > 1

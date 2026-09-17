@@ -43,11 +43,14 @@ def restore_exploration_state(model, checkpoint_dir):
     path = os.path.join(checkpoint_dir, EXPLORATION_STATE_FILENAME)
     if not os.path.exists(path):
         if (head.exploration.target_alignment is not None or head.advantage_baseline == "leave_one_out"
-                or getattr(head, "rollout_seed", None) is not None or aux_infonce_contract(head) is not None):
+                or getattr(head, "rollout_seed", None) is not None or aux_infonce_contract(head) is not None
+                or getattr(head, "reward_cross_device_negatives", False)):
             raise ValueError("Checkpoint lacks the new policy contract; use a fresh output directory")
         return
     with open(path, encoding="utf-8") as handle:
         payload = json.load(handle)
+    if payload.get("reward_cross_device_negatives", False) != getattr(head, "reward_cross_device_negatives", False):
+        raise ValueError("Checkpoint reward candidate pool differs; start a new run")
     if payload.get("aux_infonce") != aux_infonce_contract(head):
         raise ValueError("Checkpoint auxiliary InfoNCE objective differs; start a new run")
     if payload.get("rollout_rng") != rollout_rng_contract(head):
@@ -305,6 +308,8 @@ class EmbeddingTrainerMixin:
             if getattr(head, "document_advantage_baseline", "shared") != "shared":
                 estimator["document_advantage_baseline"] = head.document_advantage_baseline
             payload = dict(exploration=exploration, estimator=estimator)
+            if getattr(head, "reward_cross_device_negatives", False):
+                payload["reward_cross_device_negatives"] = True
             if aux_infonce_contract(head) is not None:
                 payload["aux_infonce"] = aux_infonce_contract(head)
             if getattr(head, "rollout_seed", None) is not None:

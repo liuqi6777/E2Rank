@@ -6,6 +6,8 @@ E0、配对梯度诊断和 27 次训练及最终 BRIGHT；支持跳过完成项�
 
 强化版 CL 使用独立入口 `run_g1_cl_strong_r2.py` / `run_g2_cl_strong_r2.py`，支持 `check/train/eval`，直接启动训练和最终评测，不走 hash、manifest 或夜跑 receipt 校验；G1 可选 `--seeds`，G2 可选 `--branches D E W`。功能实现位于现有 `src/contrastive.py` 与 `src/train_baseline.py`。
 
+大负例池纯 RL 使用 `run_g1_rl_large_pool_r2.py`，默认 CP / alignment 0.80 / seeds 42、3407、2026，逐个训练并评测最终 BRIGHT；`check` 预检，`--seeds` 选择种子。配方与服务器命令见[说明](../docs/g1_r2_large_pool.md)。
+
 历史 G1 稳定性过夜批次：`python scripts/run_g1_stability.py check` 预检，`train` 顺序完成 21 次训练与
 BRIGHT，`summary` 汇总三 seed 的均值/标准差/最差成绩。无时间自动停止，失败行记录后继续。
 矩阵与命令见[过夜实验计划](../docs/g1_stability_overnight_plan.md)。

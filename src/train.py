@@ -393,7 +393,8 @@ def main() -> None:
         frozen_index=frozen_index,
     )
     data_collator.include_cross_batch_metadata = (
-        rl_args.aux_infonce_coef > 0 and rl_args.aux_infonce_strong_negatives
+        rl_args.reward_cross_device_negatives
+        or (rl_args.aux_infonce_coef > 0 and rl_args.aux_infonce_strong_negatives)
     )
 
     # Both halves of this check live in different config slots -- the cutoff in reward/, the

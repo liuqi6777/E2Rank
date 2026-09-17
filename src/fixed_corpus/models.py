@@ -316,6 +316,8 @@ class FixedCorpusGRPOModel(QueryEncoderMixin, nn.Module):
         super().__init__()
         from grpo import GRPO
 
+        if rl_args.reward_cross_device_negatives:
+            raise ValueError("Cross-device reward negatives currently require document_encoder_mode=joint")
         if tuple(rl_args.action_components) != (("query",),):
             raise ValueError("Frozen-document GRPO requires action_components=[[query]]")
         self.model = model
