@@ -15,6 +15,7 @@ from policy_math import ExplorationSchedule, group_advantages, mean_alignment
 from rollout_rng import RolloutRNG
 from conditional_projection import conditional_projection_loss
 from contrastive import auxiliary_infonce_loss, validate_aux_infonce, cross_query_document_pool
+from cross_query_policy import sampled_document_pool, sampled_pool_rewards, sampled_pool_loss
 
 from config import (
     SUPPORTED_ADVANTAGE_BASELINES,
@@ -25,6 +26,7 @@ from config import (
     validate_document_advantage_baseline,
     validate_gradient_estimator,
     validate_reward_cross_device_negatives,
+    validate_cross_query_document_gradients,
     normalize_advantage_norm_mode,
 )
 from embedding_data import build_slate_inputs
@@ -215,6 +217,7 @@ class GRPO(nn.Module):
         reward_ndcg_k: int = 10,
         ndcg_in_batch_include_negatives: bool = False,
         reward_cross_device_negatives: bool = False,
+        cross_query_document_gradients: bool = False,
         contrastive_use_in_batch_negatives: bool = False,
         contrastive_temperature: float = 0.03,
         advantage_norm: str | bool = "none",
@@ -308,6 +311,18 @@ class GRPO(nn.Module):
             document_advantage_baseline=document_advantage_baseline,
         )
         self.reward_cross_device_negatives = reward_cross_device_negatives
+        validate_cross_query_document_gradients(
+            cross_query_document_gradients, reward_terms=reward_terms,
+            action_components=action_components, sampling_law=sampling_law,
+            sigma_learnable=sigma_learnable, rollout=rollout,
+            advantage_baseline=advantage_baseline, advantage_norm=advantage_norm,
+            reward_combine=reward_combine, document_advantage_baseline=document_advantage_baseline,
+            document_log_prob_reduction=document_log_prob_reduction,
+            in_batch_use_sampled_documents=in_batch_use_sampled_documents,
+            reward_cross_device_negatives=reward_cross_device_negatives,
+            rollout_seed=rollout_seed,
+        )
+        self.cross_query_document_gradients = cross_query_document_gradients
         if advantage_baseline == "ema" and reward_combine == "normalized_sum" and len(reward_terms) > 1:
             # The EMA baseline is one global scalar; it cannot track several reward scales at
             # once, so per-term standardization would baseline every term against the same
@@ -743,6 +758,13 @@ class GRPO(nn.Module):
             raise ValueError("Exactly one query component is required")
         if not document_components:
             raise ValueError("At least one document component is required")
+        if self.cross_query_document_gradients:
+            return self._compute_cross_query_loss(
+                query_components[0], document_components, relevance_labels,
+                in_batch_positive_mask=in_batch_positive_mask,
+                in_batch_candidate_mask=in_batch_candidate_mask,
+                cross_batch_metadata=cross_batch_metadata,
+            )
 
         diagonal = self.rollout == "diagonal"
         num_components = 1 if diagonal else len(active_components)
@@ -1077,6 +1099,65 @@ class GRPO(nn.Module):
                 )
         return sum(losses) * loss_weight, reward_stats, torch.cat(advantages, dim=1), degenerate_frac
 
+    def _compute_cross_query_loss(self, query, documents, labels, *, in_batch_positive_mask,
+                                 in_batch_candidate_mask, cross_batch_metadata):
+        if len(documents) != 1 or not query.is_active or not documents[0].is_active:
+            raise ValueError("Cross-query gradients require active query and joint document components")
+        document = documents[0]
+        for component in (query, document):
+            if not torch.allclose(component.policy_embeddings.detach(), component.rollout_embeddings,
+                                  rtol=1e-5, atol=1e-6):
+                raise ValueError("Cross-query document gradients require on-policy mean directions")
+        if not torch.allclose(query.kappa, document.kappa):
+            raise ValueError("Cross-query document gradients require the same fixed kappa")
+        valid = document.document_mask
+        if valid is None:
+            valid = torch.ones_like(labels, dtype=torch.bool)
+        pool, actions, all_mask, representative_mask, weight = sampled_document_pool(
+            document.policy_embeddings, document.sampled_embeddings, valid,
+            cross_device=self.reward_cross_device_negatives, metadata=cross_batch_metadata,
+            positive_mask=in_batch_positive_mask, candidate_mask=in_batch_candidate_mask,
+        )
+        term_rewards, _ = sampled_pool_rewards(
+            self.reward_terms, query.sampled_embeddings, document.sampled_embeddings,
+            actions, labels, valid, all_mask, representative_mask,
+        )
+        rewards = sum(term.weight * term_rewards[term.name] for term in self.reward_terms)
+        cross_mask = torch.zeros_like(all_mask)
+        for term in self.reward_terms:
+            cross_mask |= all_mask if term.ndcg_in_batch_include_negatives else representative_mask
+        loss, ranks = sampled_pool_loss(
+            query.policy_embeddings, document.policy_embeddings, pool,
+            query.sampled_embeddings, document.sampled_embeddings, actions,
+            rewards, query.kappa, valid, cross_mask, estimator=self.gradient_estimator,
+        )
+        stats = self.summarize_tensor(rewards, prefix="reward")
+        stats["reward_pool/cross_candidates_mean"] = cross_mask.sum(-1).float().mean()
+        stats["reward_pool/cross_candidates_max"] = cross_mask.sum(-1).max().float()
+        stats["reward_pool/zero_reward_frac"] = (rewards == 0).float().mean()
+        if self.gradient_estimator == "conditional_projection":
+            stats["projection/query_span_rank_mean"] = ranks.float().mean()
+            stats["projection/query_span_rank_max"] = ranks.max().float()
+        advantages, degenerate = [], []
+        for axis, name in ((2, "query"), (1, "documents")):
+            marginal = rewards.mean(axis)
+            advantage, collapsed = self._compute_advantages(marginal)
+            advantages.append(advantage)
+            degenerate.append(collapsed)
+            for term in self.reward_terms:
+                values = term_rewards[term.name].mean(axis)
+                prefix = f"reward/{term.name}/{name}"
+                stats[f"{prefix}/group_std"] = values.std(-1, unbiased=False).mean()
+                _, term_collapsed = self._compute_advantages(values)
+                stats[f"{prefix}/degenerate_frac"] = term_collapsed.float().mean()
+        for term in self.reward_terms:
+            values = term_rewards[term.name]
+            stats[f"reward/{term.name}/n_distinct"] = self.realized_reward_levels(values)
+            if len(self.reward_terms) > 1:
+                stats.update(self.summarize_tensor(values, prefix=f"reward/{term.name}", separator="/"))
+                stats[f"reward/{term.name}/group_std"] = values.flatten(1).std(-1, unbiased=False).mean()
+        return loss * weight, stats, torch.cat(advantages, dim=1), torch.cat(degenerate).float().mean()
+
     @staticmethod
     def _kl_term(
         policy_embeddings: torch.Tensor,
@@ -1394,6 +1475,7 @@ class GRPOModel(nn.Module):
             reward_rbo_p=rl_args.reward_rbo_p,
             ndcg_in_batch_include_negatives=rl_args.ndcg_in_batch_include_negatives,
             reward_cross_device_negatives=rl_args.reward_cross_device_negatives,
+            cross_query_document_gradients=rl_args.cross_query_document_gradients,
             contrastive_use_in_batch_negatives=rl_args.contrastive_use_in_batch_negatives,
             contrastive_temperature=rl_args.contrastive_temperature,
             advantage_norm=rl_args.advantage_norm,

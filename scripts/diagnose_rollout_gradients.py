@@ -126,6 +126,13 @@ def batch_hash(batch):
             tensor = value.detach().cpu().contiguous()
             digest.update(f"{name}:{tensor.dtype}:{list(tensor.shape)}".encode())
             digest.update(tensor.reshape(-1).view(torch.uint8).numpy().tobytes())
+        elif isinstance(value, (list, tuple)):
+            digest.update(f"{name}:{type(value).__name__}:{len(value)}".encode())
+            for index, item in enumerate(value):
+                visit(item, f"{name}/{index}")
+        elif value is None or isinstance(value, (str, int, float, bool)):
+            digest.update(f"{name}:metadata:".encode())
+            digest.update(json.dumps(value, ensure_ascii=False, allow_nan=False).encode())
         else:
             raise TypeError(f"Unexpected batch value at {name}: {type(value)}")
     visit(batch, "batch")
@@ -135,7 +142,9 @@ def batch_hash(batch):
 def to_device(value, device):
     if isinstance(value, Mapping):
         return {key: to_device(item, device) for key, item in value.items()}
-    return value.to(device)
+    if isinstance(value, (list, tuple)):
+        return type(value)(to_device(item, device) for item in value)
+    return value.to(device) if torch.is_tensor(value) else value
 
 
 def probe_gradients(model, batches, seeds, device, dtype):
@@ -178,9 +187,13 @@ def synchronize(device):
 def timed_gradient_draw(model, batches, seed, device, dtype):
     """Capture actual actions/reward tables; hash them outside the measured pass."""
     import grpo as grpo_module
+    import cross_query_policy
+    import rewards as rewards_module
 
     actions, reward_tables = {}, {}
-    draw_actions, reward_function = model.grpo._draw_actions, grpo_module.compute_reward_terms
+    reward_module = (cross_query_policy if model.grpo.cross_query_document_gradients
+                     else rewards_module if model.grpo.reward_cross_device_negatives else grpo_module)
+    draw_actions, reward_function = model.grpo._draw_actions, reward_module.compute_reward_terms
 
     def capture_actions(*args, **kwargs):
         result = draw_actions(*args, **kwargs)
@@ -200,7 +213,7 @@ def timed_gradient_draw(model, batches, seed, device, dtype):
         torch.cuda.reset_peak_memory_stats(device)
     started = time.perf_counter()
     outputs = []
-    with patch.object(model.grpo, "_draw_actions", capture_actions), patch.object(grpo_module, "compute_reward_terms", capture_rewards):
+    with patch.object(model.grpo, "_draw_actions", capture_actions), patch.object(reward_module, "compute_reward_terms", capture_rewards):
         for batch in inputs:
             context = torch.autocast(device_type=device.type, dtype=dtype) if dtype != torch.float32 else nullcontext()
             with context:
@@ -418,6 +431,7 @@ def main():
     train_args = SimpleNamespace(data_seed=config["data_seed"], per_device_train_batch_size=config["per_device_train_batch_size"],
                                  per_device_eval_batch_size=config.get("per_device_eval_batch_size", 16))
     dataset, _, collator = build_embedding_data(data_args, train_args, tokenizer, model_args)
+    collator.include_cross_batch_metadata = rl_args.reward_cross_device_negatives or rl_args.cross_query_document_gradients
     micro = train_args.per_device_train_batch_size
     order = list(SingleSourceBatchSampler(dataset, micro, seed=config["seed"]))
     if (max(args.batch_indices)+args.microbatches_per_probe)*micro > len(order):

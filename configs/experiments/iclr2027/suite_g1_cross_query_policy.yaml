@@ -1,0 +1,79 @@
+# Standalone opt-in experiments; existing CP queues keep their fixed foreign documents.
+version: 1
+plan: docs/cross_query_document_policy.md
+seed: 42
+output_root: checkpoints/iclr2027-r2
+pending: {}
+profiles:
+  G1:
+    config: g1_r2.yaml
+    dataset_manifest: data/processed/reasonrank_multi/manifest.json
+    selection: fixed_budget_final_checkpoint
+    final_evaluation: [bright]
+    requirements: []
+    protocol:
+      labels: teacher_grades_3_2_1_0
+      sampling: per_source_epoch_shuffle_retained_tail_v1
+      training_budget: fixed_steps
+      max_steps: 113
+      learning_rate: 0.000005
+      eval_steps: 25
+      global_batch_size: 128
+      micro_batch_size: 16
+      positive_selection: retain_all_seeded_in_batch_representative
+      positive_selection_seed: 42
+runs:
+  G1-R2-RL-GradedNDCG64-CP-CrossQuery: &local_run
+    group: G1
+    scope: joint
+    objective: rl
+    seed: 42
+    overrides: &policy
+      relevance_scheme: graded
+      reward_type: ndcg_in_batch
+      reward_ndcg_k: 10
+      ndcg_in_batch_include_negatives: false
+      reward_cross_device_negatives: false
+      cross_query_document_gradients: true
+      gradient_estimator: conditional_projection
+      rollout_seed: 42
+      group_size: 64
+      target_alignment: 0.90
+      final_alignment: null
+      exploration_schedule: fixed
+      sampling_law: vmf
+      sigma_learnable: false
+      rollout: product
+      advantage_baseline: leave_one_out
+      advantage_norm: none
+      document_advantage_baseline: shared
+      document_log_prob_reduction: sum
+      in_batch_use_sampled_documents: false
+      reward_combine: sum
+      kl_coef: 0.0
+      aux_infonce_coef: 0.0
+  G1-R2-RL-GradedNDCG64-CP-CrossQuery-Seed3407:
+    <<: *local_run
+    seed: 3407
+    overrides: {<<: *policy, rollout_seed: 3407}
+  G1-R2-RL-GradedNDCG64-CP-CrossQuery-Seed2026:
+    <<: *local_run
+    seed: 2026
+    overrides: {<<: *policy, rollout_seed: 2026}
+  G1-R2-RL-GradedNDCG64-CP-CrossQuery-LargePool: &large_run
+    group: G1
+    scope: joint
+    objective: rl
+    seed: 42
+    overrides: &large_policy
+      <<: *policy
+      ndcg_in_batch_include_negatives: true
+      reward_cross_device_negatives: true
+  G1-R2-RL-GradedNDCG64-CP-CrossQuery-LargePool-Seed3407:
+    <<: *large_run
+    seed: 3407
+    overrides: {<<: *large_policy, rollout_seed: 3407}
+  G1-R2-RL-GradedNDCG64-CP-CrossQuery-LargePool-Seed2026:
+    <<: *large_run
+    seed: 2026
+    overrides: {<<: *large_policy, rollout_seed: 2026}

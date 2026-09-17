@@ -35,6 +35,30 @@ SUPPORTED_BASELINE_LOSSES = ("infonce", "ranknet", "lambdaloss")
 SUPPORTED_GRADIENT_ESTIMATORS = ("score_function", "conditional_projection")
 
 
+def validate_cross_query_document_gradients(enabled, *, reward_terms, action_components,
+                                           sampling_law, sigma_learnable, rollout,
+                                           advantage_baseline, advantage_norm, reward_combine,
+                                           document_advantage_baseline, document_log_prob_reduction,
+                                           in_batch_use_sampled_documents, dynamic_retrieval=False,
+                                           reward_cross_device_negatives=False, rollout_seed=None):
+    if not enabled:
+        return
+    if (dynamic_retrieval or len(action_components) != 2 or ("query",) not in action_components
+            or not any(set(group) == {"positive", "negative"} for group in action_components)
+            or sampling_law != "vmf" or sigma_learnable or rollout != "product"
+            or advantage_baseline != "leave_one_out" or advantage_norm != "none"
+            or reward_combine != "sum" or document_advantage_baseline != "shared"
+            or document_log_prob_reduction != "sum" or in_batch_use_sampled_documents):
+        raise ValueError("Cross-query document gradients require static joint vMF product rollouts, "
+                         "fixed kappa, LOO without normalization, shared document baseline, sum reductions, "
+                         "and the legacy in_batch_use_sampled_documents flag disabled")
+    if not reward_terms or any(term.type not in {"ndcg_in_batch", "mrr_in_batch"}
+                               or term.k is None or term.k <= 0 for term in reward_terms):
+        raise ValueError("Cross-query document gradients require in-batch nDCG/MRR with a positive cutoff")
+    if reward_cross_device_negatives and rollout_seed is None:
+        raise ValueError("Cross-device document policies require an explicit rollout_seed for independent rank-local actions")
+
+
 def validate_reward_cross_device_negatives(enabled, *, reward_terms, action_components,
                                          rollout, in_batch_use_sampled_documents,
                                          document_advantage_baseline, dynamic_retrieval=False):
@@ -649,6 +673,10 @@ class RLArguments:
         default=False,
         metadata={"help": "Use the Strong CL cross-device document pool for static joint ranking RL"},
     )
+    cross_query_document_gradients: bool = field(
+        default=False,
+        metadata={"help": "Share sampled document actions across queries and accumulate all reward gradients; supports local and cross-device pools"},
+    )
     contrastive_use_in_batch_negatives: bool = field(
         default=False,
         metadata={"help": "Use positives from other samples as extra negatives for contrastive reward"},
@@ -738,6 +766,7 @@ class RLArguments:
                 "which leaks other samples' perturbations into each sample's advantages via the shared "
                 "group index. Default False scores them with detached mean embeddings so per-sample "
                 "credit assignment stays exact."
+                " Use cross_query_document_gradients for shared actions with complete document gradients."
             )
         },
     )
@@ -841,6 +870,18 @@ class RLArguments:
             in_batch_use_sampled_documents=self.in_batch_use_sampled_documents,
             document_advantage_baseline=self.document_advantage_baseline,
             dynamic_retrieval=self.dynamic_retrieval,
+        )
+        validate_cross_query_document_gradients(
+            self.cross_query_document_gradients, reward_terms=self.reward_terms,
+            action_components=self.action_components, sampling_law=self.sampling_law,
+            sigma_learnable=self.sigma_learnable, rollout=self.rollout,
+            advantage_baseline=self.advantage_baseline, advantage_norm=self.advantage_norm,
+            reward_combine=self.reward_combine, document_advantage_baseline=self.document_advantage_baseline,
+            document_log_prob_reduction=self.document_log_prob_reduction,
+            in_batch_use_sampled_documents=self.in_batch_use_sampled_documents,
+            dynamic_retrieval=self.dynamic_retrieval,
+            reward_cross_device_negatives=self.reward_cross_device_negatives,
+            rollout_seed=self.rollout_seed,
         )
         if (
             len(self.reward_terms) > 1

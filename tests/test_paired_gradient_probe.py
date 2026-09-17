@@ -15,7 +15,8 @@ from grpo import GRPOModel
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
-def test_paired_qwen3_full_gradients_and_online_moments(dtype, monkeypatch):
+@pytest.mark.parametrize("shared_documents,cross_device", [(False, False), (False, True), (True, False), (True, True)])
+def test_paired_qwen3_full_gradients_and_online_moments(dtype, shared_documents, cross_device, monkeypatch):
     previous_threads = torch.get_num_threads()
     torch.set_num_threads(2)
     try:
@@ -27,13 +28,20 @@ def test_paired_qwen3_full_gradients_and_online_moments(dtype, monkeypatch):
         ))
         backbone.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
         model = GRPOModel(backbone, RLArguments(action_components="query;positive,negative",
-                          group_size=6, kappa=18, reward_type="mrr_in_batch", rollout_seed=19))
+                          group_size=6, kappa=18, reward_type="mrr_in_batch", rollout_seed=19,
+                          cross_query_document_gradients=shared_documents,
+                          reward_cross_device_negatives=cross_device,
+                          ndcg_in_batch_include_negatives=cross_device))
         model.train()
         def tokens(rows):
             ids = torch.randint(1, 32, (rows, 5))
             return dict(input_ids=ids, attention_mask=torch.ones_like(ids))
         batches = [dict(query=tokens(2), positive_document=tokens(2), negative_document=tokens(4),
                         relevance_labels=torch.tensor([[1., 0., 0.], [1., 0., 0.]])) for _ in range(2)]
+        if cross_device:
+            for batch in batches:
+                batch['cross_batch_metadata'] = [dict(keys=[f'{b}-{m}' for m in range(3)], ids=[None]*3,
+                    source='s', known_ids=[], known_positive_keys=[]) for b in range(2)]
         initial = {name: parameter.detach().clone() for name, parameter in model.named_parameters()}
         collected = {"score_function": [], "conditional_projection": []}
         original = probe.timed_gradient_draw

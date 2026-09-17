@@ -8,6 +8,8 @@ E0、配对梯度诊断和 27 次训练及最终 BRIGHT；支持跳过完成项�
 
 大负例池纯 RL 使用 `run_g1_rl_large_pool_r2.py`，默认 CP / alignment 0.90 / seeds 42、3407、2026，逐个训练并评测最终 BRIGHT；`check` 预检，`--seeds` 选择种子。配方与服务器命令见[说明](../docs/g1_r2_large_pool.md)。
 
+跨 query 文档联合策略使用 `run_g1_cross_query_policy_r2.py`，默认 CP/G64/alignment 0.90、seeds 42/3407/2026，先普通池再跨卡大池，共六次训练；支持 `check/train/eval`、`--pool local/large/both` 和 `--seeds`，每条训练后自动评测。见[运行说明](../docs/cross_query_document_policy.md)。
+
 历史 G1 稳定性过夜批次：`python scripts/run_g1_stability.py check` 预检，`train` 顺序完成 21 次训练与
 BRIGHT，`summary` 汇总三 seed 的均值/标准差/最差成绩。无时间自动停止，失败行记录后继续。
 矩阵与命令见[过夜实验计划](../docs/g1_stability_overnight_plan.md)。

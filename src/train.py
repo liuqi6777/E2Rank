@@ -394,6 +394,7 @@ def main() -> None:
     )
     data_collator.include_cross_batch_metadata = (
         rl_args.reward_cross_device_negatives
+        or rl_args.cross_query_document_gradients
         or (rl_args.aux_infonce_coef > 0 and rl_args.aux_infonce_strong_negatives)
     )
 
