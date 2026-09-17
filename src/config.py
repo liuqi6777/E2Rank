@@ -7,6 +7,7 @@ from transformers import TrainingArguments as HFTrainingArguments
 
 from embedding_protocol import validate_embedding_protocol
 from contrastive import validate_aux_infonce
+from shortlists import validate_shortlist_sampling
 from rewards import (
     SUPPORTED_REWARD_TYPES,
     normalize_reward_combine_mode,
@@ -33,6 +34,18 @@ SUPPORTED_ROLLOUTS = ("product", "diagonal")
 SUPPORTED_BASELINE_LOSSES = ("infonce", "ranknet", "lambdaloss")
 
 SUPPORTED_GRADIENT_ESTIMATORS = ("score_function", "conditional_projection")
+
+
+def validate_reward_shortlists(count, size, hard_count, hard_pool_size, *,
+                              reward_cross_device_negatives, cross_query_document_gradients,
+                              rollout_seed, **policy):
+    validate_shortlist_sampling(count, size, hard_count, hard_pool_size)
+    if not count:
+        return
+    if not reward_cross_device_negatives or cross_query_document_gradients or rollout_seed is None:
+        raise ValueError("Reward shortlists require a fixed cross-device pool and an explicit rollout_seed")
+    # Both SF and CP must estimate the same fixed-kappa, unnormalized LOO target.
+    validate_gradient_estimator("conditional_projection", **policy)
 
 
 def validate_cross_query_document_gradients(enabled, *, reward_terms, action_components,
@@ -673,6 +686,18 @@ class RLArguments:
         default=False,
         metadata={"help": "Use the Strong CL cross-device document pool for static joint ranking RL"},
     )
+    reward_shortlist_count: int = field(
+        default=0, metadata={"help": "Number of separately rewarded/projected cross-pool shortlists; 0 disables"},
+    )
+    reward_shortlist_size: int = field(
+        default=15, metadata={"help": "Cross-query negatives per shortlist; own candidates are always retained"},
+    )
+    reward_shortlist_hard_count: int = field(
+        default=8, metadata={"help": "Negatives per shortlist drawn from the highest-scoring stratum; 0 is uniform"},
+    )
+    reward_shortlist_hard_pool_size: int = field(
+        default=64, metadata={"help": "Size of the high-score stratum, ranked using detached means"},
+    )
     cross_query_document_gradients: bool = field(
         default=False,
         metadata={"help": "Share sampled document actions across queries and accumulate all reward gradients; supports local and cross-device pools"},
@@ -882,6 +907,18 @@ class RLArguments:
             dynamic_retrieval=self.dynamic_retrieval,
             reward_cross_device_negatives=self.reward_cross_device_negatives,
             rollout_seed=self.rollout_seed,
+        )
+        validate_reward_shortlists(
+            self.reward_shortlist_count, self.reward_shortlist_size,
+            self.reward_shortlist_hard_count, self.reward_shortlist_hard_pool_size,
+            reward_cross_device_negatives=self.reward_cross_device_negatives,
+            cross_query_document_gradients=self.cross_query_document_gradients,
+            rollout_seed=self.rollout_seed,
+            **{key: getattr(self, key) for key in (
+                "action_components", "sampling_law", "sigma_learnable", "rollout",
+                "advantage_baseline", "advantage_norm", "reward_combine",
+                "in_batch_use_sampled_documents", "document_advantage_baseline",
+                "document_log_prob_reduction", "dynamic_retrieval")},
         )
         if (
             len(self.reward_terms) > 1

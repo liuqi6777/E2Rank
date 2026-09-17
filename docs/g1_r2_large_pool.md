@@ -2,6 +2,8 @@
 
 本文描述固定跨 query 文档的原大池模式。新增的可采样、可接收所有 query reward 梯度的模式
 见[跨 query 联合策略](cross_query_document_policy.md)，同时支持普通池和大池，以独立开关启用。
+保留自有候选、从当前跨卡池抽取多个小榜单并分别计算 reward/CP 的新模式见
+[多 shortlist listwise RL](multi_shortlist_rl.md)，使用独立 suite，不改变本文的全池配方。
 
 本轮只改变 G1-R2 alignment 0.90、CP、graded nDCG@10 配方的候选池：每条 query 可以使用八张卡当前
 microbatch 的全部候选文档作为跨 query 负例。复用 Strong CL 的候选收集、去重和

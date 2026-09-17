@@ -17,6 +17,7 @@ from transformers import Trainer as HFTrainer
 
 from embedding_data import EmbeddingDataset, SingleSourceBatchSampler
 from contrastive import aux_infonce_contract
+from shortlists import shortlist_contract
 from embedding_protocol import save_embedding_protocol
 
 
@@ -45,6 +46,7 @@ def restore_exploration_state(model, checkpoint_dir):
         if (head.exploration.target_alignment is not None or head.advantage_baseline == "leave_one_out"
                 or getattr(head, "rollout_seed", None) is not None or aux_infonce_contract(head) is not None
                 or getattr(head, "reward_cross_device_negatives", False)
+                or shortlist_contract(head) is not None
                 or getattr(head, "cross_query_document_gradients", False)):
             raise ValueError("Checkpoint lacks the new policy contract; use a fresh output directory")
         return
@@ -56,6 +58,8 @@ def restore_exploration_state(model, checkpoint_dir):
         raise ValueError("Checkpoint cross-query document policy differs; start a new run")
     if payload.get("aux_infonce") != aux_infonce_contract(head):
         raise ValueError("Checkpoint auxiliary InfoNCE objective differs; start a new run")
+    if payload.get("reward_shortlists") != shortlist_contract(head):
+        raise ValueError("Checkpoint reward shortlist sampling differs; start a new run")
     if payload.get("rollout_rng") != rollout_rng_contract(head):
         raise ValueError("Checkpoint rollout RNG seed/version/world size differs; start a new run")
     # Old checkpoints used the shared component advantage implicitly. Do not let
@@ -315,6 +319,8 @@ class EmbeddingTrainerMixin:
                 payload["reward_cross_device_negatives"] = True
             if getattr(head, "cross_query_document_gradients", False):
                 payload["cross_query_document_gradients"] = True
+            if shortlist_contract(head) is not None:
+                payload["reward_shortlists"] = shortlist_contract(head)
             if aux_infonce_contract(head) is not None:
                 payload["aux_infonce"] = aux_infonce_contract(head)
             if getattr(head, "rollout_seed", None) is not None:

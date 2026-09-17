@@ -1,0 +1,91 @@
+# Fixed-budget shortlist coverage ablation: four recipes x three seeds.
+version: 1
+plan: docs/multi_shortlist_rl.md
+seed: 42
+output_root: checkpoints/iclr2027-r2
+pending: {}
+profiles:
+  G1:
+    config: g1_r2.yaml
+    dataset_manifest: data/processed/reasonrank_multi/manifest.json
+    selection: fixed_budget_final_checkpoint
+    final_evaluation: [bright]
+    requirements: []
+    protocol:
+      labels: teacher_grades_3_2_1_0
+      sampling: per_source_epoch_shuffle_retained_tail_v1
+      training_budget: fixed_steps
+      max_steps: 113
+      learning_rate: 0.000005
+      eval_steps: 25
+      global_batch_size: 128
+      micro_batch_size: 16
+      positive_selection: retain_all_seeded_in_batch_representative
+      positive_selection_seed: 42
+runs:
+  G1-R2-RL-GradedNDCG64-CP-Align080-ShortlistMixed-T8: &run
+    group: G1
+    scope: joint
+    objective: rl
+    seed: 42
+    overrides: &mixed
+      relevance_scheme: graded
+      reward_type: ndcg_in_batch
+      reward_ndcg_k: 10
+      gradient_estimator: conditional_projection
+      rollout_seed: 42
+      group_size: 64
+      target_alignment: 0.80
+      final_alignment: null
+      exploration_schedule: fixed
+      ndcg_in_batch_include_negatives: true
+      reward_cross_device_negatives: true
+      cross_query_document_gradients: false
+      document_advantage_baseline: shared
+      reward_combine: sum
+      reward_shortlist_count: 8
+      reward_shortlist_size: 15
+      reward_shortlist_hard_count: 8
+      reward_shortlist_hard_pool_size: 128
+      aux_infonce_coef: 0.0
+  G1-R2-RL-GradedNDCG64-CP-Align080-ShortlistMixed-T16: &mixed16_run
+    <<: *run
+    overrides: &mixed16 {<<: *mixed, reward_shortlist_count: 16}
+  G1-R2-RL-GradedNDCG64-CP-Align080-ShortlistUniform-T8: &uniform8_run
+    <<: *run
+    overrides: &uniform8 {<<: *mixed, reward_shortlist_hard_count: 0}
+  G1-R2-RL-GradedNDCG64-CP-Align080-ShortlistUniform-T16: &uniform16_run
+    <<: *run
+    overrides: &uniform16 {<<: *mixed, reward_shortlist_count: 16, reward_shortlist_hard_count: 0}
+  G1-R2-RL-GradedNDCG64-CP-Align080-ShortlistMixed-T8-Seed3407:
+    <<: *run
+    seed: 3407
+    overrides: {<<: *mixed, rollout_seed: 3407}
+  G1-R2-RL-GradedNDCG64-CP-Align080-ShortlistMixed-T8-Seed2026:
+    <<: *run
+    seed: 2026
+    overrides: {<<: *mixed, rollout_seed: 2026}
+  G1-R2-RL-GradedNDCG64-CP-Align080-ShortlistMixed-T16-Seed3407:
+    <<: *mixed16_run
+    seed: 3407
+    overrides: {<<: *mixed16, rollout_seed: 3407}
+  G1-R2-RL-GradedNDCG64-CP-Align080-ShortlistMixed-T16-Seed2026:
+    <<: *mixed16_run
+    seed: 2026
+    overrides: {<<: *mixed16, rollout_seed: 2026}
+  G1-R2-RL-GradedNDCG64-CP-Align080-ShortlistUniform-T8-Seed3407:
+    <<: *uniform8_run
+    seed: 3407
+    overrides: {<<: *uniform8, rollout_seed: 3407}
+  G1-R2-RL-GradedNDCG64-CP-Align080-ShortlistUniform-T8-Seed2026:
+    <<: *uniform8_run
+    seed: 2026
+    overrides: {<<: *uniform8, rollout_seed: 2026}
+  G1-R2-RL-GradedNDCG64-CP-Align080-ShortlistUniform-T16-Seed3407:
+    <<: *uniform16_run
+    seed: 3407
+    overrides: {<<: *uniform16, rollout_seed: 3407}
+  G1-R2-RL-GradedNDCG64-CP-Align080-ShortlistUniform-T16-Seed2026:
+    <<: *uniform16_run
+    seed: 2026
+    overrides: {<<: *uniform16, rollout_seed: 2026}

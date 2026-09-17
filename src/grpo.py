@@ -13,6 +13,7 @@ from transformers.file_utils import ModelOutput
 from score_precision import fp32_scores
 from policy_math import ExplorationSchedule, group_advantages, mean_alignment
 from rollout_rng import RolloutRNG
+from shortlists import sample_shortlists, shortlist_statistics
 from conditional_projection import conditional_projection_loss
 from contrastive import auxiliary_infonce_loss, validate_aux_infonce, cross_query_document_pool
 from cross_query_policy import sampled_document_pool, sampled_pool_rewards, sampled_pool_loss
@@ -26,6 +27,7 @@ from config import (
     validate_document_advantage_baseline,
     validate_gradient_estimator,
     validate_reward_cross_device_negatives,
+    validate_reward_shortlists,
     validate_cross_query_document_gradients,
     normalize_advantage_norm_mode,
 )
@@ -240,6 +242,10 @@ class GRPO(nn.Module):
         aux_infonce_temperature: float = 0.03,
         aux_infonce_use_in_batch_negatives: bool = False,
         aux_infonce_strong_negatives: bool = False,
+        reward_shortlist_count: int = 0,
+        reward_shortlist_size: int = 15,
+        reward_shortlist_hard_count: int = 8,
+        reward_shortlist_hard_pool_size: int = 64,
     ):
         super().__init__()
         validate_aux_infonce(aux_infonce_coef, aux_infonce_temperature)
@@ -323,6 +329,22 @@ class GRPO(nn.Module):
             rollout_seed=rollout_seed,
         )
         self.cross_query_document_gradients = cross_query_document_gradients
+        validate_reward_shortlists(
+            reward_shortlist_count, reward_shortlist_size,
+            reward_shortlist_hard_count, reward_shortlist_hard_pool_size,
+            reward_cross_device_negatives=reward_cross_device_negatives,
+            cross_query_document_gradients=cross_query_document_gradients, rollout_seed=rollout_seed,
+            action_components=action_components, sampling_law=sampling_law,
+            sigma_learnable=sigma_learnable, rollout=rollout,
+            advantage_baseline=advantage_baseline, advantage_norm=advantage_norm,
+            reward_combine=reward_combine, in_batch_use_sampled_documents=in_batch_use_sampled_documents,
+            document_advantage_baseline=document_advantage_baseline,
+            document_log_prob_reduction=document_log_prob_reduction,
+        )
+        self.reward_shortlist_count = reward_shortlist_count
+        self.reward_shortlist_size = reward_shortlist_size
+        self.reward_shortlist_hard_count = reward_shortlist_hard_count
+        self.reward_shortlist_hard_pool_size = reward_shortlist_hard_pool_size
         if advantage_baseline == "ema" and reward_combine == "normalized_sum" and len(reward_terms) > 1:
             # The EMA baseline is one global scalar; it cannot track several reward scales at
             # once, so per-term standardization would baseline every term against the same
@@ -758,6 +780,11 @@ class GRPO(nn.Module):
             raise ValueError("Exactly one query component is required")
         if not document_components:
             raise ValueError("At least one document component is required")
+        if self.reward_shortlist_count:
+            return self._compute_shortlist_loss(
+                query_components[0], document_components, relevance_labels, rank_labels,
+                cross_batch_metadata,
+            )
         if self.cross_query_document_gradients:
             return self._compute_cross_query_loss(
                 query_components[0], document_components, relevance_labels,
@@ -1098,6 +1125,104 @@ class GRPO(nn.Module):
                     term_reward.reshape(batch_size, -1).std(dim=-1, unbiased=False).mean()
                 )
         return sum(losses) * loss_weight, reward_stats, torch.cat(advantages, dim=1), degenerate_frac
+
+    def _compute_shortlist_loss(self, query, documents, labels, rank_labels, metadata):
+        if len(documents) != 1 or not query.is_active or not documents[0].is_active:
+            raise ValueError("Reward shortlists require joint query/document actions")
+        document = documents[0]
+        for component in (query, document):
+            if not torch.allclose(component.policy_embeddings.detach(), component.rollout_embeddings,
+                                  rtol=1e-5, atol=1e-6):
+                raise ValueError("Reward shortlists require on-policy mean directions")
+        if not torch.allclose(query.kappa, document.kappa):
+            raise ValueError("Reward shortlists require the same fixed kappa")
+        valid = document.document_mask
+        if valid is None:
+            valid = torch.ones_like(labels, dtype=torch.bool)
+        pool, allowed, weight = cross_query_document_pool(
+            document.rollout_embeddings, metadata, include_negatives=True,
+            cross_device=True, detach_documents=True,
+        )
+        with torch.no_grad(), fp32_scores(query.rollout_embeddings.device):
+            q = query.sampled_embeddings.detach().float()
+            docs = document.sampled_embeddings.detach().float()
+            pool = F.normalize(pool.float(), dim=-1)
+            mean_scores = query.rollout_embeddings.detach().float() @ pool.T
+            with self.rollout_rng.draw(q.device, self.exploration.step, self.training, stream="shortlist"):
+                indices, selected_mask, hard_mask = sample_shortlists(
+                    mean_scores, allowed, count=self.reward_shortlist_count,
+                    size=self.reward_shortlist_size, hard_count=self.reward_shortlist_hard_count,
+                    hard_pool_size=self.reward_shortlist_hard_pool_size,
+                )
+            stats = shortlist_statistics(mean_scores, allowed, indices, selected_mask, hard_mask)
+            own_scores = torch.einsum("bid,bjmd->bijm", q, docs)
+            scale = self._frozen_doc_scale(documents)
+        # Only small scalar diagnostics and [B,T,Gq+Gd] advantages survive the
+        # loop. Actions/own scores and the gathered pool are shared by all lists.
+        losses, advantages, collapsed, list_means = [], [], [], []
+        aggregates = {}
+        for t in range(self.reward_shortlist_count):
+            with torch.no_grad(), fp32_scores(q.device):
+                fixed = pool[indices[:, t]] if pool.size(0) else pool.new_zeros(
+                    q.size(0), self.reward_shortlist_size, q.size(-1))
+                mask = selected_mask[:, t]
+                cross = torch.einsum("bid,bkd->bik", q, fixed)
+                if scale is not None:
+                    cross = cross * scale
+                cross = cross.masked_fill(~mask[:, None], -torch.inf)
+                terms = compute_reward_terms_over_fixed_pool(
+                    self.reward_terms, scores=own_scores, relevance_labels=labels,
+                    candidate_mask=valid, rank_labels=rank_labels, cross_scores=cross,
+                )
+                rewards = sum(term.weight * terms[term.name].float() for term in self.reward_terms)
+                aq, cq = self._compute_advantages(rewards.mean(2))
+                ad, cd = self._compute_advantages(rewards.mean(1))
+                advantages.extend((aq, ad))
+                collapsed.extend((cq, cd))
+                list_means.append(rewards.mean((1, 2)))
+                current = self.summarize_tensor(rewards, prefix="reward")
+                # Aggregate moments over cells/lists, not the mean of per-list stds.
+                current["reward_second_moment"] = rewards.square().mean()
+                current["reward_pool/zero_reward_frac"] = (rewards == 0).float().mean()
+                for term in self.reward_terms:
+                    values = terms[term.name]
+                    current[f"reward/{term.name}/n_distinct"] = self.realized_reward_levels(values)
+                    for axis, name in ((2, "query"), (1, "documents")):
+                        marginal = values.mean(axis)
+                        _, degenerate = self._compute_advantages(marginal)
+                        prefix = f"reward/{term.name}/{name}"
+                        current[f"{prefix}/group_std"] = marginal.std(-1, unbiased=False).mean()
+                        current[f"{prefix}/degenerate_frac"] = degenerate.float().mean()
+            if self.gradient_estimator == "conditional_projection":
+                loss, ranks = conditional_projection_loss(
+                    query.policy_embeddings, document.policy_embeddings, q, docs,
+                    rewards, query.kappa, valid, frozen_documents=fixed, frozen_mask=mask,
+                )
+                current["projection/query_span_rank_mean"] = ranks.float().mean()
+                current["projection/query_span_rank_max"] = ranks.max().float()
+            else:
+                with fp32_scores(q.device):
+                    qlog = query.kappa.detach() * (query.policy_embeddings[:, None].float() * q).sum(-1)
+                    dlog = document.kappa.detach() * (
+                        document.policy_embeddings[:, None].float() * docs
+                    ).masked_fill(~valid[:, None, :, None], 0).sum((-1, -2))
+                    loss = -(aq * qlog).mean() - (ad * dlog).mean()
+            losses.append(loss)
+            for key, value in current.items():
+                if key not in aggregates:
+                    aggregates[key] = value
+                elif key.endswith(("_min", "/min")):
+                    aggregates[key] = torch.minimum(aggregates[key], value)
+                elif key.endswith(("_max", "/max")):
+                    aggregates[key] = torch.maximum(aggregates[key], value)
+                else:
+                    aggregates[key] = aggregates[key] + value
+        stats.update({key: value if key.endswith(("_min", "/min", "_max", "/max"))
+                      else value / self.reward_shortlist_count for key, value in aggregates.items()})
+        stats["reward_std"] = (stats.pop("reward_second_moment") - stats["reward_mean"].square()).clamp_min(0).sqrt()
+        stats["shortlist/reward_std_across_lists"] = torch.stack(list_means, 1).std(1, unbiased=False).mean()
+        return (torch.stack(losses).mean() * weight, stats, torch.cat(advantages, dim=1),
+                torch.cat(collapsed).float().mean())
 
     def _compute_cross_query_loss(self, query, documents, labels, *, in_batch_positive_mask,
                                  in_batch_candidate_mask, cross_batch_metadata):
@@ -1475,6 +1600,10 @@ class GRPOModel(nn.Module):
             reward_rbo_p=rl_args.reward_rbo_p,
             ndcg_in_batch_include_negatives=rl_args.ndcg_in_batch_include_negatives,
             reward_cross_device_negatives=rl_args.reward_cross_device_negatives,
+            reward_shortlist_count=rl_args.reward_shortlist_count,
+            reward_shortlist_size=rl_args.reward_shortlist_size,
+            reward_shortlist_hard_count=rl_args.reward_shortlist_hard_count,
+            reward_shortlist_hard_pool_size=rl_args.reward_shortlist_hard_pool_size,
             cross_query_document_gradients=rl_args.cross_query_document_gradients,
             contrastive_use_in_batch_negatives=rl_args.contrastive_use_in_batch_negatives,
             contrastive_temperature=rl_args.contrastive_temperature,

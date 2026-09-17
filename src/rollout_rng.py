@@ -14,12 +14,13 @@ def validate_rollout_seed(seed):
 
 
 class RolloutRNG:
-    """Key draws by seed, global rank, optimizer step, mode and within-step call.
+    """Key draws by seed, rank, step, mode, named stream and within-step call.
 
     Trainer checkpoints are taken at optimizer boundaries. On resume the next
     global_step starts at call zero, just as in uninterrupted training; no mutable
     device RNG state needs gathering from ZeRO ranks. Train/eval counters are
-    separate. Changing world size or accumulation changes this experiment.
+    separate. Named streams have separate counters; the default action stream
+    preserves the original seed keys. Changing world size or accumulation changes this experiment.
     """
 
     version = 1
@@ -33,18 +34,19 @@ class RolloutRNG:
         self._counters = {}
 
     @contextmanager
-    def draw(self, device, step, training=True):
+    def draw(self, device, step, training=True, *, stream="rollout"):
         if self.seed is None:
             yield
             return
         device = torch.device(device)
         if device.type not in {"cpu", "cuda"}:
             raise ValueError("Independent rollout RNG supports CPU and CUDA only")
-        previous_step, call = self._counters.get(training, (None, 0))
+        counter_key = (training, stream)
+        previous_step, call = self._counters.get(counter_key, (None, 0))
         if previous_step != step:
             call = 0
         rank = torch.distributed.get_rank() if torch.distributed.is_initialized() else 0
-        key = f"rollout-v{self.version}:{self.seed}:{rank}:{step}:{int(training)}:{call}"
+        key = f"{stream}-v{self.version}:{self.seed}:{rank}:{step}:{int(training)}:{call}"
         seed = int.from_bytes(hashlib.sha256(key.encode()).digest()[:8], "little") % (2**63)
         devices = []
         if device.type == "cuda":
@@ -56,4 +58,4 @@ class RolloutRNG:
             if devices:
                 torch.cuda.default_generators[devices[0]].manual_seed(seed)
             yield
-        self._counters[training] = (step, call + 1)
+        self._counters[counter_key] = (step, call + 1)

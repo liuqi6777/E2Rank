@@ -1,0 +1,132 @@
+# 当前跨卡 batch 池上的多 shortlist listwise RL
+
+保留每条 query 的全部自有候选（所有正例和自有 negatives），再从当前跨卡 batch 的其他文档中
+抽取多组额外 negatives。每组分别计算 listwise reward、LOO 和 CP，最后平均 surrogate loss。
+纯 RL 示例使用 graded nDCG@10，不加入 pairwise 或 InfoNCE 辅助项。
+
+同卡其他 query 的候选已包含在跨卡池中；不再额外追加一次同卡代表正例。候选统一经过既有
+身份过滤、去重、已知正例排除和 route mask。跨 query 文档按既有零相关度约定评分，维持
+detached 均值及 frozen-document rescaling；直接策略梯度覆盖 query 和自有采样文档。
+不涉及历史 queue、其他 accumulation microbatch 或全库检索。
+
+## 固定预算与采样
+
+```yaml
+reward_cross_device_negatives: true
+ndcg_in_batch_include_negatives: true
+reward_shortlist_count: 8          # T；对照为 16；未配置时默认 0，原训练行为不变
+reward_shortlist_size: 15          # K；不含自有候选
+reward_shortlist_hard_count: 8     # 每组优先从高分区取的名额；0 为全池均匀采样
+reward_shortlist_hard_pool_size: 128
+rollout_seed: 42
+```
+
+每步使用 detached、未扰动的 query/document 均值点积选择候选，不使用 sampled actions 或
+本次 rollout reward。每条 query 先把有效池按分数分成前 H 个高分候选和其余候选，分别随机
+排列，按每组 8/7 的优先比例交错分组。高分区或其余区耗尽时，从另一部分尚未使用的文档
+补齐；**整个有效池用完后才循环复用**。覆盖优先于维持耗尽后的 8/7 比例。
+
+因此，有 P 个有效额外候选时，每组含 min(K,P) 个不同文档，T 组共覆盖 min(P,TK) 个不同文档。
+P<K 时每组保留全部 P 篇并 padding；P=0 时退化为自有候选排序，仍保持分布式调用一致。
+循环边界也不会导致单组重复。高分区由稳定分数排序定义，同分时按池内原顺序处理。
+
+例如 P=2000、K=15 时，T=8 接触 120 篇（6%），T=16 接触 240 篇（12%），
+不为穷尽 2000 篇自动增加 T。两个 Mixed 对照都固定 H=128，候选充足时可维持
+每组 8 个高分区文档、7 个其余文档，避免仅因 H=64 在第 8 组耗尽而改变后续组的配比。
+新 batch/模型状态下重新选择候选；不维护跨步“已见文档”集合，也不保证全训练期完整覆盖。
+这些默认数值是起始设置，尚无训练效果结论。高分不等于在当前扰动尺度下可学习，需同时
+观察每组奖励变化和 LOO 退化。若几乎总为零，应调整难度配比或候选规模。
+
+采样使用现有 rank/step/train-eval/microbatch 随机数框架中的独立 `shortlist` 流。
+不会改变模型/dropout/data RNG，也不会改变 query/document action 流。
+相同状态、其他采样参数与 seed 下，T=8 与 T=16 的前 8 组一致；增加 T 不改变采样流消费次数。
+采样规则、参数和版本写入 checkpoint contract，恢复时禁止切换；旧 checkpoint 缺少该字段
+视为未启用。与现有 RNG 一样，恢复保证针对 optimizer step 边界，world size 必须一致。
+
+## 目标与估计器
+
+对当步选定的候选集 C₁,…,C_T，优化 (1/T)∑ₜ E[R(Cₜ)]。候选选择停止梯度，CP/SF 估计的是
+固定这些集合与固定跨 query 文档后的条件策略梯度。它不是全池 nDCG 的无偏分解。
+后续组在某个分层耗尽后可能具有不同难度分布，不要求各组独立同分布。
+
+每组在全部 Gq×Gd cells 中保持不变，使用自己的 query/document LOO。
+Query projector 只包含本组全部实际评分文档；不对所有组的候选并集投影，也不先平均奖励
+再投影。组间复用同一套 actions，自有文档仍参与每组 reward 和梯度；平均而非求和避免
+仅因 T 增加就把更新尺度乘 T。
+
+每组最多 20 篇自有候选、15 篇额外文档时，query span rank≤36，与 T 无关。
+Document 投影沿用原实现。SF 也支持同样的 shortlist 目标，便于同动作配对比较。
+初版要求静态 joint query/full-document vMF、固定 κ 或预定 schedule、product rollout、
+LOO、无 advantage normalization、shared document baseline、sum reductions 和显式 rollout seed。
+不与 sampled joint cross-query policy 组合。
+
+Encoder 前向、跨卡池收集和动作采样次数均不随 T 增加，统一执行一次模型 backward。
+大池只做一次均值评分；各组只收集 K 篇文档，逐组计算 reward/CP，不保留完整
+`[B,T,Gq,Gd,pool]` 张量。计算增量主要是 T 组小榜单 reward 和投影；复用 actions 意味着
+梯度相关，不能宣称总方差降低为 1/T。
+
+## 运行与诊断
+
+独立 [suite](../configs/experiments/iclr2027/suite_g1_shortlists.yaml) 提供 Mixed/Uniform × T8/T16 ×
+seeds 42/3407/2026，共 12 条，均为 CP/G64/alignment 0.80，继承主结果选择及原 113 steps、8×16 batch、LR 5e-6、
+prepared 数据和最终 BRIGHT 协议。未加入旧队列。配置保持 aux_infonce_coef=0。
+
+| 配置 | 组数 | 每组额外负例 | 高分候选区 | 每步最多不同额外负例 | Seeds |
+|---|---:|---|---|---:|---|
+| Mixed-T8 | 8 | 8 个高分区 + 7 个其余池 | 前 128 个 | 120 | 42 / 3407 / 2026 |
+| Mixed-T16 | 16 | 8 个高分区 + 7 个其余池 | 前 128 个 | 240 | 42 / 3407 / 2026 |
+| Uniform-T8 | 8 | 全有效池均匀取 15 个 | 不使用分层 | 120 | 42 / 3407 / 2026 |
+| Uniform-T16 | 16 | 全有效池均匀取 15 个 | 不使用分层 | 240 | 42 / 3407 / 2026 |
+
+每组均保留全部自有候选。表中配比与覆盖数按有效候选充足计算，不足时按前述规则补齐或复用。
+每条运行的 training/data/rollout seed 使用同一所选值，shortlist 流随 rollout seed 改变；
+prepared 数据与固定预处理种子保持不变。seed 42 的原 run ID/输出目录保留，新增 seeds 使用
+独立的 `-Seed3407` / `-Seed2026` run ID。
+
+```bash
+# 默认检查全部 12 条；不加载模型、不启动训练
+python scripts/run_g1_shortlists_r2.py check
+
+# 默认依次训练全部 12 条，每条成功后评测最终 BRIGHT
+python scripts/run_g1_shortlists_r2.py train
+
+# 只跑 Mixed/T8 的三个 seed
+python scripts/run_g1_shortlists_r2.py train --sampling mixed --groups 8
+
+# seed 42 已完成时，只补另外两个 seed，共 8 条
+python scripts/run_g1_shortlists_r2.py train --seeds 3407 2026
+
+# 仅运行一条
+python scripts/run_g1_shortlists_r2.py train --sampling mixed --groups 8 --seeds 42
+```
+
+默认顺序为 Mixed-T8、Mixed-T16、Uniform-T8、Uniform-T16，每种配置内按 42、3407、2026
+运行。任一训练或评测失败即停止。`--seeds` 可按种子拆分到不同八卡机器；重试时使用
+sampling/groups/seeds 显式选择尚未完成的组合，脚本不会自动跳过已有输出。
+
+`--config` 指向服务器 settings。check 沿用直接启动器，只校验展开配置/输入路径；训练要求
+八张 BF16 CUDA 卡，输出非空拒绝覆盖。可用 eval 重试已训练模型的评测。其他 T/K/H 可通过
+独立 suite overrides 或正常训练 JSON 配置指定，函数实现不限制为这两个组数。
+
+日志：
+
+- `shortlist/pool_candidates_mean/max`：过滤后的来源池，不含自有候选。
+- `shortlist/unique_candidates_mean`、`coverage_mean`、`repeat_fraction`：本步独立负例覆盖。
+- `shortlist/hard_candidates_mean`、`selected_score_mean`：实际高分区名额和均值评分。
+- `reward_pool/cross_candidates_mean/max`：每组额外候选数。
+- `reward/<term>/query|documents/group_std|degenerate_frac`：分别统计各组的边际 LOO 信号。
+- `shortlist/reward_std_across_lists`：每组平均 reward 的组间差异，不作为 LOO baseline。
+- `projection/query_span_rank_mean/max`：每组投影的 rank，而非候选并集 rank。
+
+不同采样方式改变榜单难度，训练 reward 不能直接横比检索质量；最终使用相同评测协议。
+吞吐、显存和真实八卡效果需在训练机测量，本地验证不等于 BRIGHT 收益。
+
+针对性验证：
+
+```bash
+python -m pytest -q tests/test_shortlists.py tests/test_rl_large_pool.py tests/test_conditional_projection.py
+```
+
+覆盖组间最大覆盖、分层耗尽补齐、循环复用、padding/空池、独立 RNG、逐 cell 参考梯度、
+BF16 autocast、query/document 联合梯度、双进程不齐 batch/slate 及某 rank 无额外候选、
+实际 Trainer 更新与 checkpoint 恢复；也检查多组不增加 encoder、action draw 或 gather 次数。
