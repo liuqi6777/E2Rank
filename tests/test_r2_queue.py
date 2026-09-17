@@ -286,6 +286,31 @@ def test_simple_baseline_runner_launches_and_retries_eval_without_hash_contracts
     assert calls == expected_eval
 
 
+def test_r2_strong_auxiliary_config_matches_graded_cp_control(monkeypatch):
+    e = night.experiments
+    suite = e.apply_settings(e.load_suite(night.SUITE), night.SETTINGS)
+    original = e.resolve_run(suite, night.SUITE, 'G1-R2-RL-GradedNDCG64-CP', nproc=8)['config']
+    path = ROOT / 'configs/experiments/iclr2027/g1_r2_aux_infonce_strong.yaml'
+    from transformers import HfArgumentParser
+    from train import parse_arguments
+    # Validate the real config parser on CPU without probing GPU/DeepSpeed availability.
+    monkeypatch.setattr(TrainingArguments, '__post_init__', lambda self: None)
+    classes = (ModelArguments, DataArguments, TrainingArguments, LoraArguments, RLArguments, MTEBEvalArguments)
+    values = parse_arguments(HfArgumentParser(classes), argv=[str(path)])
+    for cls, strong in zip(classes, values):
+        matched = parsed(cls, original)
+        differences = {f.name for f in fields(cls) if getattr(strong, f.name) != getattr(matched, f.name)}
+        if cls is RLArguments:
+            assert differences == {'aux_infonce_strong_negatives', 'aux_infonce_coef',
+                                   'aux_infonce_use_in_batch_negatives'}
+            assert strong.aux_infonce_coef == .1 and strong.aux_infonce_strong_negatives
+            assert strong.aux_infonce_temperature == .03
+        elif cls is TrainingArguments:
+            assert differences == {'output_dir', 'run_name'}
+        else:
+            assert not differences
+
+
 def test_e0_evaluation_pins_revision_and_does_not_load_checkpoint_output():
     row = night.resolve_matrix()[1][0]
     args = night.evaluation_command(row)

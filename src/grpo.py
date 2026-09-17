@@ -233,12 +233,14 @@ class GRPO(nn.Module):
         aux_infonce_coef: float = 0.0,
         aux_infonce_temperature: float = 0.03,
         aux_infonce_use_in_batch_negatives: bool = False,
+        aux_infonce_strong_negatives: bool = False,
     ):
         super().__init__()
         validate_aux_infonce(aux_infonce_coef, aux_infonce_temperature)
         self.aux_infonce_coef = aux_infonce_coef
         self.aux_infonce_temperature = aux_infonce_temperature
         self.aux_infonce_use_in_batch_negatives = aux_infonce_use_in_batch_negatives
+        self.aux_infonce_strong_negatives = aux_infonce_strong_negatives
         self.rollout_rng = RolloutRNG(rollout_seed)
         reward_type = reward_type.lower()
         action_components = normalize_action_components(action_components)
@@ -1092,6 +1094,7 @@ class GRPO(nn.Module):
         in_batch_candidate_mask: torch.Tensor | None = None,
         positive_mask: torch.Tensor | None = None,
         index_route_ids: torch.Tensor | None = None,
+        cross_batch_metadata: list[dict] | None = None,
     ) -> tuple[torch.Tensor, dict[str, torch.Tensor], dict[str, torch.Tensor], torch.Tensor, torch.Tensor]:
         if relevance_labels is None:
             raise ValueError("relevance_labels are required for GRPO training")
@@ -1297,6 +1300,8 @@ class GRPO(nn.Module):
                 use_in_batch_negatives=self.aux_infonce_use_in_batch_negatives,
                 in_batch_positive_mask=in_batch_positive_mask,
                 index_route_ids=index_route_ids,
+                strong_negatives=self.aux_infonce_strong_negatives,
+                cross_batch_metadata=cross_batch_metadata,
             )
             weighted_auxiliary = self.aux_infonce_coef * auxiliary
             reward_stats.update({
@@ -1361,6 +1366,7 @@ class GRPOModel(nn.Module):
             aux_infonce_coef=rl_args.aux_infonce_coef,
             aux_infonce_temperature=rl_args.aux_infonce_temperature,
             aux_infonce_use_in_batch_negatives=rl_args.aux_infonce_use_in_batch_negatives,
+            aux_infonce_strong_negatives=rl_args.aux_infonce_strong_negatives,
         )
 
     def encode(self, model_inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
@@ -1382,6 +1388,7 @@ class GRPOModel(nn.Module):
         candidate_mask: torch.Tensor = None,
         in_batch_positive_mask: torch.Tensor = None,
         in_batch_candidate_mask: torch.Tensor = None,
+        cross_batch_metadata: list[dict] = None,
     ) -> GRPOModelOutput:
         if query is None:
             raise ValueError("query inputs are required for GRPO training")
@@ -1477,6 +1484,7 @@ class GRPOModel(nn.Module):
             reference_positive_document_embeddings=reference_positive_document_embeddings,
             reference_negative_document_embeddings=reference_negative_document_embeddings,
             positive_mask=positive_mask,
+            cross_batch_metadata=cross_batch_metadata,
         )
         # Namespaced keys are the per-term diagnostics; the flat ones (reward_mean/std/min/max
         # and advantages_*) are named exactly like the GRPOModelOutput fields they fill.

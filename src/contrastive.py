@@ -76,11 +76,13 @@ def auxiliary_infonce_loss(
     use_in_batch_negatives: bool = False,
     in_batch_positive_mask: Tensor | None = None,
     index_route_ids: Tensor | None = None,
+    strong_negatives: bool = False,
+    cross_batch_metadata: list[dict] | None = None,
 ) -> Tensor:
     """Direct InfoNCE on unperturbed means, with caller-controlled gradient scope.
 
-    Inactive action branches must be detached by the caller. Cross-query documents
-    are always detached; the collator's mask excludes duplicates and known positives.
+    Inactive action branches must be detached by the caller. Legacy cross-query
+    documents are detached; strong negatives preserve the caller's gradient scope.
     Binary positive identities are mandatory and never inferred from teacher grades.
     """
     if document_embeddings.dim() != 3 or query_embeddings.shape != (
@@ -106,7 +108,22 @@ def auxiliary_infonce_loss(
         positives = positive_mask
         valid = candidate_mask
         batch = queries.size(0)
-        if use_in_batch_negatives and batch > 1:
+        loss_weight = 1.0
+        if strong_negatives:
+            metadata = cross_batch_metadata
+            if index_route_ids is not None and metadata is not None:
+                if index_route_ids.shape != (batch,):
+                    raise ValueError("index_route_ids must have shape [batch]")
+                metadata = [dict(row, index_route_id=route) for row, route in
+                            zip(metadata, index_route_ids.tolist())]
+            cross_scores, cross_mask, loss_weight = cross_query_scores(
+                queries, documents, metadata, include_negatives=True,
+                cross_device=True, detach_documents=False,
+            )
+            scores = torch.cat((scores, cross_scores), dim=-1)
+            valid = torch.cat((valid, cross_mask), dim=-1)
+            positives = torch.cat((positives, torch.zeros_like(cross_mask)), dim=-1)
+        elif use_in_batch_negatives and batch > 1:
             if not (positive_mask[:, 0] & candidate_mask[:, 0]).all():
                 raise ValueError("In-batch representatives at candidate 0 must be valid positives")
             off_diagonal = ~torch.eye(batch, device=scores.device, dtype=torch.bool)
@@ -128,7 +145,7 @@ def auxiliary_infonce_loss(
             scores = torch.cat((scores, cross_scores), dim=-1)
             valid = torch.cat((valid, cross_mask), dim=-1)
             positives = torch.cat((positives, torch.zeros_like(cross_mask)), dim=-1)
-        return compute_infonce_loss(scores, positives, temperature, valid).mean()
+        return compute_infonce_loss(scores, positives, temperature, valid).mean() * loss_weight
 
 
 def aux_infonce_contract(head) -> dict | None:
@@ -136,12 +153,15 @@ def aux_infonce_contract(head) -> dict | None:
     coefficient = getattr(head, "aux_infonce_coef", 0.0)
     if coefficient == 0:
         return None
-    return {
+    contract = {
         "objective": "per_positive_infonce_v1",
         "coefficient": coefficient,
         "temperature": head.aux_infonce_temperature,
         "use_in_batch_negatives": head.aux_infonce_use_in_batch_negatives,
     }
+    if getattr(head, "aux_infonce_strong_negatives", False):
+        contract["strong_negatives"] = True
+    return contract
 
 
 def cross_document_mask(local_metadata, pool_metadata, width, own_offset, device):
@@ -152,7 +172,9 @@ def cross_document_mask(local_metadata, pool_metadata, width, own_offset, device
         seen.update(query["known_positive_keys"])
         known_ids = set(query["known_ids"])
         for j, other in enumerate(pool_metadata):
-            if j == own_offset + i:
+            if j == own_offset + i or (
+                "index_route_id" in query and query["index_route_id"] != other.get("index_route_id")
+            ):
                 continue
             for k, key in enumerate(other["keys"][:width]):
                 if key is None:

@@ -648,6 +648,10 @@ class RLArguments:
         default=False,
         metadata={"help": "Append masked, detached cross-query representatives to the auxiliary InfoNCE candidates"},
     )
+    aux_infonce_strong_negatives: bool = field(
+        default=False,
+        metadata={"help": "Use all cross-device candidates and full document gradients within the RL action scope"},
+    )
     advantage_norm: str = field(
         default="none",
         metadata={

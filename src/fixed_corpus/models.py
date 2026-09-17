@@ -356,6 +356,7 @@ class FixedCorpusGRPOModel(QueryEncoderMixin, nn.Module):
             aux_infonce_coef=rl_args.aux_infonce_coef,
             aux_infonce_temperature=rl_args.aux_infonce_temperature,
             aux_infonce_use_in_batch_negatives=rl_args.aux_infonce_use_in_batch_negatives,
+            aux_infonce_strong_negatives=rl_args.aux_infonce_strong_negatives,
         )
 
     def forward(
@@ -369,6 +370,7 @@ class FixedCorpusGRPOModel(QueryEncoderMixin, nn.Module):
         in_batch_candidate_mask: Tensor | None = None,
         positive_mask: Tensor | None = None,
         index_route_ids: Tensor | None = None,
+        cross_batch_metadata: list[dict] | None = None,
         **_: Any,
     ):
         from grpo import GRPOModelOutput
@@ -398,6 +400,7 @@ class FixedCorpusGRPOModel(QueryEncoderMixin, nn.Module):
             reference_query_embeddings=reference_queries,
             positive_mask=positive_mask,
             index_route_ids=index_route_ids,
+            cross_batch_metadata=cross_batch_metadata,
         )
         term_metrics = {key: value for key, value in reward_stats.items() if "/" in key}
         aggregate = {key: value for key, value in reward_stats.items() if "/" not in key}
@@ -451,6 +454,7 @@ class DynamicRetrievalGRPOModel(QueryOnlyRLWrapper):
         self.policy.aux_infonce_coef = rl_args.aux_infonce_coef
         self.policy.aux_infonce_temperature = rl_args.aux_infonce_temperature
         self.policy.aux_infonce_use_in_batch_negatives = rl_args.aux_infonce_use_in_batch_negatives
+        self.policy.aux_infonce_strong_negatives = rl_args.aux_infonce_strong_negatives
         self.auxiliary_index = index
 
     @staticmethod
@@ -472,6 +476,7 @@ class DynamicRetrievalGRPOModel(QueryOnlyRLWrapper):
         index_route_ids: Tensor | None = None,
         positive_mask: Tensor | None = None,
         in_batch_positive_mask: Tensor | None = None,
+        cross_batch_metadata: list[dict] | None = None,
         **_: Any,
     ):
         from grpo import GRPOModelOutput
@@ -502,6 +507,8 @@ class DynamicRetrievalGRPOModel(QueryOnlyRLWrapper):
                 use_in_batch_negatives=self.policy.aux_infonce_use_in_batch_negatives,
                 in_batch_positive_mask=in_batch_positive_mask,
                 index_route_ids=index_route_ids,
+                strong_negatives=self.policy.aux_infonce_strong_negatives,
+                cross_batch_metadata=cross_batch_metadata,
             )
             weighted_auxiliary = self.policy.aux_infonce_coef * auxiliary
             metrics.update({

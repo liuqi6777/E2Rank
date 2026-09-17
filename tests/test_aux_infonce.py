@@ -85,7 +85,8 @@ def test_auxiliary_requires_binary_positive_identities():
     (("query",), ("positive",)), (("query",), ("positive", "negative")),
     (("query",), ("positive",), ("negative",)),
 ])
-def test_zero_reward_advantage_still_gets_exact_auxiliary_gradient(groups):
+@pytest.mark.parametrize("strong", [False, True])
+def test_zero_reward_advantage_still_gets_exact_auxiliary_gradient(groups, strong):
     torch.manual_seed(5)
     query, positive, negative = (
         torch.randn(2, 5, requires_grad=True),
@@ -94,10 +95,12 @@ def test_zero_reward_advantage_still_gets_exact_auxiliary_gradient(groups):
     )
     positives = torch.tensor([[True, False, True, False], [True, False, False, False]])
     valid = torch.tensor([[True, True, True, False], [True, True, True, True]])
+    metadata = [negative_metadata(['d0', 'd1', 'd2', None]), negative_metadata(['d3', 'd4', 'd5', 'd6'])]
     coefficient, temperature = 0.4, 0.2
     head = GRPO(
         action_components=groups, group_size=3, kappa=12, reward_type="mrr",
         aux_infonce_coef=coefficient, aux_infonce_temperature=temperature,
+        aux_infonce_strong_negatives=strong,
         rollout_seed=17,
     )
     values = dict(
@@ -110,6 +113,7 @@ def test_zero_reward_advantage_still_gets_exact_auxiliary_gradient(groups):
         # All candidates are relevant to this ranking reward: MRR is identically 1.
         # Binary auxiliary identities remain separate from these reward labels.
         relevance_labels=torch.ones(2, 4), positive_mask=positives, candidate_mask=valid,
+        cross_batch_metadata=metadata,
     )
     loss, rewards, advantages, _, _ = head(**values)
     assert rewards["reward_mean"] == 1
@@ -123,6 +127,7 @@ def test_zero_reward_advantage_still_gets_exact_auxiliary_gradient(groups):
     n = F.normalize(negative, dim=-1) if "negative" in active else F.normalize(negative.detach(), dim=-1)
     expected_loss = coefficient * auxiliary_infonce_loss(
         q, torch.cat((p, n), dim=1), positives, valid, temperature=temperature,
+        strong_negatives=strong, cross_batch_metadata=metadata,
     )
     expected = torch.autograd.grad(expected_loss, (query, positive, negative), allow_unused=True)
     torch.testing.assert_close(loss, expected_loss)
@@ -168,7 +173,8 @@ class TinyIndex:
 
 
 @pytest.mark.parametrize("mode", ["joint", "frozen", "dynamic"])
-def test_wrappers_reuse_forward_preserve_reward_and_freeze_index(mode):
+@pytest.mark.parametrize("strong", [False, True])
+def test_wrappers_reuse_forward_preserve_reward_and_freeze_index(mode, strong):
     torch.manual_seed(1)
     model = TinyEncoder()
     index = TinyIndex()
@@ -176,6 +182,7 @@ def test_wrappers_reuse_forward_preserve_reward_and_freeze_index(mode):
         action_components="query;positive,negative" if mode == "joint" else "query",
         group_size=3, kappa=12, reward_type="ndcg", dynamic_retrieval=mode == "dynamic",
         aux_infonce_temperature=0.2, aux_infonce_use_in_batch_negatives=True,
+        aux_infonce_strong_negatives=strong,
     )
     args = RLArguments(**config, aux_infonce_coef=0.3)
     cls = {"joint": GRPOModel, "frozen": FixedCorpusGRPOModel, "dynamic": DynamicRetrievalGRPOModel}[mode]
@@ -185,6 +192,8 @@ def test_wrappers_reuse_forward_preserve_reward_and_freeze_index(mode):
         positive_mask=torch.tensor([[True, True, False], [True, False, False]]),
         candidate_mask=torch.ones(2, 3, dtype=torch.bool),
         in_batch_positive_mask=~torch.eye(2, dtype=torch.bool),
+        cross_batch_metadata=[negative_metadata([f'd{i}' for i in range(3)]),
+                              negative_metadata([f'd{i}' for i in range(3, 6)])],
     )
     if mode == "joint":
         batch.update(positive_document=tokens([2, 5]), negative_document=tokens([3, 4, 6, 7]))
@@ -211,12 +220,14 @@ def test_wrappers_reuse_forward_preserve_reward_and_freeze_index(mode):
 
 
 @pytest.mark.parametrize("cls", [FixedCorpusGRPOModel, DynamicRetrievalGRPOModel])
-def test_frozen_auxiliary_excludes_other_index_routes(cls):
+@pytest.mark.parametrize("strong", [False, True])
+def test_frozen_auxiliary_excludes_other_index_routes(cls, strong):
     torch.manual_seed(8)
     model, index = TinyEncoder(), TinyIndex()
     args = RLArguments(
         action_components="query", group_size=3, kappa=12, aux_infonce_coef=0.1,
         aux_infonce_temperature=0.2, aux_infonce_use_in_batch_negatives=True,
+        aux_infonce_strong_negatives=strong,
         dynamic_retrieval=cls is DynamicRetrievalGRPOModel,
     )
     wrapper = cls(model, index, args)
@@ -227,6 +238,8 @@ def test_frozen_auxiliary_excludes_other_index_routes(cls):
         relevance_labels=positive_mask.float(), positive_mask=positive_mask,
         in_batch_positive_mask=torch.ones(2, 2, dtype=torch.bool),
         index_route_ids=torch.tensor([0, 1]),
+        cross_batch_metadata=[negative_metadata([f'd{i}' for i in range(3)]),
+                              negative_metadata([f'd{i}' for i in range(3, 6)])],
     )
     # Both cross-query representatives are outside the query's searchable corpus.
     queries = F.normalize(model.table.weight[:2], dim=-1)
@@ -256,6 +269,10 @@ def test_auxiliary_resume_contract(tmp_path):
     payload["aux_infonce"] = aux_infonce_contract(head)
     path.write_text(json.dumps(payload))
     restore_exploration_state(model, tmp_path)
+    head.aux_infonce_strong_negatives = True
+    with pytest.raises(ValueError):
+        restore_exploration_state(model, tmp_path)
+    head.aux_infonce_strong_negatives = False
     head.aux_infonce_temperature = 0.1
     with pytest.raises(ValueError):
         restore_exploration_state(model, tmp_path)
@@ -366,7 +383,7 @@ def _strong_batch(start, stop, width):
                 ) for row, mask in zip(ids, candidate_mask)])
 
 
-def _distributed_strong_worker(rank, rendezvous, uneven):
+def _distributed_strong_worker(rank, rendezvous, uneven, auxiliary):
     import torch.distributed as dist
     from torch.nn.parallel import DistributedDataParallel
     dist.init_process_group('gloo', init_method=f'file://{rendezvous}', rank=rank, world_size=2,
@@ -376,7 +393,13 @@ def _distributed_strong_worker(rank, rendezvous, uneven):
         args = BaselineArguments(baseline_use_in_batch_negatives=True, baseline_temperature=.5,
                                  baseline_in_batch_include_negatives=True, baseline_cross_device_negatives=True,
                                  baseline_detach_in_batch_documents=False)
-        model = BaselineModel(TinyEncoder(), args)
+        if auxiliary:
+            rl_args = RLArguments(action_components='query;positive,negative', group_size=2,
+                                  kappa=12, reward_type='mrr', aux_infonce_coef=1.,
+                                  aux_infonce_temperature=.5, aux_infonce_strong_negatives=True)
+            model = GRPOModel(TinyEncoder(), rl_args)
+        else:
+            model = BaselineModel(TinyEncoder(), args)
         parallel = DistributedDataParallel(model)
         if uneven:
             start, stop, width = ((0, 2, 3) if rank == 0 else (2, 3, 2))
@@ -384,7 +407,12 @@ def _distributed_strong_worker(rank, rendezvous, uneven):
         else:
             start, stop, width = rank, rank + 1, 3
             total = 2
-        loss = parallel(**_strong_batch(start, stop, width)).loss
+        batch = _strong_batch(start, stop, width)
+        if auxiliary:
+            # All candidates relevant to MRR => zero RL advantage. The auxiliary
+            # binary labels stay independent, isolating the direct InfoNCE gradient.
+            batch['relevance_labels'] = torch.ones_like(batch['relevance_labels'])
+        loss = parallel(**batch).loss
         loss.backward()
         actual_gradient = model.model.table.weight.grad.clone()
         dist.all_reduce(loss.detach())  # Compare averaged rank losses below.
@@ -415,6 +443,7 @@ def _distributed_strong_worker(rank, rendezvous, uneven):
 
 
 @pytest.mark.parametrize('uneven', [False, True])
-def test_cross_device_strong_cl_matches_global_loss_and_encoder_gradients(tmp_path, uneven):
+@pytest.mark.parametrize('auxiliary', [False, True])
+def test_cross_device_strong_cl_matches_global_loss_and_encoder_gradients(tmp_path, uneven, auxiliary):
     torch.multiprocessing.spawn(_distributed_strong_worker,
-                               args=(str(tmp_path / 'rendezvous'), uneven), nprocs=2, join=True)
+                               args=(str(tmp_path / 'rendezvous'), uneven, auxiliary), nprocs=2, join=True)

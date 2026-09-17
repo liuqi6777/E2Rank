@@ -392,6 +392,9 @@ def main() -> None:
         model_args,
         frozen_index=frozen_index,
     )
+    data_collator.include_cross_batch_metadata = (
+        rl_args.aux_infonce_coef > 0 and rl_args.aux_infonce_strong_negatives
+    )
 
     # Both halves of this check live in different config slots -- the cutoff in reward/, the
     # slate in dataset/ -- so nothing else notices when a change to one invalidates the other.

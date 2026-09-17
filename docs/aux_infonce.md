@@ -10,10 +10,17 @@ reward、advantage、采样分布或 frozen-candidate reward rescaling。
 aux_infonce_coef: 0.1
 aux_infonce_temperature: 0.03
 aux_infonce_use_in_batch_negatives: true
+aux_infonce_strong_negatives: true
 ```
 
 系数必须为有限非负数，温度必须为有限正数。0.1 是初始试验值，未经过调优；它不能与
 InfoNCE reward 的系数直接比较。温度独立于 `contrastive_temperature`。
+
+`aux_infonce_strong_negatives: true` 复用强化版 CL 的负样本实现：所有卡当前 microbatch
+中的全部候选文档参与身份过滤后的跨 query 负样本池，保留 action 范围内的文档梯度。
+它优先于旧的 `aux_infonce_use_in_batch_negatives` 开关；关闭 strong 时仍可使用原来的
+同卡、代表正例、跨 query 文档 detach 版本。两个开关默认关闭，辅助系数为 0 时均不执行。
+当前 G1-R2/G2-R2 纯 RL 行仍保持辅助系数 0，不自动变为 RL+CL。
 
 ## 正例与梯度口径
 
@@ -26,8 +33,11 @@ L_{\mathrm{InfoNCE}}=\frac1B\sum_b\frac1{|P_b|}\sum_{p\in P_b}
 
 - 必须提供 collator 生成的二值 `positive_mask`。所有已知正例均参与，正例之间不互相竞争；
   不用 teacher grade 的最高值或阈值推断正例。无有效负例的 query 贡献 0。
-- padding 通过 `candidate_mask` 排除。in-batch 使用其他样本的代表正例，并沿用
+- padding 通过 `candidate_mask` 排除。旧版 in-batch 使用其他样本的代表正例，并沿用
   `in_batch_positive_mask` 排除已知正例和重复候选；跨 query 使用的文档表示停止梯度。
+- 强化版收集跨卡候选及身份元数据，按相同规则过滤重复候选与已知正例；所有文档槽位
+  均可供其他 query 使用。跨卡聚合可微，文档接收所有 query 的梯度；未启用的 action 分支
+  仍由调用方 detach，冻结索引仍只有 query 梯度。同一索引 route 的限制同时用于跨卡候选。
 - 相似度和辅助损失用 fp32 计算，复用已有 forward，不再调用一次 encoder。
 - 直接梯度范围由 `action_components` 决定：未采样的 query/文档槽位在辅助项中也停止梯度。
   legacy `positive` 指第一个代表正例槽位，`negative` 指其余槽位，后者可能包含额外的已知正例。
@@ -53,23 +63,20 @@ L_{\mathrm{InfoNCE}}=\frac1B\sum_b\frac1{|P_b|}\sum_{p\in P_b}
 - 原 `train/loss`：总损失；原 `kl` 仍记录未乘 `kl_coef` 的 KL。
 
 以上标量沿用 trainer 的跨 microbatch/rank 聚合。`exploration_state.json` 保存辅助目标、
-系数、温度和 in-batch 设置；改变已启用的辅助配置、在 RL-only 与辅助训练之间切换时，
+系数、温度和 in-batch/strong 设置；改变已启用的辅助配置、在 RL-only 与辅助训练之间切换时，
 不能直接恢复 optimizer/checkpoint 状态。应从所需初始化权重建立新 run。旧 checkpoint 在
 辅助项关闭时继续兼容。
 
-## G1 对照
+## G1-R2 配置草案
 
-新增可选行 `G1-A-MRR090-AuxInfoNCE`，继承 `G1-S-MRR32-Seed42` 的配置，只增加上述
-三个辅助参数。二者保持训练/data/rollout seed 42、binary MRR@10、G32、alignment .90、
-LR 5e-6、113 steps、global batch 128。`G1-J-CL` 可作为纯 CL 参照。
+独立配置为 `configs/experiments/iclr2027/g1_r2_aux_infonce_strong.yaml`，继承
+G1-R2 的 graded nDCG@10、CP、G64、alignment 0.90、joint full FT 配方，只增加
+系数 0.1、温度 0.03 的强化版 InfoNCE 辅助项。辅助正例仍来自 binary positive_mask。
+沿用 seed/data/rollout seed 42、LR 5e-6、113 steps、global batch 128、无 dev 和关闭裁剪。
 
-```bash
-python scripts/experiment.py show G1-A-MRR090-AuxInfoNCE --gpus 8
-python scripts/experiment.py check G1-A-MRR090-AuxInfoNCE --gpus 8
-python scripts/experiment.py train G1-A-MRR090-AuxInfoNCE --gpus 8
-```
-
-本次增加实现与配置，未启动完整训练。这个可选行不会加入已有 G1 stability 批处理队列。
+目前仅准备配置，不注册到任何 suite、不修改启动队列、不启动训练。默认输出为
+`checkpoints/iclr2027-r2/G1-R2-RL-GradedNDCG64-CP-AuxInfoNCE-Strong-s42/`。
+0.1 为初始系数，未做额外超参数选择。
 
 CPU 验证：
 
@@ -79,3 +86,5 @@ python -m pytest -q tests/test_aux_infonce.py
 
 验证多正例和 padding 梯度、跨 query detach/排除 mask、reward 退化时的确定性辅助梯度、
 各 action 配置的梯度范围、三种 wrapper 的 forward 复用和冻结索引、关闭后 reward 不变及恢复契约。
+强化版还验证双进程全局 loss/encoder 梯度一致性（包含不齐的 batch/slate）、跨 route
+过滤、joint 与冻结 wrapper 的 forward 复用，以及旧辅助设置的恢复兼容性。

@@ -1,0 +1,34 @@
+# Standalone G1-R2 configuration draft; not registered in any suite or queue.
+_base_:
+  - ./g1_r2.yaml
+  - ../../grpo/posttrain.yaml
+
+run_name: G1-R2-RL-GradedNDCG64-CP-AuxInfoNCE-Strong
+output_dir: checkpoints/iclr2027-r2/G1-R2-RL-GradedNDCG64-CP-AuxInfoNCE-Strong-s42
+seed: 42
+data_seed: 42
+rollout_seed: 42
+max_steps: 113
+save_steps: 25
+learning_rate: 0.000005
+per_device_train_batch_size: 16
+gradient_accumulation_steps: 1
+
+# Match the existing G1-R2 graded CP control.
+relevance_scheme: graded
+reward_type: ndcg_in_batch
+reward_ndcg_k: 10
+ndcg_in_batch_include_negatives: false
+gradient_estimator: conditional_projection
+group_size: 64
+target_alignment: 0.90
+final_alignment: null
+exploration_schedule: fixed
+document_advantage_baseline: shared
+reward_combine: sum
+
+# Direct InfoNCE on unperturbed means, using all cross-device candidates.
+aux_infonce_coef: 0.1
+aux_infonce_temperature: 0.03
+aux_infonce_use_in_batch_negatives: true
+aux_infonce_strong_negatives: true
