@@ -100,7 +100,8 @@ class FrozenGeneratorClient:
         payload = f"{self.manifest_hash}:{query_id}:{','.join(map(str, passage_ids))}:{context_hash}"
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
-    def _render(self, question: str, documents: Sequence[dict]) -> str:
+    def _format(self, question: str, documents: Sequence[dict]) -> str:
+        """Lay out one prompt; whether it fits the budget is decided in batch."""
         doc_blocks = []
         for index, document in enumerate(documents, start=1):
             contents = str(document.get("contents", ""))
@@ -114,19 +115,54 @@ class FrozenGeneratorClient:
             {"role": "system", "content": self.system_prompt},
             {"role": "user", "content": user_content},
         ]
-        prompt = self.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        return self.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+
+    def _token_lengths(self, prompts: Sequence[str]) -> list[int]:
+        """Measure a whole group of prompts in one call.
+
+        The fast tokenizer threads a batch inside Rust, so asking it once per prompt
+        costs about three times as much as asking once for all of them. Laying the
+        prompt out is cheap by comparison; measuring it is what dominated rendering.
+        """
+        encoded = self.tokenizer(list(prompts), add_special_tokens=False)["input_ids"]
+        return [len(ids) for ids in encoded]
+
+    def _truncate(self, question: str, prompt: str) -> str:
+        """Keep a prefix of the last remaining document, plus the question."""
         tokens = self.tokenizer(prompt, add_special_tokens=False)["input_ids"]
-        if len(tokens) <= self.max_input_length:
-            return prompt
-        # Corpus passages are ordered by retrieval score. Drop the lowest-ranked
-        # contexts first; if one document remains, retain its prefix and the question.
-        if len(documents) > 1:
-            return self._render(question, documents[:-1])
         encoded_question = self.tokenizer(
             f"\nQuestion:{question}", add_special_tokens=False
         )["input_ids"]
         kept = tokens[: max(self.max_input_length - len(encoded_question), 1)] + encoded_question
         return self.tokenizer.decode(kept[: self.max_input_length], skip_special_tokens=False)
+
+    def _render_batch(
+        self, inputs: Sequence[tuple[str, Sequence[dict]]]
+    ) -> list[str]:
+        """Render prompts that respect the input budget, measuring them in batches.
+
+        Corpus passages are ordered by retrieval score, so a prompt over the budget
+        drops its lowest-ranked context and is measured again; one already down to a
+        single document keeps a prefix of it instead. Each round only re-measures the
+        prompts still over budget, so the usual case where none are costs one call.
+        """
+        prompts: list[str | None] = [None] * len(inputs)
+        kept = [list(documents) for _, documents in inputs]
+        pending = list(range(len(inputs)))
+        while pending:
+            candidates = [self._format(inputs[index][0], kept[index]) for index in pending]
+            lengths = self._token_lengths(candidates)
+            overlong = []
+            for position, index in enumerate(pending):
+                if lengths[position] <= self.max_input_length:
+                    prompts[index] = candidates[position]
+                elif len(kept[index]) > 1:
+                    kept[index].pop()
+                    overlong.append(index)
+                else:
+                    prompts[index] = self._truncate(inputs[index][0], candidates[position])
+            pending = overlong
+        return [str(prompt) for prompt in prompts]
 
     def generate_batch(
         self,
@@ -155,9 +191,7 @@ class FrozenGeneratorClient:
 
         if missing_inputs:
             # Rendering tokenizes every prompt, so it stays outside the cache lock.
-            missing_prompts = [
-                self._render(question, documents) for question, documents in missing_inputs
-            ]
+            missing_prompts = self._render_batch(missing_inputs)
             generated = []
             for start in range(0, len(missing_prompts), self.max_prompts_per_request):
                 generated.extend(

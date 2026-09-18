@@ -644,6 +644,34 @@ class FrozenCorpusIndex:
         """Fetch immutable corpus contents by ordinal."""
         return [record["contents"] for record in self.lookup_records(ordinals)]
 
+    @property
+    def search_device_count(self) -> int:
+        """How many CUDA devices the search storage currently occupies."""
+        if self.backend == "lookup" or self.device.type != "cuda":
+            return 0
+        return max(len(self._faiss_indexes), 1)
+
+    def release_search_backend(self) -> None:
+        """Give back the devices holding the vectors, keeping corpus text readable.
+
+        A caller that has finished searching often still needs the passages behind
+        the ordinals it found. Those reads go through the corpus file, not the
+        vectors, so the index storage can be handed back at that point instead of
+        occupying every device it was spread over for the rest of the run. The
+        instance becomes lookup-only; a later ``search`` reports that explicitly.
+        """
+        if self._search_executor is not None:
+            self._search_executor.shutdown(wait=True)
+            self._search_executor = None
+        # A GpuIndexFlat borrows its StandardGpuResources, and only the resources
+        # return the allocation to CUDA, so the indexes have to go first.
+        self._faiss_indexes = []
+        self._faiss_ordinals = []
+        self._faiss_resources = []
+        self._torch_vectors = None
+        self._local_ordinals = torch.empty(0, device=self.device, dtype=torch.long)
+        self.backend = "lookup"
+
     def close(self) -> None:
         if self._corpus_reader is not None:
             self._corpus_reader.close()
@@ -864,6 +892,10 @@ class FrozenCorpusIndexRouter:
     def verify(self) -> None:
         for index in self.indices.values():
             index.verify()
+
+    def release_search_backend(self) -> None:
+        for index in self.indices.values():
+            index.release_search_backend()
 
     def artifact_hashes(self) -> dict[str, str]:
         hashes = {"index_router_manifest": sha256_file(self.manifest_path)}
