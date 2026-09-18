@@ -1,6 +1,10 @@
 """Action-independent, stratified shortlists for fixed cross-query RL pools."""
 
+import math
+
 import torch
+
+from rewards import compute_reward_terms_over_fixed_pool
 
 
 SHORTLIST_VERSION = 1
@@ -15,6 +19,48 @@ def validate_shortlist_sampling(count, size, hard_count, hard_pool_size):
         raise ValueError("Shortlist hard_count must not exceed size or hard_pool_size")
 
 
+def validate_shortlist_objectives(count, reward_terms, binary_weight):
+    if not math.isfinite(binary_weight) or not 0 <= binary_weight <= 1:
+        raise ValueError("reward_shortlist_binary_weight must be finite and in [0, 1]")
+    if binary_weight and (not count or len(reward_terms) != 1
+                          or reward_terms[0].type != "ndcg_in_batch"
+                          or reward_terms[0].weight != 1
+                          or reward_terms[0].name == "binary_ndcg"):
+        raise ValueError("Binary shortlist mixing requires shortlists and one unit-weight nDCG term; "
+                         "binary_ndcg is reserved for the original-positive reward")
+
+
+def shortlist_positive_mask(positive_mask, valid):
+    """Use annotated identities, never a threshold on teacher grades."""
+    if (positive_mask is None or positive_mask.shape != valid.shape
+            or positive_mask.dtype != torch.bool):
+        raise ValueError("Shortlist binary objectives require boolean positive_mask matching candidates")
+    positives = positive_mask & valid
+    if not positives.any(-1).all():
+        raise ValueError("Shortlist binary objectives require a valid annotated positive per query")
+    return positives
+
+
+@torch.no_grad()
+def shortlist_rewards(reward_terms, *, scores, labels, valid, rank_labels, cross_scores,
+                      binary_weight=0., positive_mask=None):
+    """Return the mixed reward and unweighted term diagnostics on identical actions/pools."""
+    terms = compute_reward_terms_over_fixed_pool(
+        reward_terms, scores=scores, relevance_labels=labels, candidate_mask=valid,
+        rank_labels=rank_labels, cross_scores=cross_scores,
+    )
+    reward = sum(term.weight * terms[term.name].float() for term in reward_terms)
+    if binary_weight:
+        positives = shortlist_positive_mask(positive_mask, valid)
+        binary = compute_reward_terms_over_fixed_pool(
+            reward_terms, scores=scores, relevance_labels=positives.float(), candidate_mask=valid,
+            rank_labels=None, cross_scores=cross_scores,
+        )[reward_terms[0].name].float()
+        terms["binary_ndcg"] = binary
+        reward = (1 - binary_weight) * reward + binary_weight * binary
+    return reward, terms
+
+
 def shortlist_contract(head):
     if not getattr(head, "reward_shortlist_count", 0):
         return None
@@ -26,6 +72,10 @@ def shortlist_contract(head):
     source = getattr(head, "reward_shortlist_pool_source", "cross_device_all")
     if source != "cross_device_all":
         contract["pool_source"] = source
+    if getattr(head, "reward_shortlist_binary_weight", 0):
+        contract["binary_reward"] = dict(
+            weight=head.reward_shortlist_binary_weight, labels="positive_mask", version=1,
+        )
     return contract
 
 

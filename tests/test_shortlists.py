@@ -185,7 +185,7 @@ def test_shared_encoder_gradient_matches_per_cell_oracle(monkeypatch, estimator,
         assert stats['projection/query_span_rank_max'] <= 6  # 1 query + 3 own + 2 selected.
 
 
-def _distributed_worker(rank, rendezvous, estimator, pool_source):
+def _distributed_worker(rank, rendezvous, estimator, pool_source, binary_weight=0.):
     import torch.distributed as dist
     torch.set_num_threads(1)
     dist.init_process_group('gloo', init_method=f'file://{rendezvous}', rank=rank, world_size=2,
@@ -197,6 +197,7 @@ def _distributed_worker(rank, rendezvous, estimator, pool_source):
         valid = torch.tensor([[True]*3, [True]*3, [True, True, False]])
         docs = F.normalize(torch.randn(3, 4, 3, 12), dim=-1).masked_fill(~valid[:, None, :, None], 0)
         labels = torch.tensor([[3., 1., 0.], [3., 0., 0.], [3., 0., 0.]])
+        positives = torch.tensor([[True, False, True], [True, False, False], [True, False, False]])
         start, stop, width = (0, 2, 3) if rank == 0 else (2, 3, 2)
         weight = torch.eye(12, requires_grad=True)
         local = F.normalize(source[start:stop, :width+1] @ weight.T, dim=-1)
@@ -209,10 +210,12 @@ def _distributed_worker(rank, rendezvous, estimator, pool_source):
             return result
         grpo_module.sample_shortlists = sample
         head = GRPO(**options(gradient_estimator=estimator, reward_shortlist_pool_source=pool_source,
-                              reward_cross_device_negatives=pool_source != 'local_all'))
+                              reward_cross_device_negatives=pool_source != 'local_all',
+                              reward_shortlist_binary_weight=binary_weight))
         loss, _, _, _ = head._compute_component_loss(labels[start:stop, :width], None,
             components(local, q[start:stop], docs[start:stop, :, :width], valid[start:stop, :width]),
-            candidate_mask=valid[start:stop, :width], cross_batch_metadata=rows)
+            candidate_mask=valid[start:stop, :width], cross_batch_metadata=rows,
+            positive_mask=positives[start:stop, :width])
         loss.backward()
         actual = weight.grad.clone()
         dist.all_reduce(actual)
@@ -242,6 +245,10 @@ def _distributed_worker(rank, rendezvous, estimator, pool_source):
         ref = F.normalize(source @ reference_weight.T, dim=-1)
         expected, _ = reference_loss(ref, q, docs, labels, valid, ref[:, 1:].detach().reshape(-1, 12),
                                     idx, mask, estimator, mean_alignment(12, 9.))
+        if binary_weight:
+            binary, _ = reference_loss(ref, q, docs, positives.float(), valid,
+                ref[:, 1:].detach().reshape(-1, 12), idx, mask, estimator, mean_alignment(12, 9.))
+            expected = (1-binary_weight)*expected + binary_weight*binary
         expected.backward()
         torch.testing.assert_close(actual, reference_weight.grad, atol=4e-6, rtol=4e-5)
     finally:
@@ -272,13 +279,14 @@ def test_invalid_policy_and_sampler_rejected_by_both_entrypoints(changes):
 
 
 @pytest.mark.parametrize('source', ['cross_device_all', 'local_all', 'cross_device_representatives'])
-def test_trainer_updates_saves_and_reuses_encoder_and_actions(tmp_path, monkeypatch, source):
+@pytest.mark.parametrize('binary_weight', [0., .25])
+def test_trainer_updates_saves_and_reuses_encoder_and_actions(tmp_path, monkeypatch, source, binary_weight):
     from transformers import BertConfig, BertModel, TrainingArguments
     torch.manual_seed(7)
     backbone = BertModel(BertConfig(vocab_size=16, hidden_size=8, num_hidden_layers=1,
         num_attention_heads=2, intermediate_size=16, hidden_dropout_prob=0, attention_probs_dropout_prob=0))
     wrapper = GRPOModel(backbone, RLArguments(**options(reward_shortlist_pool_source=source,
-        reward_cross_device_negatives=source != 'local_all')))
+        reward_cross_device_negatives=source != 'local_all', reward_shortlist_binary_weight=binary_weight)))
     calls = dict(encoder=0, actions=0, pool=0)
     originals = (backbone.forward, wrapper.grpo._draw_actions, grpo_module.cross_query_document_pool)
     def count(name, fn):
@@ -293,6 +301,7 @@ def test_trainer_updates_saves_and_reuses_encoder_and_actions(tmp_path, monkeypa
         return dict(input_ids=torch.tensor(ids)[:, None], attention_mask=torch.ones(len(ids), 1, dtype=torch.long))
     batch = dict(query=tokens([0, 1]), positive_document=tokens([2, 5]),
         negative_document=tokens([3, 4, 6, 7]), relevance_labels=torch.tensor([[3., 1., 0.], [3., 0., 0.]]),
+        positive_mask=torch.tensor([[True, False, True], [True, False, False]]),
         candidate_mask=torch.ones(2, 3, dtype=torch.bool), cross_batch_metadata=metadata()[:2])
     before = backbone.embeddings.word_embeddings.weight.detach().clone()
     trainer = GRPOTrainer(model=wrapper, args=TrainingArguments(output_dir=str(tmp_path), use_cpu=True,
@@ -306,6 +315,10 @@ def test_trainer_updates_saves_and_reuses_encoder_and_actions(tmp_path, monkeypa
     payload = json.loads((checkpoint / 'exploration_state.json').read_text())
     assert payload['reward_shortlists'] == shortlist_contract(wrapper.grpo)
     restore_exploration_state(wrapper, checkpoint)
+    wrapper.grpo.reward_shortlist_binary_weight = .5
+    with pytest.raises(ValueError):
+        restore_exploration_state(wrapper, checkpoint)
+    wrapper.grpo.reward_shortlist_binary_weight = binary_weight
     for name in ('count', 'size', 'hard_count', 'hard_pool_size'):
         attribute = f'reward_shortlist_{name}'
         old = getattr(wrapper.grpo, attribute)

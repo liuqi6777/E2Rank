@@ -1,0 +1,73 @@
+# Graded/binary nDCG mixtures: two weights x three seeds, no extra encoder passes.
+version: 1
+plan: docs/g1_shortlist_improvements.md
+seed: 42
+output_root: checkpoints/iclr2027-r2
+pending: {}
+profiles:
+  G1:
+    config: g1_r2.yaml
+    dataset_manifest: data/processed/reasonrank_multi/manifest.json
+    selection: fixed_budget_final_checkpoint
+    final_evaluation: [bright]
+    requirements: []
+    protocol:
+      labels: teacher_grades_and_original_binary_positives
+      sampling: per_source_epoch_shuffle_retained_tail_v1
+      training_budget: fixed_steps
+      max_steps: 113
+      learning_rate: 0.000005
+      eval_steps: 25
+      global_batch_size: 128
+      micro_batch_size: 16
+      positive_selection: retain_all_seeded_in_batch_representative
+      positive_selection_seed: 42
+runs:
+  G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K15-T1-Binary025: &recipe0
+    group: G1
+    scope: joint
+    objective: rl
+    seed: 42
+    analysis_group: shortlist_followup
+    overrides: &params0
+      relevance_scheme: graded
+      reward_type: ndcg_in_batch
+      reward_ndcg_k: 10
+      gradient_estimator: conditional_projection
+      rollout_seed: 42
+      group_size: 64
+      target_alignment: 0.70
+      final_alignment: null
+      exploration_schedule: fixed
+      ndcg_in_batch_include_negatives: true
+      reward_cross_device_negatives: true
+      cross_query_document_gradients: false
+      document_advantage_baseline: shared
+      reward_combine: sum
+      reward_shortlist_count: 1
+      reward_shortlist_size: 15
+      reward_shortlist_hard_count: 0
+      reward_shortlist_hard_pool_size: 128
+      reward_shortlist_binary_weight: 0.25
+      aux_infonce_coef: 0.0
+  G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K15-T1-Binary025-Seed3407:
+    <<: *recipe0
+    seed: 3407
+    overrides: {<<: *params0, rollout_seed: 3407}
+  G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K15-T1-Binary025-Seed2026:
+    <<: *recipe0
+    seed: 2026
+    overrides: {<<: *params0, rollout_seed: 2026}
+  G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K15-T1-Binary050: &recipe1
+    <<: *recipe0
+    overrides: &params1
+      <<: *params0
+      reward_shortlist_binary_weight: 0.50
+  G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K15-T1-Binary050-Seed3407:
+    <<: *recipe1
+    seed: 3407
+    overrides: {<<: *params1, rollout_seed: 3407}
+  G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K15-T1-Binary050-Seed2026:
+    <<: *recipe1
+    seed: 2026
+    overrides: {<<: *params1, rollout_seed: 2026}

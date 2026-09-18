@@ -23,3 +23,30 @@ python scripts/run_g1_shortlist_sweep_r2.py eval --recipes uniform-k7-t1 --seeds
 的可见 CUDA GPU；每条训练后自动执行最终 BRIGHT，失败即停，非空输出目录拒绝覆盖。
 重试使用 `--seeds` 只选择未完成的运行；已有模型使用 `eval`。
 本地配置检查不启动 GPU 训练，也不代表已有新结果。
+
+## 2. Graded / binary nDCG 混合奖励
+
+保持 Uniform K15/T1，通过 `reward_shortlist_binary_weight: alpha` 设置：
+
+\[
+R=(1-\alpha)R_{\mathrm{graded\ nDCG@10}}+\alpha R_{\mathrm{binary\ nDCG@10}}.
+\]
+
+配置提供 alpha=0.25、0.50，各三个 seed，共六条；alpha=0 的既有基线不重跑。
+Graded 项仍读取 `relevance_labels`（suite 指定 `relevance_scheme: graded`）；binary 项独立读取
+原始 `positive_mask`，不按 teacher grade 阈值推断。两项有各自的 IDCG，使用完全相同的
+actions、候选与跨 query 分数校准。先固定权重求和，再做线性 LOO/CP，与对两项分别做
+同一 CP 再加权等价；不额外标准化 advantage，也不增加 encoder 前向或 action draws。
+
+只支持 shortlist 路径的单一 unit-weight `ndcg_in_batch` 主项，alpha 必须有限且处于 [0,1]。
+默认 0 保持旧路径与旧 checkpoint 合同；启用后缺少有效 boolean `positive_mask` 会报错。
+日志同时记录 `reward/ndcg_in_batch/*`（原 grades）、`reward/binary_ndcg/*` 和混合 reward。
+Checkpoint 记录 binary 标签来源与权重，恢复时拒绝切换目标。
+配置：[mixed rewards suite](../configs/experiments/iclr2027/suite_g1_shortlist_mixed_rewards.yaml)。
+
+```bash
+python scripts/run_g1_shortlist_mixed_rewards_r2.py check
+python -u scripts/run_g1_shortlist_mixed_rewards_r2.py train
+python -u scripts/run_g1_shortlist_mixed_rewards_r2.py train --binary-weights 0.25 --seeds 3407
+python scripts/run_g1_shortlist_mixed_rewards_r2.py eval --binary-weights 0.50 --seeds 42
+```

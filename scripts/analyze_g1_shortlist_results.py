@@ -15,6 +15,7 @@ SOURCE = PAPER / '_summary/g1_r2_bright'
 SEEDS = (42, 3407, 2026)
 PREFIX = 'G1-R2-RL-GradedNDCG64-CP-'
 SUITES = ('shortlists', 'shortlist_sweep', 'shortlist_distribution', 'shortlist_alignment')
+FOLLOWUP_SUITES = ('shortlist_mixed_rewards',)
 DOMAINS = ('biology', 'earth_science', 'economics', 'psychology', 'robotics',
            'stackoverflow', 'sustainable_living', 'pony', 'leetcode', 'aops',
            'theoremqa_theorems', 'theoremqa_questions')
@@ -48,6 +49,10 @@ def main():
             target.add(f"{name}-s{cfg['seed']}")
         suite_counts.append((suffix, len(names), len(names - expected)))
         expected |= names
+    for suffix in FOLLOWUP_SUITES:
+        path = ROOT / f'configs/experiments/iclr2027/suite_g1_{suffix}.yaml'
+        suite = yaml.safe_load(path.read_text())
+        followups.update(f"{name}-s{cfg['seed']}" for name, cfg in suite['runs'].items())
     actual = {name for name in runs if '-Shortlist' in name} - followups
     if expected != actual:
         raise ValueError(f'Suite/result mismatch: missing={expected-actual}, extra={actual-expected}')

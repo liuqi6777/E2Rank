@@ -7,7 +7,7 @@ from transformers import TrainingArguments as HFTrainingArguments
 
 from embedding_protocol import validate_embedding_protocol
 from contrastive import validate_aux_infonce
-from shortlists import validate_shortlist_sampling
+from shortlists import validate_shortlist_sampling, validate_shortlist_objectives
 from rewards import (
     SUPPORTED_REWARD_TYPES,
     normalize_reward_combine_mode,
@@ -708,6 +708,10 @@ class RLArguments:
     reward_shortlist_hard_pool_size: int = field(
         default=64, metadata={"help": "Size of the high-score stratum, ranked using detached means"},
     )
+    reward_shortlist_binary_weight: float = field(
+        default=0.0,
+        metadata={"help": "Mix original-positive binary nDCG into shortlist nDCG: (1-alpha)*base + alpha*binary"},
+    )
     cross_query_document_gradients: bool = field(
         default=False,
         metadata={"help": "Share sampled document actions across queries and accumulate all reward gradients; supports local and cross-device pools"},
@@ -930,6 +934,9 @@ class RLArguments:
                 "advantage_baseline", "advantage_norm", "reward_combine",
                 "in_batch_use_sampled_documents", "document_advantage_baseline",
                 "document_log_prob_reduction", "dynamic_retrieval")},
+        )
+        validate_shortlist_objectives(
+            self.reward_shortlist_count, self.reward_terms, self.reward_shortlist_binary_weight,
         )
         if (
             len(self.reward_terms) > 1

@@ -13,7 +13,8 @@ from transformers.file_utils import ModelOutput
 from score_precision import fp32_scores
 from policy_math import ExplorationSchedule, group_advantages, mean_alignment
 from rollout_rng import RolloutRNG
-from shortlists import sample_shortlists, shortlist_statistics
+from shortlists import (sample_shortlists, shortlist_statistics, shortlist_rewards,
+                        validate_shortlist_objectives)
 from conditional_projection import conditional_projection_loss
 from contrastive import auxiliary_infonce_loss, validate_aux_infonce, cross_query_document_pool
 from cross_query_policy import sampled_document_pool, sampled_pool_rewards, sampled_pool_loss
@@ -247,6 +248,7 @@ class GRPO(nn.Module):
         reward_shortlist_size: int = 15,
         reward_shortlist_hard_count: int = 8,
         reward_shortlist_hard_pool_size: int = 64,
+        reward_shortlist_binary_weight: float = 0.0,
     ):
         super().__init__()
         validate_aux_infonce(aux_infonce_coef, aux_infonce_temperature)
@@ -348,6 +350,8 @@ class GRPO(nn.Module):
         self.reward_shortlist_size = reward_shortlist_size
         self.reward_shortlist_hard_count = reward_shortlist_hard_count
         self.reward_shortlist_hard_pool_size = reward_shortlist_hard_pool_size
+        validate_shortlist_objectives(reward_shortlist_count, reward_terms, reward_shortlist_binary_weight)
+        self.reward_shortlist_binary_weight = reward_shortlist_binary_weight
         if advantage_baseline == "ema" and reward_combine == "normalized_sum" and len(reward_terms) > 1:
             # The EMA baseline is one global scalar; it cannot track several reward scales at
             # once, so per-term standardization would baseline every term against the same
@@ -775,6 +779,7 @@ class GRPO(nn.Module):
         in_batch_positive_mask=None,
         in_batch_candidate_mask=None,
         cross_batch_metadata=None,
+        positive_mask=None,
     ) -> tuple[torch.Tensor, dict[str, torch.Tensor], torch.Tensor, torch.Tensor]:
         active_components = tuple(component for component in components if component.is_active)
         query_components = [component for component in components if component.role == "query"]
@@ -786,7 +791,7 @@ class GRPO(nn.Module):
         if self.reward_shortlist_count:
             return self._compute_shortlist_loss(
                 query_components[0], document_components, relevance_labels, rank_labels,
-                cross_batch_metadata,
+                cross_batch_metadata, positive_mask,
             )
         if self.cross_query_document_gradients:
             return self._compute_cross_query_loss(
@@ -1129,7 +1134,7 @@ class GRPO(nn.Module):
                 )
         return sum(losses) * loss_weight, reward_stats, torch.cat(advantages, dim=1), degenerate_frac
 
-    def _compute_shortlist_loss(self, query, documents, labels, rank_labels, metadata):
+    def _compute_shortlist_loss(self, query, documents, labels, rank_labels, metadata, positive_mask=None):
         if len(documents) != 1 or not query.is_active or not documents[0].is_active:
             raise ValueError("Reward shortlists require joint query/document actions")
         document = documents[0]
@@ -1179,11 +1184,11 @@ class GRPO(nn.Module):
                 if scale is not None:
                     cross = cross * scale
                 cross = cross.masked_fill(~mask[:, None], -torch.inf)
-                terms = compute_reward_terms_over_fixed_pool(
-                    self.reward_terms, scores=own_scores, relevance_labels=labels,
-                    candidate_mask=valid, rank_labels=rank_labels, cross_scores=cross,
+                rewards, terms = shortlist_rewards(
+                    self.reward_terms, scores=own_scores, labels=labels, valid=valid,
+                    rank_labels=rank_labels, cross_scores=cross,
+                    binary_weight=self.reward_shortlist_binary_weight, positive_mask=positive_mask,
                 )
-                rewards = sum(term.weight * terms[term.name].float() for term in self.reward_terms)
                 aq, cq = self._compute_advantages(rewards.mean(2))
                 ad, cd = self._compute_advantages(rewards.mean(1))
                 advantages.extend((aq, ad))
@@ -1193,13 +1198,14 @@ class GRPO(nn.Module):
                 # Aggregate moments over cells/lists, not the mean of per-list stds.
                 current["reward_second_moment"] = rewards.square().mean()
                 current["reward_pool/zero_reward_frac"] = (rewards == 0).float().mean()
-                for term in self.reward_terms:
-                    values = terms[term.name]
-                    current[f"reward/{term.name}/n_distinct"] = self.realized_reward_levels(values)
+                for term_name, values in terms.items():
+                    current[f"reward/{term_name}/n_distinct"] = self.realized_reward_levels(values)
+                    if self.reward_shortlist_binary_weight:
+                        current.update(self.summarize_tensor(values, prefix=f"reward/{term_name}", separator="/"))
                     for axis, name in ((2, "query"), (1, "documents")):
                         marginal = values.mean(axis)
                         _, degenerate = self._compute_advantages(marginal)
-                        prefix = f"reward/{term.name}/{name}"
+                        prefix = f"reward/{term_name}/{name}"
                         current[f"{prefix}/group_std"] = marginal.std(-1, unbiased=False).mean()
                         current[f"{prefix}/degenerate_frac"] = degenerate.float().mean()
             if self.gradient_estimator == "conditional_projection":
@@ -1490,6 +1496,7 @@ class GRPO(nn.Module):
             in_batch_positive_mask=in_batch_positive_mask,
             in_batch_candidate_mask=in_batch_candidate_mask,
             cross_batch_metadata=cross_batch_metadata,
+            positive_mask=positive_mask,
         )
 
         policy_loss = loss
@@ -1614,6 +1621,7 @@ class GRPOModel(nn.Module):
             reward_shortlist_size=rl_args.reward_shortlist_size,
             reward_shortlist_hard_count=rl_args.reward_shortlist_hard_count,
             reward_shortlist_hard_pool_size=rl_args.reward_shortlist_hard_pool_size,
+            reward_shortlist_binary_weight=rl_args.reward_shortlist_binary_weight,
             cross_query_document_gradients=rl_args.cross_query_document_gradients,
             contrastive_use_in_batch_negatives=rl_args.contrastive_use_in_batch_negatives,
             contrastive_temperature=rl_args.contrastive_temperature,
