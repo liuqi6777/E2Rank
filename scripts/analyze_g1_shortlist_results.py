@@ -37,14 +37,18 @@ def main():
             raise ValueError(f'Duplicate subset: {key}')
         subsets[key] = row
     expected = set()
+    followups = set()
     suite_counts = []
     for suffix in SUITES:
         path = ROOT / f'configs/experiments/iclr2027/suite_g1_{suffix}.yaml'
         suite = yaml.safe_load(path.read_text())
-        names = {f"{name}-s{cfg['seed']}" for name, cfg in suite['runs'].items()}
+        names = set()
+        for name, cfg in suite['runs'].items():
+            target = followups if cfg.get('analysis_group') == 'shortlist_followup' else names
+            target.add(f"{name}-s{cfg['seed']}")
         suite_counts.append((suffix, len(names), len(names - expected)))
         expected |= names
-    actual = {name for name in runs if '-Shortlist' in name}
+    actual = {name for name in runs if '-Shortlist' in name} - followups
     if expected != actual:
         raise ValueError(f'Suite/result mismatch: missing={expected-actual}, extra={actual-expected}')
     references = [PREFIX + 'Align080', PREFIX.rstrip('-'), PREFIX + 'Align090-LargePool', 'G1-R2-CL-Strong']

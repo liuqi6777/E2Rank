@@ -2,6 +2,8 @@
 
 已完成结果见 [G1 Shortlist 结果总结](../paper/G1_SHORTLIST_RESULTS.md)：17 个配方、51 次训练，含三 seed 完整总分、领域分析和复算脚本。当前最佳已测均值为 Uniform K15/T1 / alignment 0.70 的 22.25，仍低于 CL-Strong 22.64。
 
+后续提点实验见 [固定预算实验说明](g1_shortlist_improvements.md)，新增 K7 已并入现有 sweep 脚本。
+
 保留每条 query 的全部自有候选（所有正例和自有 negatives），再从当前跨卡 batch 的其他文档中
 抽取多组额外 negatives。每组分别计算 listwise reward、LOO 和 CP，最后平均 surrogate loss。
 纯 RL 示例使用 graded nDCG@10，不加入 pairwise 或 InfoNCE 辅助项。
@@ -133,7 +135,7 @@ Mixed 的高分候选区仍为前 128 个，其余名额从其余池抽取；池
 K×T 相同仅表示候选充足时覆盖数相同，不代表计算量相同。
 
 ```bash
-# 检查全部 21 条，不启动 GPU 训练
+# 检查全部 24 条（含后续 K7），不启动 GPU 训练
 python scripts/run_g1_shortlist_sweep_r2.py check
 
 # 按表格顺序，每配置依次运行三个 seed；每条训练后评测 BRIGHT
@@ -154,6 +156,10 @@ python scripts/run_g1_shortlist_sweep_r2.py eval \
 使用 `--config /path/to/settings.yaml` 指定训练机 settings。
 新 run ID 显式包含 K/T，Mixed 额外包含 Hard2/Hard4，与原 suite 不重名。
 启动器沿用八卡 BF16 检查、非空输出目录保护及失败即停止行为，不自动跳过已完成 run。
+
+后续追加 `--recipes uniform-k7-t1`：Uniform K7/T1、alignment **0.70**、三个 seed，
+配对已有 K15/T1/0.70。它与上表原七个配方的 alignment 不同；仅运行新实验时显式选择该 recipe。
+`analysis_group: shortlist_followup` 将它排除在已发表的 51-run 历史结果快照之外。
 
 ### 固定 K15/T1 的负例分布对照
 

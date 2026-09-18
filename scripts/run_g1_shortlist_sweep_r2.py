@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G1-R2 shortlist K/T and light-hard sweep: seven recipes x three seeds, CP/G64/alignment 0.80."""
+"""G1-R2 shortlist sweep: CP/G64; original recipes at 0.80, new K7/T1 at 0.70."""
 import argparse
 from pathlib import Path
 import subprocess
@@ -9,13 +9,14 @@ from experiments.iclr2027 import ROOT, run_simple_baselines
 
 
 RECIPES = {
-    'uniform-k15-t1': 'Uniform-K15-T1',
-    'uniform-k15-t4': 'Uniform-K15-T4',
-    'uniform-k30-t4': 'Uniform-K30-T4',
-    'uniform-k30-t8': 'Uniform-K30-T8',
-    'uniform-k60-t4': 'Uniform-K60-T4',
-    'mixed-k15-t8-hard2': 'Mixed-K15-T8-Hard2',
-    'mixed-k15-t8-hard4': 'Mixed-K15-T8-Hard4',
+    'uniform-k15-t1': ('080', 'Uniform-K15-T1'),
+    'uniform-k15-t4': ('080', 'Uniform-K15-T4'),
+    'uniform-k30-t4': ('080', 'Uniform-K30-T4'),
+    'uniform-k30-t8': ('080', 'Uniform-K30-T8'),
+    'uniform-k60-t4': ('080', 'Uniform-K60-T4'),
+    'mixed-k15-t8-hard2': ('080', 'Mixed-K15-T8-Hard2'),
+    'mixed-k15-t8-hard4': ('080', 'Mixed-K15-T8-Hard4'),
+    'uniform-k7-t1': ('070', 'Uniform-K7-T1'),
 }
 
 
@@ -23,12 +24,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', nargs='?', default='check', choices=['check', 'train', 'eval'])
     parser.add_argument('--recipes', nargs='+', choices=list(RECIPES), default=list(RECIPES),
-                        help='Recipes to run (default: all seven, in the listed order)')
+                        help='Recipes to run (default: all eight; use uniform-k7-t1 for new runs only)')
     parser.add_argument('--seeds', nargs='+', type=int, choices=[42, 3407, 2026], default=[42, 3407, 2026],
                         help='Training/data/rollout seeds (default: 42 3407 2026)')
     parser.add_argument('--config', type=Path, default=ROOT / 'configs/experiments_r2.yaml')
     args = parser.parse_args()
-    runs = [f'G1-R2-RL-GradedNDCG64-CP-Align080-Shortlist{RECIPES[recipe]}'
+    runs = [f'G1-R2-RL-GradedNDCG64-CP-Align{RECIPES[recipe][0]}-Shortlist{RECIPES[recipe][1]}'
             + (f'-Seed{seed}' if seed != 42 else '')
             for recipe in dict.fromkeys(args.recipes) for seed in dict.fromkeys(args.seeds)]
     if args.action == 'train':

@@ -1,4 +1,4 @@
-# Shortlist size/group-count and light-hard ablation: seven recipes x three seeds.
+# Seven original recipes at 0.80; new K7/T1 at 0.70. Eight recipes x three seeds.
 version: 1
 plan: docs/multi_shortlist_rl.md
 seed: 42
@@ -146,3 +146,19 @@ runs:
     <<: *recipe6
     seed: 2026
     overrides: {<<: *params6, rollout_seed: 2026}
+  G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K7-T1: &recipe7
+    <<: *recipe0
+    # Keep the published 51-run results snapshot separate from follow-up experiments.
+    analysis_group: shortlist_followup
+    overrides: &params7
+      <<: *params0
+      target_alignment: 0.70
+      reward_shortlist_size: 7
+  G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K7-T1-Seed3407:
+    <<: *recipe7
+    seed: 3407
+    overrides: {<<: *params7, rollout_seed: 3407}
+  G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K7-T1-Seed2026:
+    <<: *recipe7
+    seed: 2026
+    overrides: {<<: *params7, rollout_seed: 2026}
