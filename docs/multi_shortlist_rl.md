@@ -194,6 +194,39 @@ python scripts/run_g1_shortlist_distribution_r2.py eval --recipes cross-device-r
 比较同列可判断来源范围的影响，比较同行可判断候选组成的影响；原普通 CP 与新 shortlist 路径
 并非逐动作严格等价，且过滤后实际数量可能不同，不能把均分差直接当作唯一因素的因果估计。
 
+### 固定训练预算的 alignment sweep
+
+[alignment suite](../configs/experiments/iclr2027/suite_g1_shortlist_alignment.yaml) 覆盖
+alignment **0.65 / 0.70 / 0.80 / 0.90 / 0.95** × seeds **42 / 3407 / 2026**。
+固定跨卡全部候选、Uniform K15/T1、CP/G64、LR 5e-6、8×16 batch 和 **113 steps**，
+维持与 CL 相同的训练步数。每条运行的 training/data/rollout seed 一致。
+较小 alignment 对应更强探索；所有配置保持固定 alignment，不启用退火或辅助 InfoNCE。
+
+0.80 的三个 run ID 和输出目录与已有 K/T sweep 完全相同，用于复用已有结果。
+启动脚本默认选择其余四个 alignment 和全部三个 seed，共 **12 条新增运行**，
+按 alignment、seed 顺序执行，每条训练完成后自动评测最终 BRIGHT。
+
+```bash
+# 默认预检 12 条新增配置
+python scripts/run_g1_shortlist_alignment_r2.py check
+
+# 先用 seed42 筛选四个新增 alignment
+python scripts/run_g1_shortlist_alignment_r2.py train --seeds 42
+
+# 或运行全部 12 条新增实验
+python scripts/run_g1_shortlist_alignment_r2.py train
+
+# 指定 alignment 和 seed；可按 seed 分配不同八卡机器
+python scripts/run_g1_shortlist_alignment_r2.py train --alignments 0.65 0.90 --seeds 3407 2026
+
+# 包含已有 0.80 的完整配置预检，或只重新评测已有模型
+python scripts/run_g1_shortlist_alignment_r2.py check --alignments 0.65 0.70 0.80 0.90 0.95
+python scripts/run_g1_shortlist_alignment_r2.py eval --alignments 0.80 --seeds 42
+```
+
+`--config /path/to/settings.yaml` 指定训练机 settings。训练仍要求八张 BF16 CUDA 卡，
+非空输出目录拒绝覆盖、失败即停止，不自动跳过已完成运行；显式选择 0.80 训练也遵守此规则。
+
 ### 日志
 
 - `shortlist/pool_candidates_mean/max`：过滤后的来源池，不含自有候选。
