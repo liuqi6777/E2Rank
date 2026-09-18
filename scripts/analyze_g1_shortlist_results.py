@@ -15,7 +15,7 @@ SOURCE = PAPER / '_summary/g1_r2_bright'
 SEEDS = (42, 3407, 2026)
 PREFIX = 'G1-R2-RL-GradedNDCG64-CP-'
 SUITES = ('shortlists', 'shortlist_sweep', 'shortlist_distribution', 'shortlist_alignment')
-FOLLOWUP_SUITES = ('shortlist_mixed_rewards',)
+FOLLOWUP_SUITES = ('shortlist_mixed_rewards', 'shortlist_pairwise')
 DOMAINS = ('biology', 'earth_science', 'economics', 'psychology', 'robotics',
            'stackoverflow', 'sustainable_living', 'pony', 'leetcode', 'aops',
            'theoremqa_theorems', 'theoremqa_questions')

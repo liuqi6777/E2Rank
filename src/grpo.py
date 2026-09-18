@@ -16,6 +16,7 @@ from rollout_rng import RolloutRNG
 from shortlists import (sample_shortlists, shortlist_statistics, shortlist_rewards,
                         validate_shortlist_objectives)
 from conditional_projection import conditional_projection_loss
+from pairwise_projection import pairwise_shortlist_loss
 from contrastive import auxiliary_infonce_loss, validate_aux_infonce, cross_query_document_pool
 from cross_query_policy import sampled_document_pool, sampled_pool_rewards, sampled_pool_loss
 
@@ -249,6 +250,7 @@ class GRPO(nn.Module):
         reward_shortlist_hard_count: int = 8,
         reward_shortlist_hard_pool_size: int = 64,
         reward_shortlist_binary_weight: float = 0.0,
+        reward_shortlist_pairwise_coef: float = 0.0,
     ):
         super().__init__()
         validate_aux_infonce(aux_infonce_coef, aux_infonce_temperature)
@@ -350,8 +352,10 @@ class GRPO(nn.Module):
         self.reward_shortlist_size = reward_shortlist_size
         self.reward_shortlist_hard_count = reward_shortlist_hard_count
         self.reward_shortlist_hard_pool_size = reward_shortlist_hard_pool_size
-        validate_shortlist_objectives(reward_shortlist_count, reward_terms, reward_shortlist_binary_weight)
+        validate_shortlist_objectives(reward_shortlist_count, reward_terms, reward_shortlist_binary_weight,
+                                     reward_shortlist_pairwise_coef, gradient_estimator)
         self.reward_shortlist_binary_weight = reward_shortlist_binary_weight
+        self.reward_shortlist_pairwise_coef = reward_shortlist_pairwise_coef
         if advantage_baseline == "ema" and reward_combine == "normalized_sum" and len(reward_terms) > 1:
             # The EMA baseline is one global scalar; it cannot track several reward scales at
             # once, so per-term standardization would baseline every term against the same
@@ -1222,6 +1226,18 @@ class GRPO(nn.Module):
                         document.policy_embeddings[:, None].float() * docs
                     ).masked_fill(~valid[:, None, :, None], 0).sum((-1, -2))
                     loss = -(aq * qlog).mean() - (ad * dlog).mean()
+            if self.reward_shortlist_pairwise_coef:
+                pairwise_loss, pairwise_stats = pairwise_shortlist_loss(
+                    query.policy_embeddings, document.policy_embeddings, q, docs,
+                    positive_mask, valid, fixed, mask, query.kappa,
+                    frozen_scale=1. if scale is None else scale, own_scores=own_scores, cross_scores=cross,
+                )
+                current.update(pairwise_stats)
+                current["train/loss_listwise"] = loss.detach()
+                current["train/loss_pairwise"] = pairwise_loss.detach()
+                current["train/loss_pairwise_weighted"] = self.reward_shortlist_pairwise_coef * pairwise_loss.detach()
+                current["reward/combined_mean"] = rewards.mean() + self.reward_shortlist_pairwise_coef * pairwise_stats["reward/pairwise/mean"]
+                loss = loss + self.reward_shortlist_pairwise_coef * pairwise_loss
             losses.append(loss)
             for key, value in current.items():
                 if key not in aggregates:
@@ -1622,6 +1638,7 @@ class GRPOModel(nn.Module):
             reward_shortlist_hard_count=rl_args.reward_shortlist_hard_count,
             reward_shortlist_hard_pool_size=rl_args.reward_shortlist_hard_pool_size,
             reward_shortlist_binary_weight=rl_args.reward_shortlist_binary_weight,
+            reward_shortlist_pairwise_coef=rl_args.reward_shortlist_pairwise_coef,
             cross_query_document_gradients=rl_args.cross_query_document_gradients,
             contrastive_use_in_batch_negatives=rl_args.contrastive_use_in_batch_negatives,
             contrastive_temperature=rl_args.contrastive_temperature,

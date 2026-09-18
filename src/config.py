@@ -712,6 +712,10 @@ class RLArguments:
         default=0.0,
         metadata={"help": "Mix original-positive binary nDCG into shortlist nDCG: (1-alpha)*base + alpha*binary"},
     )
+    reward_shortlist_pairwise_coef: float = field(
+        default=0.0,
+        metadata={"help": "Add original-positive pair rewards with separate per-pair LOO/CP on each shortlist"},
+    )
     cross_query_document_gradients: bool = field(
         default=False,
         metadata={"help": "Share sampled document actions across queries and accumulate all reward gradients; supports local and cross-device pools"},
@@ -937,6 +941,7 @@ class RLArguments:
         )
         validate_shortlist_objectives(
             self.reward_shortlist_count, self.reward_terms, self.reward_shortlist_binary_weight,
+            self.reward_shortlist_pairwise_coef, self.gradient_estimator,
         )
         if (
             len(self.reward_terms) > 1

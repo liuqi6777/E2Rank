@@ -19,7 +19,8 @@ def validate_shortlist_sampling(count, size, hard_count, hard_pool_size):
         raise ValueError("Shortlist hard_count must not exceed size or hard_pool_size")
 
 
-def validate_shortlist_objectives(count, reward_terms, binary_weight):
+def validate_shortlist_objectives(count, reward_terms, binary_weight, pairwise_coef=0.,
+                                 gradient_estimator="conditional_projection"):
     if not math.isfinite(binary_weight) or not 0 <= binary_weight <= 1:
         raise ValueError("reward_shortlist_binary_weight must be finite and in [0, 1]")
     if binary_weight and (not count or len(reward_terms) != 1
@@ -28,6 +29,10 @@ def validate_shortlist_objectives(count, reward_terms, binary_weight):
                           or reward_terms[0].name == "binary_ndcg"):
         raise ValueError("Binary shortlist mixing requires shortlists and one unit-weight nDCG term; "
                          "binary_ndcg is reserved for the original-positive reward")
+    if not math.isfinite(pairwise_coef) or pairwise_coef < 0:
+        raise ValueError("reward_shortlist_pairwise_coef must be finite and non-negative")
+    if pairwise_coef and (not count or gradient_estimator != "conditional_projection"):
+        raise ValueError("Pairwise shortlist rewards require shortlists and conditional_projection")
 
 
 def shortlist_positive_mask(positive_mask, valid):
@@ -75,6 +80,12 @@ def shortlist_contract(head):
     if getattr(head, "reward_shortlist_binary_weight", 0):
         contract["binary_reward"] = dict(
             weight=head.reward_shortlist_binary_weight, labels="positive_mask", version=1,
+        )
+    if getattr(head, "reward_shortlist_pairwise_coef", 0):
+        contract["pairwise_reward"] = dict(
+            coefficient=head.reward_shortlist_pairwise_coef, labels="positive_mask", version=1,
+            pairs="all_own_positives_x_own_and_selected_negatives", reduction="per_query_mean",
+            estimator="per_pair_conditional_projection", ties=0.5,
         )
     return contract
 

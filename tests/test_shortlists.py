@@ -185,7 +185,7 @@ def test_shared_encoder_gradient_matches_per_cell_oracle(monkeypatch, estimator,
         assert stats['projection/query_span_rank_max'] <= 6  # 1 query + 3 own + 2 selected.
 
 
-def _distributed_worker(rank, rendezvous, estimator, pool_source, binary_weight=0.):
+def _distributed_worker(rank, rendezvous, estimator, pool_source, binary_weight=0., pairwise_coef=0.):
     import torch.distributed as dist
     torch.set_num_threads(1)
     dist.init_process_group('gloo', init_method=f'file://{rendezvous}', rank=rank, world_size=2,
@@ -211,7 +211,8 @@ def _distributed_worker(rank, rendezvous, estimator, pool_source, binary_weight=
         grpo_module.sample_shortlists = sample
         head = GRPO(**options(gradient_estimator=estimator, reward_shortlist_pool_source=pool_source,
                               reward_cross_device_negatives=pool_source != 'local_all',
-                              reward_shortlist_binary_weight=binary_weight))
+                              reward_shortlist_binary_weight=binary_weight,
+                              reward_shortlist_pairwise_coef=pairwise_coef))
         loss, _, _, _ = head._compute_component_loss(labels[start:stop, :width], None,
             components(local, q[start:stop], docs[start:stop, :, :width], valid[start:stop, :width]),
             candidate_mask=valid[start:stop, :width], cross_batch_metadata=rows,
@@ -249,6 +250,12 @@ def _distributed_worker(rank, rendezvous, estimator, pool_source, binary_weight=
             binary, _ = reference_loss(ref, q, docs, positives.float(), valid,
                 ref[:, 1:].detach().reshape(-1, 12), idx, mask, estimator, mean_alignment(12, 9.))
             expected = (1-binary_weight)*expected + binary_weight*binary
+        if pairwise_coef:
+            from test_pairwise_projection import explicit_pair_loss
+            pool = ref[:,1:].detach().reshape(-1,12)
+            pair_loss = sum(explicit_pair_loss(ref,q,docs,positives,valid,pool[idx[:,t]],mask[:,t],
+                                               9.,mean_alignment(12,9.)) for t in range(idx.size(1))) / idx.size(1)
+            expected = expected + pairwise_coef * pair_loss
         expected.backward()
         torch.testing.assert_close(actual, reference_weight.grad, atol=4e-6, rtol=4e-5)
     finally:
@@ -279,14 +286,15 @@ def test_invalid_policy_and_sampler_rejected_by_both_entrypoints(changes):
 
 
 @pytest.mark.parametrize('source', ['cross_device_all', 'local_all', 'cross_device_representatives'])
-@pytest.mark.parametrize('binary_weight', [0., .25])
-def test_trainer_updates_saves_and_reuses_encoder_and_actions(tmp_path, monkeypatch, source, binary_weight):
+@pytest.mark.parametrize('binary_weight,pairwise_coef', [(0.,0.), (.25,0.), (0.,.25)])
+def test_trainer_updates_saves_and_reuses_encoder_and_actions(tmp_path, monkeypatch, source, binary_weight, pairwise_coef):
     from transformers import BertConfig, BertModel, TrainingArguments
     torch.manual_seed(7)
     backbone = BertModel(BertConfig(vocab_size=16, hidden_size=8, num_hidden_layers=1,
         num_attention_heads=2, intermediate_size=16, hidden_dropout_prob=0, attention_probs_dropout_prob=0))
     wrapper = GRPOModel(backbone, RLArguments(**options(reward_shortlist_pool_source=source,
-        reward_cross_device_negatives=source != 'local_all', reward_shortlist_binary_weight=binary_weight)))
+        reward_cross_device_negatives=source != 'local_all', reward_shortlist_binary_weight=binary_weight,
+        reward_shortlist_pairwise_coef=pairwise_coef)))
     calls = dict(encoder=0, actions=0, pool=0)
     originals = (backbone.forward, wrapper.grpo._draw_actions, grpo_module.cross_query_document_pool)
     def count(name, fn):
@@ -319,6 +327,10 @@ def test_trainer_updates_saves_and_reuses_encoder_and_actions(tmp_path, monkeypa
     with pytest.raises(ValueError):
         restore_exploration_state(wrapper, checkpoint)
     wrapper.grpo.reward_shortlist_binary_weight = binary_weight
+    wrapper.grpo.reward_shortlist_pairwise_coef = .5
+    with pytest.raises(ValueError):
+        restore_exploration_state(wrapper, checkpoint)
+    wrapper.grpo.reward_shortlist_pairwise_coef = pairwise_coef
     for name in ('count', 'size', 'hard_count', 'hard_pool_size'):
         attribute = f'reward_shortlist_{name}'
         old = getattr(wrapper.grpo, attribute)
