@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence
 
 from rag.data import iter_jsonl
-from rag.metrics import best_window_token_f1, extract_evidence_groups, normalize_answer, passage_contains_answer
+from rag.metrics import (
+    best_window_token_f1,
+    extract_evidence_groups,
+    normalize_answer,
+    normalize_answers,
+    passage_contains_normalized_answer,
+)
 
 
 def corpus_title(record: dict[str, Any]) -> str:
@@ -83,12 +89,24 @@ def force_passages_into_candidates(
     return result
 
 
+def answer_mask_for_contents(contents: Iterable[str], answers: Sequence[str]) -> list[bool]:
+    """Mark which candidate passages contain a golden answer."""
+    needles = normalize_answers(answers)
+    return [passage_contains_normalized_answer(text, needles) for text in contents]
+
+
 def build_qrel_candidate_record(
     record: dict[str, Any],
     candidate_ids: list[int],
-    candidate_contents: list[str],
+    answer_mask: list[bool],
 ) -> dict[str, Any]:
-    """Attach fixed binary qrels to an immutable retrieval candidate pool."""
+    """Attach fixed binary qrels to an immutable retrieval candidate pool.
+
+    ``answer_mask`` comes from the caller because deriving it needs the candidate
+    text, which mining fetches in parallel workers.
+    """
+    if len(answer_mask) != len(candidate_ids):
+        raise ValueError("answer_mask must have one entry per candidate passage")
     qrel_ids = record.get("qrel_passage_ids")
     relevance = record.get("qrel_relevance")
     if (
@@ -104,9 +122,6 @@ def build_qrel_candidate_record(
     if sum(training_mask) != len(qrel_set):
         raise ValueError("Candidate pool does not contain every fixed qrel passage")
     answers = record["golden_answers"]
-    answer_mask = [
-        passage_contains_answer(contents, answers) for contents in candidate_contents
-    ]
     evidence_groups = record.get("evidence_passage_groups") or []
     return {
         "query_id": record["query_id"],
@@ -150,7 +165,7 @@ def build_candidate_record(
     candidate_contents: list[str],
     evidence_groups: list[list[int]] | None = None,
 ) -> dict[str, Any] | None:
-    answer_mask = [passage_contains_answer(contents, record["golden_answers"]) for contents in candidate_contents]
+    answer_mask = answer_mask_for_contents(candidate_contents, record["golden_answers"])
     if source == "nq":
         if not any(answer_mask):
             return None

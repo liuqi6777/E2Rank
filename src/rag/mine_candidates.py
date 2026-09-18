@@ -1,11 +1,20 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
+import multiprocessing
 import os
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
-from typing import Iterator
+from typing import Any, Iterator
 
+from rag.answer_mask import (
+    answer_mask_for_ordinals,
+    answer_mask_task,
+    default_worker_count,
+    initialize_worker,
+)
 from rag.candidates import (
     build_qrel_candidate_record,
     force_passages_into_candidates,
@@ -25,6 +34,39 @@ def _batches(records: Iterator[dict], batch_size: int) -> Iterator[list[dict]]:
             batch = []
     if batch:
         yield batch
+
+
+@contextlib.contextmanager
+def _answer_mask_pool(index, workers: int, read_workers: int):
+    """Yield a ``map``-like callable turning candidate ordinals into answer masks.
+
+    Mining is dominated by fetching and normalizing depth x queries passages, so the
+    work is spread over processes. The pool uses the spawn start method because this
+    process already holds a CUDA context, which is not safe to fork.
+    """
+    corpus_path = str(index.resolved_manifest_path("corpus_path"))
+    offsets_path = str(index.resolved_manifest_path("corpus_offsets_path"))
+    if workers <= 1:
+        reader = index.corpus_reader()
+        yield lambda tasks: [
+            answer_mask_for_ordinals(reader, ordinals, answers) for ordinals, answers in tasks
+        ]
+        return
+    pool = ProcessPoolExecutor(
+        max_workers=workers,
+        mp_context=multiprocessing.get_context("spawn"),
+        initializer=initialize_worker,
+        initargs=(corpus_path, offsets_path, read_workers),
+    )
+    try:
+        # Executor.map submits everything up front and returns a lazy iterator, so the
+        # caller can run the next batch's GPU work before draining it. Order is
+        # preserved, keeping the mined file byte-identical to the serial path.
+        yield lambda tasks: pool.map(
+            answer_mask_task, tasks, chunksize=max(1, len(tasks) // (workers * 4))
+        )
+    finally:
+        pool.shutdown()
 
 
 def mine(args: argparse.Namespace) -> tuple[Path, Path]:
@@ -99,30 +141,44 @@ def mine(args: argparse.Namespace) -> tuple[Path, Path]:
         for source in requested_sources
     }
 
-    with open(partial_path, "w", encoding="utf-8") as writer:
+    mask_pool = _answer_mask_pool(index, args.workers, args.corpus_read_workers)
+    with open(partial_path, "w", encoding="utf-8") as writer, mask_pool as answer_masks:
+
+        def drain(source: str, batch: list[dict], rows: list[list[int]], masks) -> None:
+            for record, row, answer_mask in zip(batch, rows, masks):
+                statistics[source]["raw"] += 1
+                candidate = build_qrel_candidate_record(record, row, answer_mask)
+                writer.write(json.dumps(candidate, ensure_ascii=False) + "\n")
+                statistics[source]["kept"] += 1
+                statistics[source]["known_positive_passages"] += len(record["qrel_passage_ids"])
+
         for source in requested_sources:
             records = (
                 record
                 for record in iter_jsonl(qrels_path)
                 if record.get("source") == source
             )
+            pending: tuple[list[dict], list[list[int]], Any] | None = None
             for batch in _batches(records, args.batch_size):
                 embeddings = encoder.encode([record["question"] for record in batch])
                 _, retrieved = index.search(embeddings, args.depth)
+                rows = []
                 for record, row in zip(batch, retrieved.detach().cpu().tolist()):
-                    statistics[source]["raw"] += 1
                     if record.get("source") != source:
                         raise ValueError("Qrels source changed while filtering records")
-                    row = force_passages_into_candidates(
-                        row, record.get("qrel_passage_ids") or []
+                    rows.append(
+                        force_passages_into_candidates(row, record.get("qrel_passage_ids") or [])
                     )
-                    contents = [item["contents"] for item in index.lookup_records(row)]
-                    candidate = build_qrel_candidate_record(record, row, contents)
-                    writer.write(json.dumps(candidate, ensure_ascii=False) + "\n")
-                    statistics[source]["kept"] += 1
-                    statistics[source]["known_positive_passages"] += len(
-                        record["qrel_passage_ids"]
-                    )
+                masks = answer_masks(
+                    [(row, record["golden_answers"]) for record, row in zip(batch, rows)]
+                )
+                # Write the previous batch only now: its workers have been fetching and
+                # scanning passages while this batch occupied the GPUs.
+                if pending is not None:
+                    drain(source, *pending)
+                pending = (batch, rows, masks)
+            if pending is not None:
+                drain(source, *pending)
         writer.flush()
         os.fsync(writer.fileno())
     empty_sources = [source for source, values in statistics.items() if not values["raw"]]
@@ -192,6 +248,18 @@ def main() -> None:
     parser.add_argument(
         "--query-prompt-template",
         default="Instruct: {task_description}\nQuery:{query}",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=default_worker_count(),
+        help="Processes fetching candidate text and computing answer masks; 1 runs inline",
+    )
+    parser.add_argument(
+        "--corpus-read-workers",
+        type=int,
+        default=4,
+        help="Concurrent corpus reads per worker process",
     )
     parser.add_argument("--skip-hash-verification", action="store_true")
     parser.add_argument("--overwrite", action="store_true")

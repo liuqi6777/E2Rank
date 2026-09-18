@@ -6,8 +6,9 @@ import hashlib
 import json
 import os
 from bisect import bisect_right
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 import numpy as np
 import torch
@@ -15,6 +16,18 @@ import torch.distributed as dist
 import torch.nn.functional as F
 
 from embedding_protocol import TOKENIZATION_VERSION, POOLING_COMPUTE_DTYPE
+from fixed_corpus.corpus_reader import CorpusTextReader, DEFAULT_READ_WORKERS
+
+
+# FAISS reserves a per-device scratch pool on top of the index storage; the default
+# is min(1.5 GiB, 18% of the device). Budgeted so the capacity pre-flight below
+# fails with an explanation instead of a raw cudaMalloc error.
+FAISS_TEMP_MEMORY_BYTES = 1536 << 20
+
+# The torch backend materialises a float32 view of the corpus to score against.
+# Doing that for the whole index needs twice the index size, so it runs in blocks
+# of roughly this many rows (~2 GiB of float32 at dimension 1024).
+TORCH_CORPUS_BLOCK_ROWS = 1 << 19
 
 
 def sha256_file(path: str | os.PathLike[str], chunk_size: int = 8 << 20) -> str:
@@ -96,6 +109,8 @@ class FrozenCorpusIndex:
         device: str | torch.device = "cuda",
         verify_hashes: bool = True,
         search_batch_size: int = 1024,
+        faiss_gpu_devices: Sequence[int] | None = None,
+        corpus_read_workers: int = DEFAULT_READ_WORKERS,
     ):
         self.manifest_path = str(Path(manifest_path).resolve())
         self.manifest = load_index_manifest(self.manifest_path)
@@ -107,6 +122,8 @@ class FrozenCorpusIndex:
         self.search_batch_size = int(search_batch_size)
         if self.search_batch_size <= 0:
             raise ValueError("search_batch_size must be positive")
+        self.faiss_gpu_devices = None if faiss_gpu_devices is None else [int(d) for d in faiss_gpu_devices]
+        self.corpus_read_workers = int(corpus_read_workers)
         self.dimension = int(self.manifest["dimension"])
         self.count = int(self.manifest["count"])
         self.rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
@@ -121,8 +138,8 @@ class FrozenCorpusIndex:
         if verify_hashes:
             self.verify()
         self._all_memmaps: list[np.ndarray] | None = None
-        self._corpus_offsets: np.ndarray | None = None
-        self._corpus_handle = None
+        self._corpus_reader: CorpusTextReader | None = None
+        self._search_executor: ThreadPoolExecutor | None = None
         self._build_local_index()
 
     def _resolve_shard(self, shard: dict[str, Any]) -> dict[str, Any]:
@@ -130,6 +147,14 @@ class FrozenCorpusIndex:
         path = Path(resolved["path"])
         resolved["path"] = str(path if path.is_absolute() else self.root / path)
         return resolved
+
+    def resolved_manifest_path(self, key: str) -> Path:
+        """Absolute path for a manifest entry that may be stored relative to the root."""
+        value = self.manifest.get(key)
+        if not value:
+            raise ValueError(f"Index manifest does not contain {key}")
+        path = Path(value)
+        return path if path.is_absolute() else self.root / path
 
     def verify(self) -> None:
         total = 0
@@ -221,30 +246,76 @@ class FrozenCorpusIndex:
         )
         return vectors, ordinals
 
+    def _shard_ordinals(self, shards: list[dict[str, Any]]) -> torch.Tensor:
+        return torch.from_numpy(
+            np.concatenate(
+                [
+                    np.arange(
+                        int(shard["start"]),
+                        int(shard["start"]) + int(shard["count"]),
+                        dtype=np.int64,
+                    )
+                    for shard in shards
+                ]
+            )
+        ).to(self.device)
+
+    def _resolve_faiss_devices(self) -> list[int]:
+        """CUDA devices this process may spread the flat index over.
+
+        A corpus large enough to need several devices only arises in single-process
+        jobs asking for a generic ``cuda`` placement, so that is the one case that
+        fans out. An explicit ``cuda:N`` and every distributed rank keep one device:
+        peers there are owned by other ranks or other indexes.
+        """
+        if self.device.type != "cuda":
+            return []
+        if self.faiss_gpu_devices is not None:
+            return self.faiss_gpu_devices
+        if self.device.index is not None or self.world_size > 1:
+            return [self.device.index or 0]
+        import faiss
+
+        return list(range(faiss.get_num_gpus())) or [0]
+
+    def _check_faiss_gpu_capacity(
+        self, devices: list[int], groups: list[list[dict[str, Any]]]
+    ) -> None:
+        for device_id, shard_group in zip(devices, groups):
+            rows = sum(int(shard["count"]) for shard in shard_group)
+            storage = rows * self.dimension * 2
+            # GpuIndexFlat grows its storage geometrically, so a resize transiently
+            # holds the old and the new buffer, and every add() stages its input on
+            # the device in float32 before converting it to the float16 storage.
+            staging = max(int(shard["count"]) for shard in shard_group) * self.dimension * 4
+            required = 2 * storage + staging + FAISS_TEMP_MEMORY_BYTES
+            free = torch.cuda.mem_get_info(device_id)[0]
+            if required <= free:
+                continue
+            raise RuntimeError(
+                f"Frozen index does not fit on cuda:{device_id}: {rows} rows need about "
+                f"{required / 1e9:.0f} GB (float16 storage {storage / 1e9:.0f} GB plus resize "
+                f"and float32 staging headroom) but only {free / 1e9:.0f} GB is free. "
+                f"Spread the index over more devices (currently {len(devices)}) via "
+                "faiss_gpu_devices/CUDA_VISIBLE_DEVICES, or use backend='torch'."
+            )
+
     def _build_local_index(self) -> None:
+        self._faiss_indexes: list[Any] = []
+        self._faiss_ordinals: list[torch.Tensor] = []
+        self._faiss_resources: list[Any] = []
         if self.backend == "lookup":
             self._local_ordinals = torch.empty(0, device=self.device, dtype=torch.long)
             self._torch_vectors = None
-            self._faiss_index = None
             return
-        ordinals = np.concatenate(
-            [
-                np.arange(
-                    int(shard["start"]),
-                    int(shard["start"]) + int(shard["count"]),
-                    dtype=np.int64,
-                )
-                for shard in self.local_shards
-            ]
-        )
-        self._local_ordinals = torch.from_numpy(ordinals).to(self.device)
+        self._local_ordinals = self._shard_ordinals(self.local_shards)
         if self.backend == "torch":
             vectors = np.concatenate(
                 [np.load(shard["path"], mmap_mode="r") for shard in self.local_shards], axis=0
             )
             self._torch_vectors = torch.from_numpy(vectors).to(self.device, dtype=torch.float16)
-            self._faiss_index = None
             return
+        self._torch_vectors = None
 
         try:
             import faiss
@@ -253,47 +324,135 @@ class FrozenCorpusIndex:
                 "FAISS backend requested but faiss is unavailable. Install a CUDA-compatible "
                 "faiss-gpu build on the training host, or use rag_index_backend=torch for tests."
             ) from exc
-        cpu_index = faiss.IndexFlatIP(self.dimension)
-        for shard in self.local_shards:
-            # Add one storage shard at a time. This avoids a second full float32
-            # concatenation while keeping an exact FlatIP index.
-            cpu_index.add(np.asarray(np.load(shard["path"], mmap_mode="r"), dtype=np.float32))
-        if self.device.type == "cuda":
+
+        devices = self._resolve_faiss_devices()
+        if not devices:
+            cpu_index = faiss.IndexFlatIP(self.dimension)
+            for shard in self.local_shards:
+                # One storage shard per add keeps the float32 conversion proportional
+                # to a shard rather than to the whole corpus.
+                cpu_index.add(np.asarray(np.load(shard["path"], mmap_mode="r"), dtype=np.float32))
+            self._faiss_indexes = [cpu_index]
+            self._faiss_ordinals = [self._local_ordinals]
+            return
+
+        # Spread the shards over the devices instead of cloning one whole-corpus index
+        # onto a single device: index_cpu_to_gpu stages the entire corpus in float32 on
+        # the target device before converting it, which needs 2x the index size on one
+        # card and cannot hold a 21M x 1024 corpus.
+        groups = [group for group in (self.local_shards[i :: len(devices)] for i in range(len(devices))) if group]
+        devices = devices[: len(groups)]
+        self._check_faiss_gpu_capacity(devices, groups)
+        for device_id, shard_group in zip(devices, groups):
             resources = faiss.StandardGpuResources()
-            options = faiss.GpuClonerOptions()
-            options.useFloat16 = True
-            self._faiss_resources = resources
-            self._faiss_index = faiss.index_cpu_to_gpu(resources, self.device.index or 0, cpu_index, options)
-        else:
-            self._faiss_index = cpu_index
-        self._torch_vectors = None
+            config = faiss.GpuIndexFlatConfig()
+            config.device = device_id
+            config.useFloat16 = True
+            sub_index = faiss.GpuIndexFlatIP(resources, self.dimension, config)
+            for shard in shard_group:
+                sub_index.add(np.asarray(np.load(shard["path"], mmap_mode="r"), dtype=np.float32))
+            # StandardGpuResources must outlive the index that borrows it.
+            self._faiss_resources.append(resources)
+            self._faiss_indexes.append(sub_index)
+            self._faiss_ordinals.append(self._shard_ordinals(shard_group))
+
+    @staticmethod
+    def _merge_topk(
+        scores: torch.Tensor, ordinals: torch.Tensor, k: int
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Reduce concatenated candidate lists to exactly k, breaking ties by ordinal."""
+        width = scores.size(-1)
+        if width < k:
+            scores = F.pad(scores, (0, k - width), value=float("-inf"))
+            ordinals = F.pad(ordinals, (0, k - width), value=-1)
+        # Stable secondary ordering by ordinal, followed by primary score ordering.
+        # Applied unconditionally so ties resolve by ordinal no matter how many
+        # sub-indexes, corpus blocks or ranks contributed the candidates.
+        ordinal_order = torch.argsort(ordinals, dim=-1, stable=True)
+        scores = scores.gather(-1, ordinal_order)
+        ordinals = ordinals.gather(-1, ordinal_order)
+        score_order = torch.argsort(scores, dim=-1, descending=True, stable=True)[..., :k]
+        return scores.gather(-1, score_order), ordinals.gather(-1, score_order)
+
+    def _search_pool(self) -> ThreadPoolExecutor:
+        # FAISS releases the GIL inside search(), so fanning the per-device searches
+        # out over threads keeps every GPU busy at once. Running them in a plain loop
+        # instead drives the devices one at a time and costs most of the speedup.
+        if self._search_executor is None:
+            self._search_executor = ThreadPoolExecutor(
+                max_workers=len(self._faiss_indexes), thread_name_prefix="faiss-search"
+            )
+        return self._search_executor
+
+    def _search_faiss(self, queries: torch.Tensor, k: int) -> tuple[torch.Tensor, torch.Tensor]:
+        score_batches = []
+        ordinal_batches = []
+        jobs = [
+            (sub_index, min(k, sub_ordinals.numel()))
+            for sub_index, sub_ordinals in zip(self._faiss_indexes, self._faiss_ordinals)
+        ]
+        for start in range(0, queries.size(0), self.search_batch_size):
+            # Convert the query block once and reuse it for every device's sub-index.
+            query_array = queries[start : start + self.search_batch_size].detach().float().cpu().numpy()
+            if len(jobs) > 1:
+                raw = list(self._search_pool().map(lambda job: job[0].search(query_array, job[1]), jobs))
+            else:
+                raw = [jobs[0][0].search(query_array, jobs[0][1])]
+            part_scores = []
+            part_ordinals = []
+            for (score_array, position_array), sub_ordinals in zip(raw, self._faiss_ordinals):
+                scores = torch.from_numpy(score_array).to(self.device)
+                positions = torch.from_numpy(position_array).to(self.device).long()
+                # FAISS pads with position -1 when a sub-index holds fewer than k rows.
+                found = positions >= 0
+                part_scores.append(torch.where(found, scores, torch.full_like(scores, float("-inf"))))
+                part_ordinals.append(
+                    torch.where(found, sub_ordinals[positions.clamp(min=0)], torch.full_like(positions, -1))
+                )
+            batch_scores, batch_ordinals = self._merge_topk(
+                torch.cat(part_scores, dim=-1), torch.cat(part_ordinals, dim=-1), k
+            )
+            score_batches.append(batch_scores)
+            ordinal_batches.append(batch_ordinals)
+        return torch.cat(score_batches, dim=0), torch.cat(ordinal_batches, dim=0)
+
+    def _search_torch(self, queries: torch.Tensor, k: int) -> tuple[torch.Tensor, torch.Tensor]:
+        score_batches = []
+        ordinal_batches = []
+        total_rows = self._torch_vectors.size(0)
+        for start in range(0, queries.size(0), self.search_batch_size):
+            query_batch = queries[start : start + self.search_batch_size].float()
+            batch_scores: torch.Tensor | None = None
+            batch_ordinals: torch.Tensor | None = None
+            for block_start in range(0, total_rows, TORCH_CORPUS_BLOCK_ROWS):
+                block = self._torch_vectors[block_start : block_start + TORCH_CORPUS_BLOCK_ROWS]
+                # float() one block at a time: a float32 view of the whole corpus is
+                # twice the index size and does not fit beside it on the device.
+                block_scores = torch.matmul(query_batch, block.float().T)
+                block_scores, block_positions = block_scores.topk(
+                    min(k, block_scores.size(-1)), dim=-1
+                )
+                block_ordinals = self._local_ordinals[block_positions + block_start]
+                if batch_scores is None:
+                    batch_scores, batch_ordinals = block_scores, block_ordinals
+                else:
+                    batch_scores, batch_ordinals = self._merge_topk(
+                        torch.cat([batch_scores, block_scores], dim=-1),
+                        torch.cat([batch_ordinals, block_ordinals], dim=-1),
+                        min(k, total_rows),
+                    )
+            score_batches.append(batch_scores)
+            ordinal_batches.append(batch_ordinals)
+        scores = torch.cat(score_batches, dim=0)
+        ordinals = torch.cat(ordinal_batches, dim=0)
+        return self._merge_topk(scores, ordinals, k)
 
     def _search_local(self, queries: torch.Tensor, k: int) -> tuple[torch.Tensor, torch.Tensor]:
         if self.backend == "lookup":
             raise RuntimeError("The lookup backend does not support corpus search")
-        local_k = min(k, self._local_ordinals.numel())
-        score_batches = []
-        position_batches = []
-        for start in range(0, queries.size(0), self.search_batch_size):
-            query_batch = queries[start : start + self.search_batch_size]
-            if self.backend == "torch":
-                batch_scores = torch.matmul(query_batch.float(), self._torch_vectors.float().T)
-                batch_scores, batch_positions = batch_scores.topk(local_k, dim=-1)
-            else:
-                query_array = query_batch.detach().float().cpu().numpy()
-                score_array, position_array = self._faiss_index.search(query_array, local_k)
-                batch_scores = torch.from_numpy(score_array).to(self.device)
-                batch_positions = torch.from_numpy(position_array).to(self.device)
-            score_batches.append(batch_scores)
-            position_batches.append(batch_positions)
-        scores = torch.cat(score_batches, dim=0)
-        positions = torch.cat(position_batches, dim=0)
-        ordinals = self._local_ordinals[positions.long()]
-        if local_k < k:
-            padding = k - local_k
-            scores = F.pad(scores, (0, padding), value=float("-inf"))
-            ordinals = F.pad(ordinals, (0, padding), value=-1)
-        return scores, ordinals
+        if self.backend == "torch":
+            return self._search_torch(queries, k)
+        return self._search_faiss(queries, k)
 
     def _gather_queries(self, queries: torch.Tensor) -> tuple[torch.Tensor, list[int]]:
         if self.world_size == 1:
@@ -343,13 +502,7 @@ class FrozenCorpusIndex:
         else:
             combined_scores, combined_ids = local_scores, local_ids
 
-        # Stable secondary ordering by ordinal, followed by primary score ordering.
-        id_order = torch.argsort(combined_ids, dim=-1, stable=True)
-        combined_scores = combined_scores.gather(-1, id_order)
-        combined_ids = combined_ids.gather(-1, id_order)
-        score_order = torch.argsort(combined_scores, dim=-1, descending=True, stable=True)[..., :k]
-        merged_scores = combined_scores.gather(-1, score_order)
-        merged_ids = combined_ids.gather(-1, score_order)
+        merged_scores, merged_ids = self._merge_topk(combined_scores, combined_ids, k)
 
         offset = sum(counts[: self.rank])
         own_count = counts[self.rank]
@@ -430,40 +583,36 @@ class FrozenCorpusIndex:
             artifacts[f"vector_shard:{Path(shard['path']).name}"] = sha256_file(shard["path"])
         return artifacts
 
-    def _ensure_corpus_offsets(self) -> np.ndarray:
-        if self._corpus_offsets is None:
-            offsets_path = self.manifest.get("corpus_offsets_path")
-            if not offsets_path:
-                raise ValueError("Index manifest does not contain corpus_offsets_path")
-            offsets_path = Path(offsets_path)
-            if not offsets_path.is_absolute():
-                offsets_path = self.root / offsets_path
-            self._corpus_offsets = np.load(offsets_path, mmap_mode="r")
-            corpus_path = Path(self.manifest["corpus_path"])
-            if not corpus_path.is_absolute():
-                corpus_path = self.root / corpus_path
-            self._corpus_handle = open(corpus_path, "rb")
-        return self._corpus_offsets
+    def corpus_reader(self) -> CorpusTextReader:
+        """Shared reader over the frozen corpus text backing this index."""
+        if self._corpus_reader is None:
+            self._corpus_reader = CorpusTextReader(
+                self.resolved_manifest_path("corpus_path"),
+                self.resolved_manifest_path("corpus_offsets_path"),
+                read_workers=self.corpus_read_workers,
+            )
+            if self._corpus_reader.count != self.count:
+                raise ValueError(
+                    f"Corpus offsets describe {self._corpus_reader.count} rows but the index "
+                    f"holds {self.count}"
+                )
+        return self._corpus_reader
 
     def lookup_records(self, ordinals: torch.Tensor | list[int]) -> list[dict[str, Any]]:
-        offsets = self._ensure_corpus_offsets()
         values = ordinals.detach().cpu().reshape(-1).tolist() if isinstance(ordinals, torch.Tensor) else ordinals
-        records = []
-        for ordinal in values:
-            if ordinal < 0 or ordinal >= self.count:
-                raise IndexError(f"Corpus ordinal out of range: {ordinal}")
-            self._corpus_handle.seek(int(offsets[ordinal]))
-            records.append(json.loads(self._corpus_handle.readline()))
-        return records
+        return self.corpus_reader().read_records(values)
 
     def lookup_text(self, ordinals: torch.Tensor | list[int]) -> list[str]:
         """Fetch immutable corpus contents by ordinal."""
         return [record["contents"] for record in self.lookup_records(ordinals)]
 
     def close(self) -> None:
-        if self._corpus_handle is not None:
-            self._corpus_handle.close()
-            self._corpus_handle = None
+        if self._corpus_reader is not None:
+            self._corpus_reader.close()
+            self._corpus_reader = None
+        if self._search_executor is not None:
+            self._search_executor.shutdown(wait=False)
+            self._search_executor = None
 
     def __del__(self):
         try:
@@ -482,6 +631,7 @@ class FrozenCorpusIndexRouter:
         device: str | torch.device = "cuda",
         verify_hashes: bool = True,
         search_batch_size: int = 1024,
+        faiss_gpu_devices: Sequence[int] | None = None,
     ) -> None:
         self.manifest_path = str(Path(manifest_path).resolve())
         self.root = Path(self.manifest_path).parent
@@ -527,6 +677,13 @@ class FrozenCorpusIndexRouter:
                 device=device,
                 verify_hashes=verify_hashes,
                 search_batch_size=search_batch_size,
+                # Routed corpora are per-domain and individually small. Pin each to
+                # one device so a dozen routes do not each fan out over every GPU.
+                faiss_gpu_devices=(
+                    faiss_gpu_devices
+                    if faiss_gpu_devices is not None
+                    else [torch.device(device).index or 0]
+                ),
             )
             if child.manifest.get("source_name") not in {None, route}:
                 raise ValueError(

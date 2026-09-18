@@ -7,14 +7,18 @@ from collections.abc import Iterable, Sequence
 from typing import Any
 
 
-_ARTICLES = re.compile(r"\b(a|an|the)\b", flags=re.IGNORECASE)
+_ARTICLES = re.compile(r"\b(a|an|the)\b")
 _WHITESPACE = re.compile(r"\s+")
+_PUNCTUATION = str.maketrans("", "", string.punctuation)
 
 
 def normalize_answer(text: str) -> str:
     """SQuAD/FlashRAG-style normalization used by answer metrics."""
-    text = str(text).lower()
-    text = "".join(character for character in text if character not in string.punctuation)
+    # str.translate does the punctuation strip in C; the equivalent generator
+    # comprehension dominated the cost of scanning hundreds of millions of
+    # retrieved passages. The article pattern needs no IGNORECASE because it only
+    # ever sees the lowercased text.
+    text = str(text).lower().translate(_PUNCTUATION)
     text = _ARTICLES.sub(" ", text)
     return _WHITESPACE.sub(" ", text).strip()
 
@@ -48,18 +52,24 @@ def exact_match(prediction: str, references: Sequence[str]) -> float:
     return float(any(normalized_prediction == normalize_answer(reference) for reference in references))
 
 
-def passage_contains_answer(contents: str, answers: Sequence[str]) -> bool:
-    """FlashRAG Retrieval_Recall: normalized answer substring in normalized passage."""
+def normalize_answers(answers: Sequence[str]) -> list[str]:
+    """Normalize an answer set once so it can be reused across many passages."""
+    return [needle for needle in (normalize_answer(answer) for answer in answers) if needle]
+
+
+def passage_contains_normalized_answer(contents: str, normalized_answers: Sequence[str]) -> bool:
+    """``passage_contains_answer`` with the answer set already normalized."""
+    if not normalized_answers:
+        return False
     haystack = normalize_answer(contents)
     if not haystack:
         return False
-    for answer in answers:
-        needle = normalize_answer(answer)
-        if not needle:
-            continue
-        if needle in haystack:
-            return True
-    return False
+    return any(needle in haystack for needle in normalized_answers)
+
+
+def passage_contains_answer(contents: str, answers: Sequence[str]) -> bool:
+    """FlashRAG Retrieval_Recall: normalized answer substring in normalized passage."""
+    return passage_contains_normalized_answer(contents, normalize_answers(answers))
 
 
 def extract_evidence_groups(record: dict[str, Any]) -> list[dict[str, Any]]:
