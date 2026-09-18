@@ -5,13 +5,16 @@ from __future__ import annotations
 import argparse
 import gc
 import json
+import sys
 import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
 import torch
+from tqdm import tqdm
 
 from rag.candidates import (
     build_title_catalog,
@@ -43,6 +46,42 @@ MULTIHOP_METRIC_KEYS = (
     "evidence_mapping_success",
 )
 GENERATION_METRIC_KEYS = ("generator_em", "generator_token_f1")
+
+
+def _progress(total: int, description: str, unit: str = "query") -> tqdm:
+    """A bar that stays readable when stderr is a log file rather than a terminal.
+
+    A full evaluation is normally launched detached with its output redirected, and
+    there tqdm's tenth-of-a-second refresh writes tens of thousands of updates that
+    bury everything else in the file. Off a terminal it is slowed to once a minute,
+    which is still often enough to see which phase is moving and how fast.
+    """
+    return tqdm(
+        total=total,
+        desc=description,
+        unit=unit,
+        dynamic_ncols=True,
+        mininterval=0.5 if sys.stderr.isatty() else 60.0,
+        file=sys.stderr,
+    )
+
+
+@contextmanager
+def _stage(description: str) -> Iterator[None]:
+    """Bracket a startup step that reads tens of gigabytes without reporting any of it.
+
+    Hash verification and the faiss build each walk the whole index, and the encoder
+    load can pull weights over the network; none of them can be made into a bar from
+    here. Announcing them at least says which one the run is sitting in.
+    """
+    print(f"[eval_rag] {description}", file=sys.stderr, flush=True)
+    started = time.perf_counter()
+    yield
+    print(
+        f"[eval_rag] {description}: done in {time.perf_counter() - started:.1f}s",
+        file=sys.stderr,
+        flush=True,
+    )
 
 
 def _source_path(manifest: dict, root: Path, source: str, split: str) -> Path:
@@ -109,7 +148,9 @@ def _retrieve(
     for source, (split, expected_count) in EVALUATION_SUITE.items():
         rows = []
         retrieval_path = output_dir / f"{source}_{split}.retrieval.jsonl"
-        with open(retrieval_path, "w", encoding="utf-8") as retrieval_writer:
+        with _progress(expected_count, f"retrieve {source}") as bar, open(
+            retrieval_path, "w", encoding="utf-8"
+        ) as retrieval_writer:
             for batch in _batches(iter_jsonl(dataset_paths[source]), args.batch_size):
                 for record in batch:
                     validate_flashrag_record(record, source)
@@ -159,6 +200,7 @@ def _retrieve(
                         row["evidence_mapping_success"] = float(groups is not None)
                     retrieval_writer.write(json.dumps(row, ensure_ascii=False) + "\n")
                     rows.append(row)
+                bar.update(len(batch))
         if len(rows) != expected_count:
             raise ValueError(f"{source}/{split} has {len(rows)} rows, expected {expected_count}")
         metric_keys = list(RETRIEVAL_METRIC_KEYS)
@@ -190,6 +232,10 @@ def _generate(
     in_flight: deque = deque()
     writers: dict[str, Any] = {}
     totals: dict[str, dict[str, float]] = {}
+    # One bar for the whole phase rather than one per source: requests stay in
+    # flight across source boundaries, so per-source bars would each sit finished
+    # for a while before the answers behind them arrive.
+    bar = _progress(sum(summary["count"] for summary in summaries.values()), "generate")
 
     def collect(future, source: str, pending: list[tuple[str, list, list[int]]]) -> None:
         writer = writers[source]
@@ -209,6 +255,8 @@ def _generate(
                 "em": em,
                 "token_f1": token_f1,
             }, ensure_ascii=False) + "\n")
+        bar.set_postfix_str(source, refresh=False)
+        bar.update(len(pending))
 
     try:
         for source, (split, _) in EVALUATION_SUITE.items():
@@ -232,6 +280,7 @@ def _generate(
             collect(*in_flight.popleft())
     finally:
         pool.shutdown()
+        bar.close()
         for writer in writers.values():
             writer.close()
 
@@ -275,12 +324,16 @@ def evaluate(args: argparse.Namespace) -> Path:
     }
     _validate_project_checkpoint(args.checkpoint, args.index_manifest)
 
-    index = FrozenDistributedIndex(
-        args.index_manifest,
-        backend=args.index_backend,
-        device=args.device,
-        verify_hashes=not args.skip_hash_verification,
-    )
+    with _stage(
+        "loading frozen index"
+        + ("" if args.skip_hash_verification else " (hashing every shard first)")
+    ):
+        index = FrozenDistributedIndex(
+            args.index_manifest,
+            backend=args.index_backend,
+            device=args.device,
+            verify_hashes=not args.skip_hash_verification,
+        )
     if index.manifest.get("source_manifest_sha256") != sha256_file(source_manifest_path):
         raise ValueError("Evaluation data and frozen index use different FlashRAG manifests")
     corpus_path = Path(index.manifest["corpus_path"])
@@ -289,19 +342,25 @@ def evaluate(args: argparse.Namespace) -> Path:
     evidence_titles = set()
     for source in MULTIHOP_SOURCES:
         evidence_titles.update(collect_hotpot_title_targets(iter_jsonl(dataset_paths[source])))
-    title_catalog = build_title_catalog(str(corpus_path), evidence_titles)
+    # The multi-hop evidence metrics need the corpus rows behind the supporting
+    # titles, and finding them parses all twenty-one million of them.
+    with _progress(index.count, "scan corpus for evidence titles", unit="doc") as bar:
+        title_catalog = build_title_catalog(
+            str(corpus_path), evidence_titles, progress=bar.update
+        )
 
-    encoder = FrozenQueryEncoder(
-        args.model,
-        adapter_path=args.checkpoint,
-        revision=args.model_revision,
-        device=args.device,
-        max_length=args.query_max_length,
-        pooling_method=args.pooling_method,
-        padding_side=args.padding_side,
-        append_token=args.append_token,
-        query_prompt_template=args.query_prompt_template,
-    )
+    with _stage("loading query encoder"):
+        encoder = FrozenQueryEncoder(
+            args.model,
+            adapter_path=args.checkpoint,
+            revision=args.model_revision,
+            device=args.device,
+            max_length=args.query_max_length,
+            pooling_method=args.pooling_method,
+            padding_side=args.padding_side,
+            append_token=args.append_token,
+            query_prompt_template=args.query_prompt_template,
+        )
     validate_query_index_protocol(
         index.manifest,
         model_name_or_path=args.model,

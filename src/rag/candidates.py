@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Any, Iterable, Sequence
+from typing import Any, Callable, Iterable, Sequence
 
 from rag.data import iter_jsonl
 from rag.metrics import (
@@ -29,12 +29,31 @@ def collect_hotpot_title_targets(records: Iterable[dict[str, Any]]) -> set[str]:
     }
 
 
-def build_title_catalog(corpus_path: str, target_titles: set[str]) -> dict[str, list[tuple[int, str]]]:
+def build_title_catalog(
+    corpus_path: str,
+    target_titles: set[str],
+    progress: Callable[[int], None] | None = None,
+    progress_interval: int = 100_000,
+) -> dict[str, list[tuple[int, str]]]:
+    """Index the corpus passages whose title is one a caller asks about.
+
+    The scan parses every corpus row, so a caller that wants to show it moving
+    passes ``progress`` and is told how many rows were read since the last call.
+    Reporting in blocks keeps a bar from being refreshed twenty-one million times.
+    """
     catalog: dict[str, list[tuple[int, str]]] = defaultdict(list)
+    since_report = 0
     for ordinal, record in enumerate(iter_jsonl(corpus_path)):
         title = normalize_answer(corpus_title(record))
         if title in target_titles:
             catalog[title].append((ordinal, record["contents"]))
+        if progress is not None:
+            since_report += 1
+            if since_report == progress_interval:
+                progress(since_report)
+                since_report = 0
+    if progress is not None and since_report:
+        progress(since_report)
     return dict(catalog)
 
 
