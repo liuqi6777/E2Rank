@@ -1,5 +1,7 @@
 # Paper workspace
 
+2026-09-19：shortlist 四组实验已整理为 [G1 Shortlist 结果总结](G1_SHORTLIST_RESULTS.md)，覆盖 **17 个配方、51 次训练**。当前最佳已测 Uniform K15/T1 / alignment 0.70 为 **22.25 ± 0.27**，CL-Strong 为 **22.64 ± 0.20**；双方均为 113 steps。文档包含 K/T、hard 比例、候选来源、alignment 和领域分析。用 `python scripts/analyze_g1_shortlist_results.py` 复算；下文旧主结果决策及 LaTeX/PDF 尚未同步这批 shortlist 结果。
+
 2026-09-18 后续：新增 [ReasonEmbed 三方法实验](../docs/g2_reasonembed_cl.md)，D/E/W 各 CL、CL-Strong、binary CP，共九条 seed 42 训练，**每阶段 1 epoch**，最终 BRIGHT；新输出根目录隔离旧 1200-step 产物。配置和入口已准备，尚未启动训练。下文 E2Rank 的结果与呈现建议保持不变。
 
 2026-09-18：E2Rank G2-R2 的 **D/E/W × CL / CL-Strong / RL 九条结果已同步**，见 [结果与呈现建议](G2_R2_RESULTS.md) 和 [原始总分表](_summary/g2_r2_mteb_v2/run_summary.csv)。三个分支的 RL Retrieval 均值均低于两种 CL；建议正文若讨论直接训练则聚焦 D，附录保留完整结果。脚本和配置已恢复原 D/E/W 版本，本次只更新文档，没有重跑或新增训练。LaTeX/PDF 尚未同步 G2 结果。

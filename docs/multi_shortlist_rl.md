@@ -1,5 +1,7 @@
 # 当前跨卡 batch 池上的多 shortlist listwise RL
 
+已完成结果见 [G1 Shortlist 结果总结](../paper/G1_SHORTLIST_RESULTS.md)：17 个配方、51 次训练，含三 seed 完整总分、领域分析和复算脚本。当前最佳已测均值为 Uniform K15/T1 / alignment 0.70 的 22.25，仍低于 CL-Strong 22.64。
+
 保留每条 query 的全部自有候选（所有正例和自有 negatives），再从当前跨卡 batch 的其他文档中
 抽取多组额外 negatives。每组分别计算 listwise reward、LOO 和 CP，最后平均 surrogate loss。
 纯 RL 示例使用 graded nDCG@10，不加入 pairwise 或 InfoNCE 辅助项。
@@ -34,7 +36,8 @@ P<K 时每组保留全部 P 篇并 padding；P=0 时退化为自有候选排序�
 不为穷尽 2000 篇自动增加 T。两个 Mixed 对照都固定 H=128，候选充足时可维持
 每组 8 个高分区文档、7 个其余文档，避免仅因 H=64 在第 8 组耗尽而改变后续组的配比。
 新 batch/模型状态下重新选择候选；不维护跨步“已见文档”集合，也不保证全训练期完整覆盖。
-这些默认数值是起始设置，尚无训练效果结论。高分不等于在当前扰动尺度下可学习，需同时
+这些默认数值是初始实现设置，不代表当前推荐配方；已完成结果更支持 Uniform K15/T1。
+高分不等于在当前扰动尺度下可学习，需同时
 观察每组奖励变化和 LOO 退化。若几乎总为零，应调整难度配比或候选规模。
 
 采样使用现有 rank/step/train-eval/microbatch 随机数框架中的独立 `shortlist` 流。
