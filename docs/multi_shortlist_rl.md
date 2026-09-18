@@ -108,7 +108,51 @@ sampling/groups/seeds 显式选择尚未完成的组合，脚本不会自动跳�
 八张 BF16 CUDA 卡，输出非空拒绝覆盖。可用 eval 重试已训练模型的评测。其他 T/K/H 可通过
 独立 suite overrides 或正常训练 JSON 配置指定，函数实现不限制为这两个组数。
 
-日志：
+### K/T 与轻量 hard 扩展实验
+
+独立 [sweep suite](../configs/experiments/iclr2027/suite_g1_shortlist_sweep.yaml)
+新增以下 7 个配置，各使用 seeds 42/3407/2026，共 21 条 run。
+均沿用 CP/G64、alignment 0.80、113 steps 和原训练/评测协议。
+K 仅指额外负例数，自有候选全部保留；T 组复用同一套 actions。
+
+| `--recipes` 名称 | K | T | 每组高分区名额 | 最多不同额外负例 |
+|---|---:|---:|---:|---:|
+| `uniform-k15-t1` | 15 | 1 | 0 | 15 |
+| `uniform-k15-t4` | 15 | 4 | 0 | 60 |
+| `uniform-k30-t4` | 30 | 4 | 0 | 120 |
+| `uniform-k30-t8` | 30 | 8 | 0 | 240 |
+| `uniform-k60-t4` | 60 | 4 | 0 | 240 |
+| `mixed-k15-t8-hard2` | 15 | 8 | 2 | 120 |
+| `mixed-k15-t8-hard4` | 15 | 8 | 4 | 120 |
+
+Mixed 的高分候选区仍为前 128 个，其余名额从其余池抽取；池不足时沿用上述补齐规则。
+同覆盖对照复用已有 Uniform K15/T8（120）和 K15/T16（240），不重跑它们。
+K×T 相同仅表示候选充足时覆盖数相同，不代表计算量相同。
+
+```bash
+# 检查全部 21 条，不启动 GPU 训练
+python scripts/run_g1_shortlist_sweep_r2.py check
+
+# 按表格顺序，每配置依次运行三个 seed；每条训练后评测 BRIGHT
+python scripts/run_g1_shortlist_sweep_r2.py train
+
+# 按 seed 拆到不同八卡机器
+python scripts/run_g1_shortlist_sweep_r2.py train --seeds 3407
+
+# 只跑指定配置，也可以同时选择多个配置和 seed
+python scripts/run_g1_shortlist_sweep_r2.py train \
+  --recipes uniform-k30-t4 mixed-k15-t8-hard2 --seeds 42 2026
+
+# 仅重试指定模型的评测
+python scripts/run_g1_shortlist_sweep_r2.py eval \
+  --recipes uniform-k30-t4 --seeds 42
+```
+
+使用 `--config /path/to/settings.yaml` 指定训练机 settings。
+新 run ID 显式包含 K/T，Mixed 额外包含 Hard2/Hard4，与原 suite 不重名。
+启动器沿用八卡 BF16 检查、非空输出目录保护及失败即停止行为，不自动跳过已完成 run。
+
+### 日志
 
 - `shortlist/pool_candidates_mean/max`：过滤后的来源池，不含自有候选。
 - `shortlist/unique_candidates_mean`、`coverage_mean`、`repeat_fraction`：本步独立负例覆盖。
