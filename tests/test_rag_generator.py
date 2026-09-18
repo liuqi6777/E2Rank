@@ -12,6 +12,7 @@ from transformers import PreTrainedTokenizerFast
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT / "src")]
 
+import rag.generator as generator_module
 from rag.generator import FrozenGeneratorClient
 
 
@@ -160,6 +161,83 @@ def test_oversized_batches_are_split_to_the_server_limit(tmp_path):
 
     assert sizes == [2, 2, 1]
     assert len(outputs) == 5
+    generator.close()
+
+
+def test_rows_written_after_startup_are_still_found(tmp_path):
+    """Training shares one cache file across ranks, so the snapshot cannot be final.
+
+    The in-memory copy taken at startup exists to keep lookups off a network
+    filesystem, not to pin the cache: a key it does not hold has to be checked
+    against the file before the endpoint is asked for it.
+    """
+    writer = client(tmp_path, max_input_length=4096)
+    docs = documents(2, 3)
+    requests = [("q1", "first question", [0, 1], docs)]
+    writer._complete = lambda prompts: ["written by another rank"]
+    writer.generate_batch(requests)
+    writer.close()
+
+    reader = client(tmp_path, max_input_length=4096)
+    # A second client over the same file, started before the row it needs existed.
+    reader._cache.clear()
+    reader._complete = lambda prompts: pytest.fail("the endpoint was asked for a cached answer")
+
+    assert reader.generate_batch(requests) == ["written by another rank"]
+    assert reader.statistics()["generation_cache_hits"] == 1
+    reader.close()
+
+
+def test_a_cache_too_large_to_hold_still_answers_from_the_file(tmp_path):
+    """Training appends a row per rollout, so the table can outgrow memory."""
+    writer = client(tmp_path, max_input_length=4096)
+    docs = documents(2, 3)
+    requests = [(f"q{index}", f"question {index}", [index], docs) for index in range(4)]
+    writer._complete = lambda prompts: [f"answer {index}" for index in range(len(prompts))]
+    expected = writer.generate_batch(requests)
+    writer.close()
+
+    limit = generator_module.MAX_PRELOADED_ROWS
+    generator_module.MAX_PRELOADED_ROWS = 1
+    try:
+        reader = client(tmp_path, max_input_length=4096)
+    finally:
+        generator_module.MAX_PRELOADED_ROWS = limit
+
+    assert reader._cache == {}, "a table over the limit must not be held in memory"
+    reader._complete = lambda prompts: pytest.fail("the endpoint was asked for a cached answer")
+    assert reader.generate_batch(requests) == expected
+    assert reader.statistics()["generation_cache_hits"] == 4
+    reader.close()
+
+
+def test_cache_lookups_do_not_run_one_query_per_request(tmp_path):
+    """These caches live on network storage, where a round trip costs milliseconds."""
+    generator = client(tmp_path, max_input_length=4096)
+    docs = documents(1, 2)
+    requests = [(f"q{index}", f"question {index}", [index], docs) for index in range(64)]
+    generator._complete = lambda prompts: [f"a{index}" for index in range(len(prompts))]
+    generator.generate_batch(requests)
+
+    statements = []
+
+    class RecordingConnection:
+        def __init__(self, connection):
+            self._connection = connection
+
+        def execute(self, sql, *rest):
+            statements.append(sql)
+            return self._connection.execute(sql, *rest)
+
+        def __getattr__(self, name):
+            return getattr(self._connection, name)
+
+    generator.connection = RecordingConnection(generator.connection)
+    generator.generate_batch(requests)
+
+    # Every answer is already in memory, so the file is not consulted at all.
+    assert statements == []
+    assert generator.statistics()["generation_cache_hits"] == 64
     generator.close()
 
 

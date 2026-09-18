@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import json
+import multiprocessing
+import os
 from collections import defaultdict
+from pathlib import Path
 from typing import Any, Callable, Iterable, Sequence
 
 from rag.data import iter_jsonl
@@ -54,6 +58,119 @@ def build_title_catalog(
                 since_report = 0
     if progress is not None and since_report:
         progress(since_report)
+    return dict(catalog)
+
+
+def default_catalog_workers() -> int:
+    # The scan is parse-bound rather than read-bound, so this tracks cores, with
+    # the same ceiling candidate mining uses against the shared filesystem.
+    return max(1, min(32, len(os.sched_getaffinity(0))))
+
+
+_CATALOG_TARGETS: set[str] | None = None
+
+
+def _initialize_catalog_worker(target_titles: set[str]) -> None:
+    global _CATALOG_TARGETS
+    _CATALOG_TARGETS = target_titles
+
+
+def scan_title_catalog_chunk(
+    chunk: tuple[str, int, int]
+) -> tuple[int, int, list[tuple[str, int, str]]]:
+    """Index one line-aligned byte range, returning its matches and its ordinal span.
+
+    Ordinals come from each row's own ``id`` rather than from counting lines, so a
+    worker does not need to know how many rows precede its range. The span it
+    reports back lets the caller prove the ranges tile the corpus without a gap,
+    which is what makes those ids equal the positions the serial scan would count.
+    """
+    if _CATALOG_TARGETS is None:
+        raise RuntimeError("title-catalog worker was not initialized")
+    corpus_path, start, stop = chunk
+    matches: list[tuple[str, int, str]] = []
+    first_ordinal = expected = None
+    # Binary mode with the offset tracked by hand, as the qrels scanner does: a
+    # text handle's tell() rebuilds an opaque decoder cookie, and asking for it
+    # once per line costs more than parsing the line.
+    with open(corpus_path, "rb") as handle:
+        handle.seek(start)
+        position = start
+        while position < stop:
+            line = handle.readline()
+            if not line:
+                break
+            position += len(line)
+            if not line.strip():
+                continue
+            record = json.loads(line)
+            ordinal = int(record["id"])
+            if expected is None:
+                first_ordinal = expected = ordinal
+            elif ordinal != expected:
+                raise ValueError(
+                    f"Corpus ids must equal ordinals: id={ordinal}, expected {expected}"
+                )
+            expected = ordinal + 1
+            title = normalize_answer(corpus_title(record))
+            if title in _CATALOG_TARGETS:
+                matches.append((title, ordinal, record["contents"]))
+    if first_ordinal is None:
+        return 0, 0, matches
+    return first_ordinal, expected, matches
+
+
+def build_title_catalog_parallel(
+    corpus_path: str,
+    target_titles: set[str],
+    workers: int,
+    progress: Callable[[int], None] | None = None,
+) -> dict[str, list[tuple[int, str]]]:
+    """``build_title_catalog`` spread over processes, producing the same catalog.
+
+    Scanning twenty-one million rows to find a few tens of thousands of titles is
+    the longest single step of an evaluation and it holds no GPU, so it is split
+    into byte ranges the same way candidate mining splits the corpus. Workers
+    return only their matches, and the ranges are merged in file order, which is
+    the order the serial scan appends in.
+    """
+    if workers <= 1:
+        return build_title_catalog(corpus_path, target_titles, progress=progress)
+
+    from rag.build_qrels import _chunk_byte_ranges
+
+    chunks = _chunk_byte_ranges(Path(corpus_path), workers)
+    # Not fork: an evaluation has already built its index by this point and so holds
+    # a CUDA context, which is the same reason candidate mining spawns. Forkserver
+    # over spawn because a worker that starts by importing this module pulls in
+    # torch behind it, and paying that once in the server rather than in every
+    # worker is the difference between 126s of startup and 6s -- against a scan
+    # that only takes 5s once it is running. The server itself is exec'd fresh, so
+    # no CUDA context reaches the workers it forks.
+    if "forkserver" in multiprocessing.get_all_start_methods():
+        context = multiprocessing.get_context("forkserver")
+        context.set_forkserver_preload([__name__])
+    else:
+        context = multiprocessing.get_context("spawn")
+    catalog: dict[str, list[tuple[int, str]]] = defaultdict(list)
+    previous_stop = 0
+    with context.Pool(
+        processes=min(workers, len(chunks)),
+        initializer=_initialize_catalog_worker,
+        initargs=(target_titles,),
+    ) as pool:
+        for first_ordinal, stop_ordinal, matches in pool.imap(scan_title_catalog_chunk, chunks):
+            if matches or stop_ordinal:
+                if first_ordinal != previous_stop:
+                    raise ValueError(
+                        f"Corpus chunks are not contiguous: expected ordinal "
+                        f"{previous_stop}, found {first_ordinal}"
+                    )
+                previous_stop = stop_ordinal
+            for title, ordinal, contents in matches:
+                catalog[title].append((ordinal, contents))
+            if progress is not None:
+                progress(stop_ordinal - first_ordinal)
     return dict(catalog)
 
 

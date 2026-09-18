@@ -21,6 +21,16 @@ SYSTEM_PROMPT = (
 # per rollout, so a single step easily exceeds that; batches are split to match.
 MAX_PROMPTS_PER_REQUEST = 1024
 
+# Parameters per "cache_key IN (...)" lookup. SQLITE_MAX_VARIABLE_NUMBER is 32766
+# on modern builds but only 999 on older ones, and the round trip is what costs,
+# not the width, so this stays well under both.
+MAX_KEYS_PER_SELECT = 500
+
+# Rows held in memory. An evaluation's cache is around a hundred thousand of them,
+# but training appends one per rollout and runs for as long as the campaign does,
+# so a table past this size is left on disk and reached through batched lookups.
+MAX_PRELOADED_ROWS = 4_000_000
+
 
 class FrozenGeneratorClient:
     """Cached client for a vLLM OpenAI-compatible endpoint.
@@ -62,14 +72,28 @@ class FrozenGeneratorClient:
         cache_file.parent.mkdir(parents=True, exist_ok=True)
         # A caller may drive generation from a worker thread to overlap it with GPU
         # work, so the cache is shared rather than pinned to the creating thread.
-        # Every statement and counter update below runs under _lock.
+        # Every statement below runs under _lock; the counters have their own.
         self.connection = sqlite3.connect(cache_file, timeout=120, check_same_thread=False)
         self._lock = threading.Lock()
+        self._statistics_lock = threading.Lock()
         self.connection.execute("PRAGMA journal_mode=WAL")
         self.connection.execute(
             "CREATE TABLE IF NOT EXISTS generations (cache_key TEXT PRIMARY KEY, output TEXT NOT NULL)"
         )
         self.connection.commit()
+        # The whole table is read once and answered from memory afterwards. These
+        # caches live on network storage, where a single-row lookup is a filesystem
+        # round trip rather than a b-tree descent: measured on JuiceFS with a 18MB
+        # 102k-row cache, one SELECT per key costs 38ms against 6us for the same
+        # file on local disk, so a seven-dataset evaluation spent about half an hour
+        # of its generation phase waiting on point queries while the endpoint idled.
+        # Reading every row instead takes 0.54s and answers all 51,713 lookups in 9ms.
+        # Past MAX_PRELOADED_ROWS the reads go to the file, batched; _stored_outputs
+        # is what makes both routes return the same answers.
+        rows = self.connection.execute("SELECT count(*) FROM generations").fetchone()[0]
+        self._cache: dict[str, str] = {}
+        if rows <= MAX_PRELOADED_ROWS:
+            self._cache = dict(self.connection.execute("SELECT cache_key, output FROM generations"))
         self.requests = 0
         self.cache_hits = 0
         self.endpoint_calls = 0
@@ -164,30 +188,69 @@ class FrozenGeneratorClient:
             pending = overlong
         return [str(prompt) for prompt in prompts]
 
+    def _stored_outputs(self, keys: Sequence[str]) -> dict[str, str]:
+        """Re-read keys the in-memory snapshot does not hold.
+
+        Training shares one cache file across ranks, so a key absent at startup may
+        have been written by another rank since. Asking the file again keeps that
+        behaviour, at one round trip per batch rather than one per key.
+        """
+        found: dict[str, str] = {}
+        with self._lock:
+            for start in range(0, len(keys), MAX_KEYS_PER_SELECT):
+                window = keys[start : start + MAX_KEYS_PER_SELECT]
+                placeholders = ",".join("?" * len(window))
+                found.update(self.connection.execute(
+                    f"SELECT cache_key, output FROM generations WHERE cache_key IN ({placeholders})",
+                    window,
+                ))
+            self._cache.update(found)
+        return found
+
     def generate_batch(
         self,
         requests: Sequence[tuple[str, str, Sequence[int], Sequence[dict]]],
     ) -> list[str]:
         outputs: list[str | None] = [None] * len(requests)
+        # Hashing a request's context is pure CPU and touches no shared state, so it
+        # stays outside the lock; with the lookups served from memory it would
+        # otherwise be nearly the whole critical section.
+        keys = [
+            self.cache_key(query_id, passage_ids, documents)
+            for query_id, _, passage_ids, documents in requests
+        ]
         missing_indices_by_key: dict[str, list[int]] = {}
-        missing_keys = []
-        missing_inputs = []
+        missing_keys: list[str] = []
+        missing_inputs: list[tuple[str, Sequence[dict]]] = []
         with self._lock:
-            self.requests += len(requests)
-            for index, (query_id, question, passage_ids, documents) in enumerate(requests):
-                key = self.cache_key(query_id, passage_ids, documents)
-                row = self.connection.execute(
-                    "SELECT output FROM generations WHERE cache_key = ?", (key,)
-                ).fetchone()
-                if row is not None:
-                    outputs[index] = row[0]
-                    self.cache_hits += 1
+            for index, key in enumerate(keys):
+                output = self._cache.get(key)
+                if output is not None:
+                    outputs[index] = output
                 elif key in missing_indices_by_key:
                     missing_indices_by_key[key].append(index)
                 else:
                     missing_indices_by_key[key] = [index]
                     missing_keys.append(key)
-                    missing_inputs.append((question, documents))
+                    missing_inputs.append((requests[index][1], requests[index][3]))
+
+        if missing_keys:
+            stored = self._stored_outputs(missing_keys)
+            if stored:
+                for key in stored:
+                    for index in missing_indices_by_key.pop(key):
+                        outputs[index] = stored[key]
+                surviving = [
+                    (key, request_input)
+                    for key, request_input in zip(missing_keys, missing_inputs)
+                    if key not in stored
+                ]
+                missing_keys = [key for key, _ in surviving]
+                missing_inputs = [request_input for _, request_input in surviving]
+
+        with self._statistics_lock:
+            self.requests += len(requests)
+            self.cache_hits += sum(output is not None for output in outputs)
 
         if missing_inputs:
             # Rendering tokenizes every prompt, so it stays outside the cache lock.
@@ -203,6 +266,7 @@ class FrozenGeneratorClient:
                     zip(missing_keys, generated),
                 )
                 self.connection.commit()
+                self._cache.update(zip(missing_keys, generated))
             for key, output in zip(missing_keys, generated):
                 for index in missing_indices_by_key[key]:
                     outputs[index] = output
@@ -210,7 +274,9 @@ class FrozenGeneratorClient:
 
     def _complete(self, prompts: Sequence[str]) -> list[str]:
         """Send one batch of prompts the server is willing to accept at once."""
-        with self._lock:
+        # Counted under its own lock: _lock is held across a commit, and waiting on
+        # that here would delay the request the endpoint is idle waiting for.
+        with self._statistics_lock:
             self.endpoint_calls += 1
         body = json.dumps({
             "model": self.model,
@@ -234,13 +300,14 @@ class FrozenGeneratorClient:
         return [choice["text"].strip() for choice in choices]
 
     def statistics(self) -> dict[str, float | int]:
-        return {
-            "generator_manifest_hash": self.manifest_hash,
-            "generation_requests": self.requests,
-            "generation_cache_hits": self.cache_hits,
-            "generation_cache_hit_rate": self.cache_hits / max(self.requests, 1),
-            "generator_endpoint_calls": self.endpoint_calls,
-        }
+        with self._statistics_lock:
+            return {
+                "generator_manifest_hash": self.manifest_hash,
+                "generation_requests": self.requests,
+                "generation_cache_hits": self.cache_hits,
+                "generation_cache_hit_rate": self.cache_hits / max(self.requests, 1),
+                "generator_endpoint_calls": self.endpoint_calls,
+            }
 
     def close(self) -> None:
         self.connection.close()

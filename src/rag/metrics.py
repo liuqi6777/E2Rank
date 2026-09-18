@@ -122,7 +122,21 @@ def reciprocal_rank(relevant: Iterable[bool], k: int | None = None) -> float:
 
 
 def best_window_token_f1(reference: str, text: str) -> float:
-    """Best token F1 against a same-width window in a longer passage."""
+    """Best token F1 against a same-width window in a longer passage.
+
+    Every window holds exactly as many tokens as the reference, so precision and
+    recall are both overlap/width and the score rises with the multiset overlap.
+    A sliding counter tracks that overlap in constant time per offset, where the
+    previous shape rebuilt two Counters and re-ran normalization for every one of
+    them, which dominated multi-hop evidence mapping.
+
+    The winning window is then scored by ``token_f1`` itself rather than from the
+    overlap directly. Both routes agree to within rounding, but only this one is
+    bit-identical, and callers compare the result against a threshold and against
+    each other: ``map_hotpot_evidence`` drops a query whose best score falls below
+    ``minimum_window_f1`` and breaks ties by exact equality, so a last-place-digit
+    difference is enough to move which passages an evaluation reports.
+    """
     reference_tokens = normalize_answer(reference).split()
     text_tokens = normalize_answer(text).split()
     if not reference_tokens or not text_tokens:
@@ -130,7 +144,29 @@ def best_window_token_f1(reference: str, text: str) -> float:
     width = len(reference_tokens)
     if len(text_tokens) <= width:
         return token_f1(" ".join(text_tokens), " ".join(reference_tokens))
-    return max(
-        token_f1(" ".join(text_tokens[offset : offset + width]), " ".join(reference_tokens))
-        for offset in range(len(text_tokens) - width + 1)
+    needed = Counter(reference_tokens)
+    window: Counter = Counter()
+    overlap = 0
+    for token in text_tokens[:width]:
+        if window[token] < needed[token]:
+            overlap += 1
+        window[token] += 1
+    best = overlap
+    best_offset = 0
+    for offset in range(1, len(text_tokens) - width + 1):
+        if best == width:
+            break
+        leaving = text_tokens[offset - 1]
+        window[leaving] -= 1
+        if window[leaving] < needed[leaving]:
+            overlap -= 1
+        entering = text_tokens[offset + width - 1]
+        if window[entering] < needed[entering]:
+            overlap += 1
+        window[entering] += 1
+        if overlap > best:
+            best, best_offset = overlap, offset
+    return token_f1(
+        " ".join(text_tokens[best_offset : best_offset + width]),
+        " ".join(reference_tokens),
     )

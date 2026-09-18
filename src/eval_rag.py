@@ -17,8 +17,9 @@ import torch
 from tqdm import tqdm
 
 from rag.candidates import (
-    build_title_catalog,
+    build_title_catalog_parallel,
     collect_hotpot_title_targets,
+    default_catalog_workers,
     map_hotpot_evidence,
 )
 from rag.data import EVALUATION_SUITE, iter_jsonl, validate_flashrag_record
@@ -343,11 +344,14 @@ def evaluate(args: argparse.Namespace) -> Path:
     for source in MULTIHOP_SOURCES:
         evidence_titles.update(collect_hotpot_title_targets(iter_jsonl(dataset_paths[source])))
     # The multi-hop evidence metrics need the corpus rows behind the supporting
-    # titles, and finding them parses all twenty-one million of them.
+    # titles, and finding them parses all twenty-one million of them. No GPU is
+    # held here, so the parse is spread over processes.
+    catalog_started = time.perf_counter()
     with _progress(index.count, "scan corpus for evidence titles", unit="doc") as bar:
-        title_catalog = build_title_catalog(
-            str(corpus_path), evidence_titles, progress=bar.update
+        title_catalog = build_title_catalog_parallel(
+            str(corpus_path), evidence_titles, args.catalog_workers, progress=bar.update
         )
+    catalog_seconds = time.perf_counter() - catalog_started
 
     with _stage("loading query encoder"):
         encoder = FrozenQueryEncoder(
@@ -442,6 +446,9 @@ def evaluate(args: argparse.Namespace) -> Path:
                 + (generation_wall_seconds * args.generator_gpu_count / 3600 if generator else 0.0)
             ),
             "peak_gpu_memory_gib": peak_gpu_memory_bytes / 1024**3,
+            # Charged to no device: the scan runs before retrieval starts, so it is
+            # reported separately rather than folded into either phase's hours.
+            "catalog_seconds": catalog_seconds,
             "retrieval_wall_seconds": retrieval_wall_seconds,
             "generation_wall_seconds": generation_wall_seconds if generator else 0.0,
             "retrieval_seconds": retrieval_seconds,
@@ -491,6 +498,12 @@ def main() -> None:
     parser.add_argument("--append-token", default="pad")
     parser.add_argument("--query-prompt-template", default="Instruct: {task_description}\nQuery:{query}")
     parser.add_argument("--evidence-minimum-f1", type=float, default=0.8)
+    parser.add_argument(
+        "--catalog-workers",
+        type=int,
+        default=default_catalog_workers(),
+        help="Processes parsing the corpus for evidence titles; 1 scans inline",
+    )
     parser.add_argument("--generator-endpoint", default="http://127.0.0.1:8000")
     parser.add_argument("--generator-model", default="Qwen/Qwen2.5-7B-Instruct")
     parser.add_argument("--generator-system-prompt", default=(
