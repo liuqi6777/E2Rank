@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import json
 import time
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Iterator
 
@@ -152,11 +154,35 @@ def evaluate(args: argparse.Namespace) -> Path:
     retrieval_seconds = 0.0
     total_queries = 0
     summaries = {}
+    # Generation is the slow stage, so one outstanding request already keeps the
+    # endpoint busy for as long as retrieving the next batch takes. More workers
+    # only widen the batch the server sees, and overlapping requests let it mix
+    # prompts by arrival order, which costs run-to-run reproducibility.
+    generation_pool = ThreadPoolExecutor(
+        max_workers=args.generation_workers, thread_name_prefix="rag-generate"
+    )
     for source, (split, expected_count) in EVALUATION_SUITE.items():
         rows = []
         retrieval_path = output_dir / f"{source}_{split}.retrieval.jsonl"
         generation_path = output_dir / f"{source}_{split}.generation.jsonl"
         generation_writer = open(generation_path, "w", encoding="utf-8") if generator else None
+        in_flight: deque = deque()
+
+        def collect(future, pending) -> None:
+            """Score one finished batch; futures are drained in submission order."""
+            for generation, (record, row, top_ids) in zip(future.result(), pending):
+                row["generator_em"] = exact_match(generation, record["golden_answers"])
+                row["generator_token_f1"] = max_token_f1(generation, record["golden_answers"])
+                generation_writer.write(json.dumps({
+                    "query_id": record["id"],
+                    "source": source,
+                    "passage_ids": top_ids,
+                    "prediction": generation,
+                    "golden_answers": record["golden_answers"],
+                    "em": row["generator_em"],
+                    "token_f1": row["generator_token_f1"],
+                }, ensure_ascii=False) + "\n")
+
         with open(retrieval_path, "w", encoding="utf-8") as retrieval_writer:
             for batch in _batches(iter_jsonl(dataset_paths[source]), args.batch_size):
                 for record in batch:
@@ -213,19 +239,17 @@ def evaluate(args: argparse.Namespace) -> Path:
                         pending.append((record, row, top_ids))
                     rows.append(row)
                 if generator:
-                    generations = generator.generate_batch(generation_requests)
-                    for generation, (record, row, top_ids) in zip(generations, pending):
-                        row["generator_em"] = exact_match(generation, record["golden_answers"])
-                        row["generator_token_f1"] = max_token_f1(generation, record["golden_answers"])
-                        generation_writer.write(json.dumps({
-                            "query_id": record["id"],
-                            "source": source,
-                            "passage_ids": top_ids,
-                            "prediction": generation,
-                            "golden_answers": record["golden_answers"],
-                            "em": row["generator_em"],
-                            "token_f1": row["generator_token_f1"],
-                        }, ensure_ascii=False) + "\n")
+                    # Hand this batch to the generator and keep retrieving. The
+                    # previous batch is collected only now, so the encoder and the
+                    # index work through one batch while the endpoint answers the
+                    # one before it.
+                    in_flight.append(
+                        (generation_pool.submit(generator.generate_batch, generation_requests), pending)
+                    )
+                    while len(in_flight) > args.generation_workers:
+                        collect(*in_flight.popleft())
+            while in_flight:
+                collect(*in_flight.popleft())
         if generation_writer:
             generation_writer.close()
         if len(rows) != expected_count:
@@ -240,6 +264,7 @@ def evaluate(args: argparse.Namespace) -> Path:
         summaries[source] = {key: _mean(rows, key) for key in metric_keys}
         summaries[source]["count"] = len(rows)
 
+    generation_pool.shutdown()
     elapsed = time.perf_counter() - started
     if total_queries != sum(value[1] for value in EVALUATION_SUITE.values()):
         raise RuntimeError(f"Evaluation suite count mismatch: {total_queries}")
@@ -328,6 +353,12 @@ def main() -> None:
     parser.add_argument("--generator-max-new-tokens", type=int, default=32)
     parser.add_argument("--generator-timeout-seconds", type=int, default=600)
     parser.add_argument("--generator-gpu-count", type=int, default=1)
+    parser.add_argument(
+        "--generation-workers",
+        type=int,
+        default=1,
+        help="Generation requests kept in flight; 1 already hides retrieval behind generation",
+    )
     parser.add_argument("--retrieval-only", action="store_true")
     parser.add_argument("--skip-hash-verification", action="store_true")
     parser.add_argument("--overwrite", action="store_true")

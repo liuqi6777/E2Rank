@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+import threading
 import urllib.request
 from pathlib import Path
 from typing import Sequence
@@ -15,9 +16,21 @@ SYSTEM_PROMPT = (
     "Only give me the answer and do not output any other words."
 )
 
+# vLLM rejects a /v1/completions call carrying more prompts than
+# VLLM_MAX_COMPLETION_PROMPTS, which defaults to 1024. RL asks for one generation
+# per rollout, so a single step easily exceeds that; batches are split to match.
+MAX_PROMPTS_PER_REQUEST = 1024
+
 
 class FrozenGeneratorClient:
-    """Deterministic, cached client for a vLLM OpenAI-compatible endpoint."""
+    """Cached client for a vLLM OpenAI-compatible endpoint.
+
+    Greedy decoding does not make the endpoint reproducible: continuous batching
+    varies the reduction order, and on this corpus about 2-3% of answers change
+    when the same prompts are grouped differently, moving aggregate EM by ~0.2.
+    The cache is what makes a run repeatable, by pinning the first answer produced
+    for a given question and context.
+    """
 
     def __init__(
         self,
@@ -29,9 +42,12 @@ class FrozenGeneratorClient:
         max_new_tokens: int = 32,
         timeout_seconds: int = 600,
         system_prompt: str = SYSTEM_PROMPT,
+        max_prompts_per_request: int = MAX_PROMPTS_PER_REQUEST,
     ):
         if not endpoint:
             raise ValueError("A generator endpoint is required for answer_f1 reward")
+        if max_prompts_per_request <= 0:
+            raise ValueError("max_prompts_per_request must be positive")
         self.endpoint = endpoint.rstrip("/")
         self.model = model
         self.revision = revision
@@ -39,11 +55,16 @@ class FrozenGeneratorClient:
         self.max_new_tokens = max_new_tokens
         self.timeout_seconds = timeout_seconds
         self.system_prompt = system_prompt
+        self.max_prompts_per_request = int(max_prompts_per_request)
         self.tokenizer = AutoTokenizer.from_pretrained(model, revision=revision, trust_remote_code=True)
         self.resolved_revision = getattr(self.tokenizer, "_commit_hash", None) or revision
         cache_file = Path(cache_path)
         cache_file.parent.mkdir(parents=True, exist_ok=True)
-        self.connection = sqlite3.connect(cache_file, timeout=120)
+        # A caller may drive generation from a worker thread to overlap it with GPU
+        # work, so the cache is shared rather than pinned to the creating thread.
+        # Every statement and counter update below runs under _lock.
+        self.connection = sqlite3.connect(cache_file, timeout=120, check_same_thread=False)
+        self._lock = threading.Lock()
         self.connection.execute("PRAGMA journal_mode=WAL")
         self.connection.execute(
             "CREATE TABLE IF NOT EXISTS generations (cache_key TEXT PRIMARY KEY, output TEXT NOT NULL)"
@@ -112,57 +133,71 @@ class FrozenGeneratorClient:
         requests: Sequence[tuple[str, str, Sequence[int], Sequence[dict]]],
     ) -> list[str]:
         outputs: list[str | None] = [None] * len(requests)
-        self.requests += len(requests)
         missing_indices_by_key: dict[str, list[int]] = {}
-        missing_prompts = []
         missing_keys = []
-        for index, (query_id, question, passage_ids, documents) in enumerate(requests):
-            key = self.cache_key(query_id, passage_ids, documents)
-            row = self.connection.execute(
-                "SELECT output FROM generations WHERE cache_key = ?", (key,)
-            ).fetchone()
-            if row is not None:
-                outputs[index] = row[0]
-                self.cache_hits += 1
-            else:
-                if key in missing_indices_by_key:
+        missing_inputs = []
+        with self._lock:
+            self.requests += len(requests)
+            for index, (query_id, question, passage_ids, documents) in enumerate(requests):
+                key = self.cache_key(query_id, passage_ids, documents)
+                row = self.connection.execute(
+                    "SELECT output FROM generations WHERE cache_key = ?", (key,)
+                ).fetchone()
+                if row is not None:
+                    outputs[index] = row[0]
+                    self.cache_hits += 1
+                elif key in missing_indices_by_key:
                     missing_indices_by_key[key].append(index)
                 else:
                     missing_indices_by_key[key] = [index]
                     missing_keys.append(key)
-                    missing_prompts.append(self._render(question, documents))
+                    missing_inputs.append((question, documents))
 
-        if missing_prompts:
-            self.endpoint_calls += 1
-            body = json.dumps({
-                "model": self.model,
-                "prompt": missing_prompts,
-                "temperature": 0,
-                "max_tokens": self.max_new_tokens,
-            }).encode("utf-8")
-            request = urllib.request.Request(
-                f"{self.endpoint}/v1/completions",
-                data=body,
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
-                payload = json.load(response)
-            choices = sorted(payload["choices"], key=lambda choice: int(choice.get("index", 0)))
-            if len(choices) != len(missing_prompts):
-                raise RuntimeError(
-                    f"Generator returned {len(choices)} choices for {len(missing_prompts)} prompts"
+        if missing_inputs:
+            # Rendering tokenizes every prompt, so it stays outside the cache lock.
+            missing_prompts = [
+                self._render(question, documents) for question, documents in missing_inputs
+            ]
+            generated = []
+            for start in range(0, len(missing_prompts), self.max_prompts_per_request):
+                generated.extend(
+                    self._complete(missing_prompts[start : start + self.max_prompts_per_request])
                 )
-            generated = [choice["text"].strip() for choice in choices]
-            self.connection.executemany(
-                "INSERT OR REPLACE INTO generations(cache_key, output) VALUES (?, ?)",
-                zip(missing_keys, generated),
-            )
-            self.connection.commit()
+            with self._lock:
+                self.connection.executemany(
+                    "INSERT OR REPLACE INTO generations(cache_key, output) VALUES (?, ?)",
+                    zip(missing_keys, generated),
+                )
+                self.connection.commit()
             for key, output in zip(missing_keys, generated):
                 for index in missing_indices_by_key[key]:
                     outputs[index] = output
         return [str(output) for output in outputs]
+
+    def _complete(self, prompts: Sequence[str]) -> list[str]:
+        """Send one batch of prompts the server is willing to accept at once."""
+        with self._lock:
+            self.endpoint_calls += 1
+        body = json.dumps({
+            "model": self.model,
+            "prompt": list(prompts),
+            "temperature": 0,
+            "max_tokens": self.max_new_tokens,
+        }).encode("utf-8")
+        request = urllib.request.Request(
+            f"{self.endpoint}/v1/completions",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
+            payload = json.load(response)
+        choices = sorted(payload["choices"], key=lambda choice: int(choice.get("index", 0)))
+        if len(choices) != len(prompts):
+            raise RuntimeError(
+                f"Generator returned {len(choices)} choices for {len(prompts)} prompts"
+            )
+        return [choice["text"].strip() for choice in choices]
 
     def statistics(self) -> dict[str, float | int]:
         return {
