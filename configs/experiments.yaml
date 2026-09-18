@@ -25,8 +25,13 @@ G2:
 
 G3:
   model: Qwen/Qwen3-Embedding-0.6B
-  learning_rate: null
-  steps: null
-  checkpoint_every: null
+  learning_rate: 0.000005
+  # 200 * 128 = 25,600 query exposures, about a quarter of the 108,730 prepared
+  # queries. The budget is set by G3-AnsRL, not by the data: its reward asks the
+  # generator once per rollout, so every step costs batch x rag_group_size =
+  # 4,096 generations on the single frozen endpoint. All four G3 runs share this
+  # budget because they are compared at their final checkpoint.
+  steps: 200
+  checkpoint_every: 40
   batch_size: 128
   micro_batch_size: 16

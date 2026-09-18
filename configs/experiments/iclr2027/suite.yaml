@@ -48,6 +48,10 @@ profiles:
       eval_steps: null
   G3:
     config: g3.yaml
+    # This file does not exist and nothing reads it: resolve_run only copies the
+    # string into launch.json, and check_manifest is never called (a test forbids
+    # it). G3 integrity comes from check_rag_candidate_manifest, which walks the
+    # candidate -> index -> qrels -> corpus hash chain on every preflight.
     dataset_manifest: data/protocols/g3_qa.json
     selection: fixed_budget_final_checkpoint
     final_evaluation: [qa_test_answer_f1, qa_test_retrieval]
@@ -55,9 +59,16 @@ profiles:
     protocol:
       labels: preconstructed_binary_passage_qrels_aligned_to_frozen_corpus
       candidate_access: supervised_offline_candidates_rl_dynamic_full_corpus
+      training_budget: fixed_steps
       max_steps: null
       learning_rate: null
       eval_steps: null
+      # G3 has no exploration-selection budget of its own, so the RL arms inherit
+      # the recipe G1-R2 selected on this same encoder (paper/G1_R2_RESULTS.md).
+      # final_alignment stays null in configs/rag/base.yaml: a fixed schedule
+      # rejects it, and only a linear one may set it.
+      target_alignment: 0.80
+      exploration_schedule: fixed
 
 # Historical advisory order, superseded by paper/EXPERIMENT_PLAN.md on 2026-09-16.
 # New G1-R2 runs are registered separately in suite_r2.yaml; do not replay this full queue.
@@ -687,4 +698,12 @@ runs:
     group: G3
     objective: rl
     scope: query_only
-    overrides: {rag_retrieval_reward: answer_f1}
+    protocol:
+      answer_reward: frozen_generator_token_f1_over_top_10
+      generator: served_read_only_outside_the_trainer
+    # configs/rag/base.yaml leaves the endpoint null, which reaches
+    # FrozenGeneratorClient as an empty string and aborts rank 0. The address
+    # matches configs/rag/rl_answer_f1.yaml; start the server before launching.
+    overrides:
+      rag_retrieval_reward: answer_f1
+      rag_generator_endpoint: http://127.0.0.1:8000
