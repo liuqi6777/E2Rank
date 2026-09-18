@@ -38,12 +38,18 @@ SUPPORTED_GRADIENT_ESTIMATORS = ("score_function", "conditional_projection")
 
 def validate_reward_shortlists(count, size, hard_count, hard_pool_size, *,
                               reward_cross_device_negatives, cross_query_document_gradients,
-                              rollout_seed, **policy):
+                              rollout_seed, pool_source="cross_device_all", **policy):
+    if pool_source not in {"cross_device_all", "local_all", "cross_device_representatives"}:
+        raise ValueError("Unknown reward_shortlist_pool_source")
+    if not count and pool_source != "cross_device_all":
+        raise ValueError("A custom shortlist pool source requires reward_shortlist_count > 0")
     validate_shortlist_sampling(count, size, hard_count, hard_pool_size)
     if not count:
         return
-    if not reward_cross_device_negatives or cross_query_document_gradients or rollout_seed is None:
-        raise ValueError("Reward shortlists require a fixed cross-device pool and an explicit rollout_seed")
+    if reward_cross_device_negatives != (pool_source != "local_all"):
+        raise ValueError("reward_cross_device_negatives must match reward_shortlist_pool_source")
+    if cross_query_document_gradients or rollout_seed is None:
+        raise ValueError("Reward shortlists require fixed documents and an explicit rollout_seed")
     # Both SF and CP must estimate the same fixed-kappa, unnormalized LOO target.
     validate_gradient_estimator("conditional_projection", **policy)
 
@@ -686,6 +692,10 @@ class RLArguments:
         default=False,
         metadata={"help": "Use the Strong CL cross-device document pool for static joint ranking RL"},
     )
+    reward_shortlist_pool_source: str = field(
+        default="cross_device_all",
+        metadata={"help": "Shortlist source: cross_device_all, local_all, or cross_device_representatives"},
+    )
     reward_shortlist_count: int = field(
         default=0, metadata={"help": "Number of separately rewarded/projected cross-pool shortlists; 0 disables"},
     )
@@ -890,7 +900,7 @@ class RLArguments:
             default_contrastive_use_in_batch_negatives=self.contrastive_use_in_batch_negatives,
         )
         validate_reward_cross_device_negatives(
-            self.reward_cross_device_negatives, reward_terms=self.reward_terms,
+            self.reward_cross_device_negatives or self.reward_shortlist_count > 0, reward_terms=self.reward_terms,
             action_components=self.action_components, rollout=self.rollout,
             in_batch_use_sampled_documents=self.in_batch_use_sampled_documents,
             document_advantage_baseline=self.document_advantage_baseline,
@@ -911,6 +921,7 @@ class RLArguments:
         validate_reward_shortlists(
             self.reward_shortlist_count, self.reward_shortlist_size,
             self.reward_shortlist_hard_count, self.reward_shortlist_hard_pool_size,
+            pool_source=self.reward_shortlist_pool_source,
             reward_cross_device_negatives=self.reward_cross_device_negatives,
             cross_query_document_gradients=self.cross_query_document_gradients,
             rollout_seed=self.rollout_seed,

@@ -152,6 +152,48 @@ python scripts/run_g1_shortlist_sweep_r2.py eval \
 新 run ID 显式包含 K/T，Mixed 额外包含 Hard2/Hard4，与原 suite 不重名。
 启动器沿用八卡 BF16 检查、非空输出目录保护及失败即停止行为，不自动跳过已完成 run。
 
+### 固定 K15/T1 的负例分布对照
+
+已有三 seed 结果中，原普通 CP/Align080 为 20.76，跨卡全部候选 Uniform K15/T1 为 21.98。
+原普通 CP 在每卡 batch=16 时，最多使用同卡其他 query 的 15 个代表正例作为额外负例；
+因此两者数量上限接近，但候选来源和组成同时改变。新增
+[distribution suite](../configs/experiments/iclr2027/suite_g1_shortlist_distribution.yaml)
+补齐以下两个对照，各跑 seeds 42/3407/2026，共 6 条，不重跑已有配置。
+
+| 来源范围 | 仅代表正例 | 全部候选 |
+|---|---|---|
+| 同卡当前 microbatch | 已有普通 CP/Align080；过滤后最多 15 个 | 新增 `local-all`，均匀抽 K15/T1 |
+| 跨卡当前 microbatch | 新增 `cross-device-representatives`，均匀抽 K15/T1 | 已有 Uniform K15/T1 |
+
+`reward_shortlist_pool_source` 默认 `cross_device_all`，保持旧行为与 checkpoint contract。
+`local_all` 必须搭配 `reward_cross_device_negatives: false`；
+`cross_device_representatives` 必须搭配 `reward_cross_device_negatives: true`。
+两种对照都维持 `ndcg_in_batch_include_negatives: true`，使抽中的文档进入固定池 reward 路径；
+**候选组成由 pool source 决定**。代表正例严格指每条 query 候选位置 0 的那个文档，
+不包括其余自有正例，也不是从所有正例中重新选取。
+
+所有自有候选、graded nDCG@10、CP/G64、alignment 0.80、113 steps、8×16 batch、LR 5e-6、
+独立 shortlist RNG 和最终 BRIGHT 协议保持不变。跨 query 文档继续使用 detached 均值；
+新来源复用现有身份去重、已知正例排除和 route mask。池不足 15 时保留全部有效候选并 padding，
+不重复补足；应结合 `reward_pool/cross_candidates_mean` 检查实际数量。
+同卡来源不收集跨卡文档，仅在分布式训练时归约 query 数以校正不齐尾 batch 的 loss 权重。
+新来源写入 checkpoint contract，恢复时禁止切换来源；默认来源兼容已有 shortlist checkpoint。
+
+```bash
+python scripts/run_g1_shortlist_distribution_r2.py check
+python scripts/run_g1_shortlist_distribution_r2.py train
+
+# 可按 seed 分配到不同八卡机器，或仅选择一个来源
+python scripts/run_g1_shortlist_distribution_r2.py train --seeds 3407
+python scripts/run_g1_shortlist_distribution_r2.py train --recipes local-all --seeds 42
+python scripts/run_g1_shortlist_distribution_r2.py eval --recipes cross-device-representatives
+```
+
+用 `--config /path/to/settings.yaml` 指定训练机 settings。每条训练成功后自动评测 BRIGHT，
+非空输出目录拒绝覆盖，失败即停止。新 run ID 分别含 `LocalAll` 和 `CrossDeviceRepresentatives`。
+比较同列可判断来源范围的影响，比较同行可判断候选组成的影响；原普通 CP 与新 shortlist 路径
+并非逐动作严格等价，且过滤后实际数量可能不同，不能把均分差直接当作唯一因素的因果估计。
+
 ### 日志
 
 - `shortlist/pool_candidates_mean/max`：过滤后的来源池，不含自有候选。

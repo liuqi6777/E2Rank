@@ -185,7 +185,7 @@ def test_shared_encoder_gradient_matches_per_cell_oracle(monkeypatch, estimator,
         assert stats['projection/query_span_rank_max'] <= 6  # 1 query + 3 own + 2 selected.
 
 
-def _distributed_worker(rank, rendezvous, estimator):
+def _distributed_worker(rank, rendezvous, estimator, pool_source):
     import torch.distributed as dist
     torch.set_num_threads(1)
     dist.init_process_group('gloo', init_method=f'file://{rendezvous}', rank=rank, world_size=2,
@@ -208,7 +208,8 @@ def _distributed_worker(rank, rendezvous, estimator):
             captured.append(result)
             return result
         grpo_module.sample_shortlists = sample
-        head = GRPO(**options(gradient_estimator=estimator))
+        head = GRPO(**options(gradient_estimator=estimator, reward_shortlist_pool_source=pool_source,
+                              reward_cross_device_negatives=pool_source != 'local_all'))
         loss, _, _, _ = head._compute_component_loss(labels[start:stop, :width], None,
             components(local, q[start:stop], docs[start:stop, :, :width], valid[start:stop, :width]),
             candidate_mask=valid[start:stop, :width], cross_batch_metadata=rows)
@@ -217,7 +218,24 @@ def _distributed_worker(rank, rendezvous, estimator):
         dist.all_reduce(actual)
         actual /= 2
         selections = [None, None]
-        dist.all_gather_object(selections, captured[0][:2])
+        indices, masks = captured[0][:2]
+        if pool_source == 'local_all':
+            # Map rank-local, possibly narrow slates into the global oracle pool.
+            indices = start * 3 + indices // width * 3 + indices % width
+            assert ((indices[masks] >= start * 3) & (indices[masks] < stop * 3)).all()
+        elif pool_source == 'cross_device_representatives':
+            indices = indices * 3
+        # Independently check pool eligibility, including exhausted/empty pools.
+        expected_counts = {
+            'cross_device_all': [4, 5, 0],
+            'local_all': [3, 3, 0],
+            'cross_device_representatives': [2, 2, 0],
+        }[pool_source][start:stop]
+        for b, n in enumerate(expected_counts):
+            selected = indices[b][masks[b]]
+            assert selected.unique().numel() == n
+            assert (masks[b].sum(-1) == min(n, 2)).all()
+        dist.all_gather_object(selections, (indices, masks))
         idx = torch.cat([row[0] for row in selections])
         mask = torch.cat([row[1] for row in selections])
         reference_weight = torch.eye(12, requires_grad=True)
@@ -231,14 +249,20 @@ def _distributed_worker(rank, rendezvous, estimator):
 
 
 @pytest.mark.parametrize('estimator', ['score_function', 'conditional_projection'])
-def test_two_ranks_with_uneven_tails_and_no_cross_candidates_on_one_rank(tmp_path, estimator):
-    torch.multiprocessing.spawn(_distributed_worker, args=(str(tmp_path / 'rendezvous'), estimator),
+@pytest.mark.parametrize('source', ['cross_device_all', 'local_all', 'cross_device_representatives'])
+def test_two_ranks_with_uneven_tails_and_no_cross_candidates_on_one_rank(tmp_path, estimator, source):
+    torch.multiprocessing.spawn(_distributed_worker, args=(str(tmp_path / 'rendezvous'), estimator, source),
                                nprocs=2, join=True)
 
 
 @pytest.mark.parametrize('changes', [dict(reward_shortlist_count=-1), dict(reward_shortlist_size=0),
     dict(reward_shortlist_hard_count=3), dict(reward_shortlist_hard_pool_size=0),
     dict(reward_cross_device_negatives=False), dict(cross_query_document_gradients=True),
+    dict(reward_shortlist_pool_source='unknown'),
+    dict(reward_shortlist_pool_source='local_all'),
+    dict(reward_shortlist_pool_source='cross_device_representatives', reward_shortlist_count=0),
+    dict(reward_shortlist_pool_source='local_all', reward_cross_device_negatives=False,
+         ndcg_in_batch_include_negatives=False),
     dict(rollout_seed=None), dict(advantage_norm='shared'), dict(advantage_baseline='group'),
     dict(sampling_law='gaussian'), dict(sigma_learnable=True)])
 def test_invalid_policy_and_sampler_rejected_by_both_entrypoints(changes):
@@ -247,12 +271,14 @@ def test_invalid_policy_and_sampler_rejected_by_both_entrypoints(changes):
             constructor(**options(**changes))
 
 
-def test_trainer_updates_saves_and_reuses_encoder_and_actions(tmp_path, monkeypatch):
+@pytest.mark.parametrize('source', ['cross_device_all', 'local_all', 'cross_device_representatives'])
+def test_trainer_updates_saves_and_reuses_encoder_and_actions(tmp_path, monkeypatch, source):
     from transformers import BertConfig, BertModel, TrainingArguments
     torch.manual_seed(7)
     backbone = BertModel(BertConfig(vocab_size=16, hidden_size=8, num_hidden_layers=1,
         num_attention_heads=2, intermediate_size=16, hidden_dropout_prob=0, attention_probs_dropout_prob=0))
-    wrapper = GRPOModel(backbone, RLArguments(**options()))
+    wrapper = GRPOModel(backbone, RLArguments(**options(reward_shortlist_pool_source=source,
+        reward_cross_device_negatives=source != 'local_all')))
     calls = dict(encoder=0, actions=0, pool=0)
     originals = (backbone.forward, wrapper.grpo._draw_actions, grpo_module.cross_query_document_pool)
     def count(name, fn):
@@ -287,9 +313,39 @@ def test_trainer_updates_saves_and_reuses_encoder_and_actions(tmp_path, monkeypa
         with pytest.raises(ValueError):
             restore_exploration_state(wrapper, checkpoint)
         setattr(wrapper.grpo, attribute, old)
+    wrapper.grpo.reward_shortlist_pool_source = ('local_all' if source != 'local_all' else 'cross_device_all')
+    with pytest.raises(ValueError):
+        restore_exploration_state(wrapper, checkpoint)
+    wrapper.grpo.reward_shortlist_pool_source = source
     payload.pop('reward_shortlists')
     (checkpoint / 'exploration_state.json').write_text(json.dumps(payload))
     with pytest.raises(ValueError):
         restore_exploration_state(wrapper, checkpoint)
     wrapper.grpo.reward_shortlist_count = 0
     restore_exploration_state(wrapper, checkpoint)
+
+
+def test_distribution_recipes_change_only_pool_source():
+    from dataclasses import fields
+    from experiments import iclr2027 as experiments
+    path = ROOT / 'configs/experiments/iclr2027/suite_g1_shortlist_distribution.yaml'
+    base_path = path.with_name('suite_g1_shortlist_sweep.yaml')
+    settings = ROOT / 'configs/experiments_r2.yaml'
+    suite = experiments.apply_settings(experiments.load_suite(path), settings)
+    original = experiments.apply_settings(experiments.load_suite(base_path), settings)
+    combinations = set()
+    for name in suite['runs']:
+        cfg = experiments.resolve_run(suite, path, name, nproc=8)['config']
+        base_name = name.replace('-LocalAll', '').replace('-CrossDeviceRepresentatives', '')
+        base = experiments.resolve_run(original, base_path, base_name, nproc=8)['config']
+        args = RLArguments(**{f.name: cfg[f.name] for f in fields(RLArguments) if f.name in cfg})
+        differences = {k for k in cfg.keys() | base.keys() if cfg.get(k) != base.get(k)}
+        expected = {'run_name', 'output_dir', 'reward_shortlist_pool_source'}
+        if args.reward_shortlist_pool_source == 'local_all':
+            expected.add('reward_cross_device_negatives')
+        assert differences == expected
+        assert args.reward_shortlist_count == 1 and args.reward_shortlist_size == 15
+        assert args.reward_shortlist_hard_count == 0
+        combinations.add((args.reward_shortlist_pool_source, cfg['seed']))
+    assert combinations == {(source, seed) for source in ('local_all', 'cross_device_representatives')
+                            for seed in (42, 3407, 2026)}

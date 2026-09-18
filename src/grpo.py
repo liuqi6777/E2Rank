@@ -242,6 +242,7 @@ class GRPO(nn.Module):
         aux_infonce_temperature: float = 0.03,
         aux_infonce_use_in_batch_negatives: bool = False,
         aux_infonce_strong_negatives: bool = False,
+        reward_shortlist_pool_source: str = "cross_device_all",
         reward_shortlist_count: int = 0,
         reward_shortlist_size: int = 15,
         reward_shortlist_hard_count: int = 8,
@@ -311,7 +312,7 @@ class GRPO(nn.Module):
             default_contrastive_use_in_batch_negatives=contrastive_use_in_batch_negatives,
         )
         validate_reward_cross_device_negatives(
-            reward_cross_device_negatives, reward_terms=reward_terms,
+            reward_cross_device_negatives or reward_shortlist_count > 0, reward_terms=reward_terms,
             action_components=action_components, rollout=rollout,
             in_batch_use_sampled_documents=in_batch_use_sampled_documents,
             document_advantage_baseline=document_advantage_baseline,
@@ -332,6 +333,7 @@ class GRPO(nn.Module):
         validate_reward_shortlists(
             reward_shortlist_count, reward_shortlist_size,
             reward_shortlist_hard_count, reward_shortlist_hard_pool_size,
+            pool_source=reward_shortlist_pool_source,
             reward_cross_device_negatives=reward_cross_device_negatives,
             cross_query_document_gradients=cross_query_document_gradients, rollout_seed=rollout_seed,
             action_components=action_components, sampling_law=sampling_law,
@@ -341,6 +343,7 @@ class GRPO(nn.Module):
             document_advantage_baseline=document_advantage_baseline,
             document_log_prob_reduction=document_log_prob_reduction,
         )
+        self.reward_shortlist_pool_source = reward_shortlist_pool_source
         self.reward_shortlist_count = reward_shortlist_count
         self.reward_shortlist_size = reward_shortlist_size
         self.reward_shortlist_hard_count = reward_shortlist_hard_count
@@ -1140,9 +1143,15 @@ class GRPO(nn.Module):
         if valid is None:
             valid = torch.ones_like(labels, dtype=torch.bool)
         pool, allowed, weight = cross_query_document_pool(
-            document.rollout_embeddings, metadata, include_negatives=True,
-            cross_device=True, detach_documents=True,
+            document.rollout_embeddings, metadata,
+            include_negatives=self.reward_shortlist_pool_source != "cross_device_representatives",
+            cross_device=self.reward_cross_device_negatives, detach_documents=True,
         )
+        if not self.reward_cross_device_negatives and torch.distributed.is_initialized():
+            # Match the cross-device path's global query mean on uneven DDP tails.
+            count = torch.tensor(labels.size(0), device=labels.device, dtype=torch.long)
+            torch.distributed.all_reduce(count)
+            weight = torch.distributed.get_world_size() * labels.size(0) / count.item()
         with torch.no_grad(), fp32_scores(query.rollout_embeddings.device):
             q = query.sampled_embeddings.detach().float()
             docs = document.sampled_embeddings.detach().float()
@@ -1600,6 +1609,7 @@ class GRPOModel(nn.Module):
             reward_rbo_p=rl_args.reward_rbo_p,
             ndcg_in_batch_include_negatives=rl_args.ndcg_in_batch_include_negatives,
             reward_cross_device_negatives=rl_args.reward_cross_device_negatives,
+            reward_shortlist_pool_source=rl_args.reward_shortlist_pool_source,
             reward_shortlist_count=rl_args.reward_shortlist_count,
             reward_shortlist_size=rl_args.reward_shortlist_size,
             reward_shortlist_hard_count=rl_args.reward_shortlist_hard_count,

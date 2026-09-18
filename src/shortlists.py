@@ -18,10 +18,15 @@ def validate_shortlist_sampling(count, size, hard_count, hard_pool_size):
 def shortlist_contract(head):
     if not getattr(head, "reward_shortlist_count", 0):
         return None
-    return dict(version=SHORTLIST_VERSION, **{
+    contract = dict(version=SHORTLIST_VERSION, **{
         key: getattr(head, f"reward_shortlist_{key}")
         for key in ("count", "size", "hard_count", "hard_pool_size")
     })
+    # Preserve the exact v1 contract for existing cross-device/all-candidate runs.
+    source = getattr(head, "reward_shortlist_pool_source", "cross_device_all")
+    if source != "cross_device_all":
+        contract["pool_source"] = source
+    return contract
 
 
 @torch.no_grad()
