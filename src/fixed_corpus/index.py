@@ -29,6 +29,10 @@ FAISS_TEMP_MEMORY_BYTES = 1536 << 20
 # of roughly this many rows (~2 GiB of float32 at dimension 1024).
 TORCH_CORPUS_BLOCK_ROWS = 1 << 19
 
+# Validating float16 vectors needs a float32 view of them. Only manifests without
+# a per-shard hash reach that path, but block it so a shard of any size fits.
+VECTOR_VALIDATION_BLOCK_ROWS = 1 << 17
+
 
 def sha256_file(path: str | os.PathLike[str], chunk_size: int = 8 << 20) -> str:
     digest = hashlib.sha256()
@@ -156,7 +160,41 @@ class FrozenCorpusIndex:
         path = Path(value)
         return path if path.is_absolute() else self.root / path
 
+    def _verify_shard_contents(self, shard: dict[str, Any]) -> None:
+        """Confirm one shard still holds the bytes the manifest was written for.
+
+        A recorded sha256 already pins every byte, so matching it makes a second
+        pass over the values redundant: finiteness and unit norm are established
+        once, when the shard is written. Only a manifest without a shard hash has
+        to pay for the full scan here.
+        """
+        path = shard["path"]
+        expected_hash = shard.get("sha256")
+        if expected_hash:
+            if sha256_file(path) != expected_hash:
+                raise ValueError(f"Index shard hash mismatch: {path}")
+            return
+        vectors = np.load(path, mmap_mode="r")
+        for start in range(0, len(vectors), VECTOR_VALIDATION_BLOCK_ROWS):
+            block = np.asarray(
+                vectors[start : start + VECTOR_VALIDATION_BLOCK_ROWS], dtype=np.float32
+            )
+            if not np.isfinite(block).all():
+                raise ValueError(f"Index shard contains non-finite vectors: {path}")
+            if self.manifest.get("normalized"):
+                norms = np.linalg.norm(block, axis=-1)
+                if not np.allclose(norms, 1.0, rtol=2e-3, atol=2e-3):
+                    raise ValueError(f"Index shard contains non-normalized vectors: {path}")
+
     def verify(self) -> None:
+        """Validate the frozen artifacts, spreading the file reads across ranks.
+
+        Layout checks stay global because they only read .npy headers. Hashing is
+        split so the group covers every shard exactly once instead of each rank
+        re-reading all of them; each rank draws the same slice it will load, so a
+        corrupt shard is reported by the rank that would have used it. A raising
+        rank exits non-zero and torchrun tears down the remaining workers.
+        """
         total = 0
         expected_start = 0
         for shard in sorted(self.shards, key=lambda value: int(value["start"])):
@@ -167,8 +205,6 @@ class FrozenCorpusIndex:
             count = int(shard["count"])
             if start != expected_start:
                 raise ValueError(f"Non-contiguous shard at {path}: start={start}, expected={expected_start}")
-            if shard.get("sha256") and sha256_file(path) != shard["sha256"]:
-                raise ValueError(f"Index shard hash mismatch: {path}")
             vectors = np.load(path, mmap_mode="r")
             if vectors.shape != (count, self.dimension):
                 raise ValueError(
@@ -177,28 +213,30 @@ class FrozenCorpusIndex:
                 )
             if self.manifest.get("dtype") == "float16" and vectors.dtype != np.float16:
                 raise ValueError(f"Shard dtype mismatch for {path}: {vectors.dtype} != float16")
-            if not np.isfinite(vectors).all():
-                raise ValueError(f"Index shard contains non-finite vectors: {path}")
-            if self.manifest.get("normalized"):
-                norms = np.linalg.norm(np.asarray(vectors, dtype=np.float32), axis=-1)
-                if not np.allclose(norms, 1.0, rtol=2e-3, atol=2e-3):
-                    raise ValueError(f"Index shard contains non-normalized vectors: {path}")
             expected_start += count
             total += count
         if total != self.count:
             raise ValueError(f"Shard count {total} does not match manifest count {self.count}")
-        for path_key, hash_key in (
-            ("corpus_path", "corpus_sha256"),
-            ("corpus_offsets_path", "corpus_offsets_sha256"),
-            ("document_key_to_ordinal_path", "document_key_to_ordinal_sha256"),
-        ):
-            expected_hash = self.manifest.get(hash_key)
-            if expected_hash:
-                target = Path(self.manifest[path_key])
-                if not target.is_absolute():
-                    target = self.root / target
-                if sha256_file(target) != expected_hash:
-                    raise ValueError(f"Frozen artifact hash mismatch: {target}")
+        for shard in self.shards[self.rank :: self.world_size]:
+            self._verify_shard_contents(shard)
+        hashed_artifacts = [
+            (path_key, hash_key)
+            for path_key, hash_key in (
+                ("corpus_path", "corpus_sha256"),
+                ("corpus_offsets_path", "corpus_offsets_sha256"),
+                ("document_key_to_ordinal_path", "document_key_to_ordinal_sha256"),
+            )
+            if self.manifest.get(hash_key)
+        ]
+        for position, (path_key, hash_key) in enumerate(hashed_artifacts):
+            # The corpus alone is larger than a shard, so deal these out too.
+            if position % self.world_size != self.rank:
+                continue
+            target = Path(self.manifest[path_key])
+            if not target.is_absolute():
+                target = self.root / target
+            if sha256_file(target) != self.manifest[hash_key]:
+                raise ValueError(f"Frozen artifact hash mismatch: {target}")
         offsets_path = self.manifest.get("corpus_offsets_path")
         if offsets_path:
             target = Path(offsets_path)

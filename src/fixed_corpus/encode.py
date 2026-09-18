@@ -15,7 +15,12 @@ import torch.distributed as dist
 from transformers import AutoConfig, AutoModel, AutoTokenizer
 
 from embedding_protocol import POOLING_COMPUTE_DTYPE, tokenize_embedding_texts, tokenization_metadata, format_embedding_text, pool_embeddings
-from fixed_corpus.index import FrozenCorpusIndex, sha256_file, validate_frozen_protocol
+from fixed_corpus.index import (
+    VECTOR_VALIDATION_BLOCK_ROWS,
+    FrozenCorpusIndex,
+    sha256_file,
+    validate_frozen_protocol,
+)
 
 
 def normalize_document(text: str) -> str:
@@ -112,6 +117,24 @@ def build_corpus(
     return len(key_to_ordinal)
 
 
+def _validate_shard_vectors(vectors: np.ndarray, path: Path) -> None:
+    """Check a freshly written shard before it becomes visible under its final name.
+
+    This is the one place that can establish the manifest's ``normalized`` claim.
+    Readers verify the recorded sha256 instead of repeating the scan, so a shard
+    that never passes through here would carry an unchecked assertion forever.
+    """
+    for start in range(0, len(vectors), VECTOR_VALIDATION_BLOCK_ROWS):
+        block = np.asarray(
+            vectors[start : start + VECTOR_VALIDATION_BLOCK_ROWS], dtype=np.float32
+        )
+        if not np.isfinite(block).all():
+            raise ValueError(f"Encoded shard contains non-finite vectors: {path}")
+        norms = np.linalg.norm(block, axis=-1)
+        if not np.allclose(norms, 1.0, rtol=2e-3, atol=2e-3):
+            raise ValueError(f"Encoded shard contains non-normalized vectors: {path}")
+
+
 def _read_texts(handle, offsets: np.ndarray, start: int, end: int) -> list[str]:
     values = []
     for ordinal in range(start, end):
@@ -206,6 +229,9 @@ def encode_corpus_shards(
                     embeddings.float().cpu().numpy()
                 )
             vectors.flush()
+            # The shard is still in page cache here, so this costs far less than
+            # the re-read every loader used to perform.
+            _validate_shard_vectors(vectors, output_path)
             del vectors
             os.replace(partial, output_path)
 
