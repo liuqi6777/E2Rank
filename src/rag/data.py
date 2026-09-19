@@ -80,6 +80,11 @@ class CandidateManifestDataset(Dataset):
             self.query_prompt_template = query_prompt_template
         self.offsets: list[int] = []
         self._handle = None
+        #: Optional fp16 memmap of per-row anchor embeddings, attached by the
+        #: trainer once the E0 anchors are available (rag/anchors.py).
+        self.anchor_memmap = None
+        #: Embedding width of the attached anchors; set by attach_anchors' caller.
+        self.anchor_dimension = 0
         with open(self.manifest_path, "rb") as handle:
             while True:
                 offset = handle.tell()
@@ -114,7 +119,20 @@ class CandidateManifestDataset(Dataset):
             record["question"],
             task_description=RAG_TASK_DESCRIPTION,
         )
+        if self.anchor_memmap is not None:
+            record["anchor_embedding"] = torch.from_numpy(
+                np.array(self.anchor_memmap[index])
+            )
         return record
+
+    def attach_anchors(self, vector_path: str, dimension: int) -> None:
+        """Attach an fp16 anchor memmap keyed by this dataset's row order."""
+        import numpy as np
+
+        self.anchor_dimension = int(dimension)
+        self.anchor_memmap = np.memmap(
+            vector_path, dtype=np.float16, mode="r", shape=(len(self), self.anchor_dimension)
+        )
 
     def close(self) -> None:
         if self._handle is not None:
@@ -153,7 +171,18 @@ class RAGQueryCollator:
             [record.get("training_positive_mask", record["answer_positive_mask"]) for record in records],
             dtype=torch.bool,
         )
-        return {
+        # A candidate is supporting evidence when it belongs to at least one
+        # multi-hop evidence group. Graded relevance ranks such a passage above
+        # one that merely contains the answer string.
+        evidence_mask = torch.tensor(
+            [
+                [bool(groups) for groups in record.get("evidence_group_ids") or ()]
+                or [False] * depth
+                for record in records
+            ],
+            dtype=torch.bool,
+        )
+        batch_dict: dict[str, Any] = {
             "query": dict(tokenized),
             "query_ids": [record["query_id"] for record in records],
             "sources": [record["source"] for record in records],
@@ -164,5 +193,11 @@ class RAGQueryCollator:
             ),
             "answer_positive_mask": answer_mask,
             "training_positive_mask": training_mask,
+            "evidence_positive_mask": evidence_mask,
             "evidence_passage_groups": [record.get("evidence_passage_groups", []) for record in records],
         }
+        if all("anchor_embedding" in record for record in records):
+            batch_dict["anchor_embeddings"] = torch.stack(
+                [record["anchor_embedding"] for record in records]
+            )
+        return batch_dict

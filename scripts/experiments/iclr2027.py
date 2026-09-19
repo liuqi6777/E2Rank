@@ -82,7 +82,8 @@ def load_suite(path=DEFAULT_SUITE):
             raise ValueError(f'{run_id}: unknown dataset {dataset!r}')
         if run.get('kind', 'train') not in {'train', 'reuse', 'evaluation'}:
             raise ValueError(f'{run_id}: invalid run kind')
-        if run.get('kind', 'train') == 'train' and run.get('objective') not in {'infonce', 'ranknet', 'lambdaloss', 'rl'}:
+        # shortlist_rl is G3-only: static-slate RL that admits conditional projection.
+        if run.get('kind', 'train') == 'train' and run.get('objective') not in {'infonce', 'ranknet', 'lambdaloss', 'rl', 'shortlist_rl'}:
             raise ValueError(f'{run_id}: invalid objective')
         if run.get('priority', 'core') not in {'core', 'optional'}:
             raise ValueError(f'{run_id}: invalid priority')

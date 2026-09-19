@@ -1,0 +1,14 @@
+# Budget for the G3-R2 RAG runs. steps: -1 selects the one_epoch training
+# budget declared in suite_g3_r2.yaml; src/train_rag.py then runs
+# num_train_epochs: 1 over the 103,293-query train split at global batch 128,
+# which is 807 optimizer steps. Round 1 used 200 steps (0.24 epoch) because
+# G3-AnsRL's generator cost set the budget for all four arms; no answer-reward
+# arm is in this round, so the retrieval arms are no longer held to it.
+output_dir: checkpoints/iclr2027-g3-r2
+G3:
+  model: Qwen/Qwen3-Embedding-0.6B
+  learning_rate: 0.000005
+  steps: -1
+  checkpoint_every: 100
+  batch_size: 128
+  micro_batch_size: 16

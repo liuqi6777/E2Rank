@@ -1,0 +1,303 @@
+# G3-R2: repair the RAG query-encoder runs, then push the RL arm.
+#
+# Round 1 of G3 put every trained arm at or below its own initialization on the
+# 7-dataset QA suite (macro answer_mrr@10: E0 0.3976, CL 0.3747, RetRL-MRR
+# 0.3873, RetRL-NDCG 0.3918). The cause is a label/metric mismatch, not a
+# tuning problem: training supervises on external binary qrels (1.01 passages
+# per query, absent from the frozen top-10 for 36% of queries) while
+# src/eval_rag.py scores pure answer containment (56.8 passages per query, 2.03
+# of them inside the top-10). At temperature 0.03 the contrastive denominator
+# actively demotes the passages the metric rewards.
+#
+# This suite is a factorial over that diagnosis:
+#   Binary        -> round-1 recipe at a full epoch. Separates "undertrained"
+#                    from "mislabelled": if the epoch alone fixes it, the
+#                    diagnosis is wrong.
+#   AnswerMasked  -> answer-bearing non-qrel passages become unjudged instead
+#                    of negative. The minimal, conservative repair.
+#   Graded        -> qrel 3 / evidence 2 / answer-bearing 1 gains. Also the
+#                    reward G1-R2 found to be the only one that keeps RL
+#                    rollout groups from collapsing (docs/rollout_variance_*).
+#   Strong        -> AnswerMasked plus a cross-device pool of every other
+#                    query's candidates. G1's pool-source ablation put this at
+#                    about +1.0 nDCG; it is cheaper here than in G1 because
+#                    frozen corpus vectors carry no gradient.
+#   RL-GradedNDCG -> the RL arm on graded labels, alignment 0.80 inherited from
+#                    G1-R2.
+#
+# Unlike round 1 this holds out the 5% tuning split (rag_split: train) so the
+# in-training probe in rag/tuning_eval.py reports held-out numbers.
+version: 1
+plan: docs/g3_rag_plan.md
+seed: 42
+output_root: checkpoints/iclr2027-g3-r2
+pending: {}
+
+profiles:
+  G3:
+    config: g3.yaml
+    dataset_manifest: data/protocols/g3_qa.json
+    selection: fixed_budget_final_checkpoint
+    final_evaluation: [qa_test_answer_f1, qa_test_retrieval]
+    requirements: []
+    runtime_overrides:
+      # Hold out the tuning split so the live probe is not in-sample.
+      rag_split: train
+      rag_tuning_eval: true
+      # rag_retrieval_probe (real ANN search, in-domain vs held-out) is the
+      # probe that can be trusted -- rag_tuning_eval measures re-ranking, which
+      # round 2 showed rises while the real metric falls. It is left OFF here
+      # on purpose: index.search is collective, this code has not yet run on
+      # GPU, and the in-flight trials have already queued 5+ hours. Enable it
+      # per-run once a smoke test has exercised it.
+      save_total_limit: 2
+      # The cross-device negative pool and the shortlist sampler both call
+      # all_gather inside forward, which deadlocks if any rank sees a different
+      # batch size. DistributedSampler already pads ranks to equal length, but
+      # dropping the ragged tail removes the failure mode outright at a cost of
+      # at most 127 of 103,293 queries.
+      dataloader_drop_last: true
+    protocol:
+      labels: preconstructed_passage_judgments_aligned_to_frozen_corpus
+      candidate_access: supervised_offline_candidates_rl_dynamic_full_corpus
+      # One pass over the held-out-adjusted training set: 103,293 / 128 = 807
+      # optimizer steps, against round 1's 200.
+      training_budget: one_epoch
+      max_steps: null
+      learning_rate: null
+      eval_steps: null
+      global_batch_size: 128
+      micro_batch_size: 16
+
+runs:
+  G3-R2-CL-Binary:
+    group: G3
+    objective: infonce
+    scope: query_only
+    protocol:
+      training_relevance: external_binary_passage_qrels
+    overrides:
+      rag_relevance_scheme: binary
+
+  G3-R2-CL-AnswerMasked:
+    group: G3
+    objective: infonce
+    scope: query_only
+    control: G3-R2-CL-Binary
+    protocol:
+      training_relevance: qrel_positives_answer_bearing_unjudged
+    overrides:
+      rag_relevance_scheme: answer_masked
+
+  G3-R2-CL-Graded:
+    group: G3
+    objective: infonce
+    scope: query_only
+    control: G3-R2-CL-Binary
+    protocol:
+      training_relevance: graded_qrel_3_evidence_2_answer_1
+    overrides:
+      rag_relevance_scheme: graded
+
+  G3-R2-CL-Strong-AnswerMasked:
+    group: G3
+    objective: infonce
+    scope: query_only
+    control: G3-R2-CL-AnswerMasked
+    protocol:
+      training_relevance: qrel_positives_answer_bearing_unjudged
+      negative_pool: cross_device_all_candidates_k15
+    overrides:
+      rag_relevance_scheme: answer_masked
+      rag_use_in_batch_candidates: true
+      rag_in_batch_include_negatives: true
+      rag_cross_device_negatives: true
+      rag_in_batch_pool_size: 15
+
+  G3-R2-RL-GradedNDCG:
+    group: G3
+    objective: rl
+    scope: query_only
+    protocol:
+      retrieval_reward: graded_ndcg_at_10
+      retrieval_relevance: graded_qrel_3_evidence_2_answer_1
+      unjudged_documents: zero_gain
+      target_alignment: 0.80
+      exploration_schedule: fixed
+    overrides:
+      rag_retrieval_reward: ndcg
+      rag_relevance_scheme: graded
+      rag_group_size: 32
+
+  # --- Reward ablation over the dynamic (full-corpus) RL path ---------------
+  # Round 2 showed contrastive training on E0's frozen pool does not transfer to
+  # ANN retrieval (docs/g3_rag_plan.md 5.2). The dynamic RL arm is the only one
+  # that optimizes the inference-time operation, so the reward sweep happens
+  # here rather than on the static slate.
+  #
+  # G1-R2 ordering on its own data was graded nDCG > binary nDCG > MRR, driven
+  # by rollout degeneracy: binary MRR's degenerate_frac drifted to 32% while
+  # graded nDCG held at 0.3%. RAG's graded arm sat at ~10%, so the margin here
+  # is expected to be smaller -- these two arms measure it instead of assuming
+  # G1's answer carries over to a different corpus and label source.
+  G3-R2-RL-BinaryNDCG:
+    group: G3
+    objective: rl
+    scope: query_only
+    control: G3-R2-RL-GradedNDCG
+    protocol:
+      retrieval_reward: binary_ndcg_at_10
+      retrieval_relevance: external_binary_passage_qrels
+      unjudged_documents: zero_gain
+      target_alignment: 0.80
+      exploration_schedule: fixed
+    overrides:
+      rag_retrieval_reward: ndcg
+      rag_relevance_scheme: binary
+      rag_group_size: 32
+
+  G3-R2-RL-MRR-Graded:
+    group: G3
+    objective: rl
+    scope: query_only
+    control: G3-R2-RL-GradedNDCG
+    protocol:
+      retrieval_reward: mrr_at_10
+      retrieval_relevance: graded_qrel_3_evidence_2_answer_1
+      unjudged_documents: zero_gain
+      target_alignment: 0.80
+      exploration_schedule: fixed
+    overrides:
+      # MRR counts any label > 0 as relevant, so the graded scheme widens the
+      # relevant set to answer-bearing passages rather than changing gains.
+      rag_retrieval_reward: mrr
+      rag_relevance_scheme: graded
+      rag_group_size: 32
+
+  # --- Round 4: bound the drift the winning arm still pays for -------------
+  # Round 3 (docs/g3_rag_plan.md 5.3): dynamic graded-nDCG RL is the first arm
+  # to reach E0 on the macro average (+0.0214 training-domain, -0.0072
+  # held-out). The residual held-out cost is drift away from the frozen
+  # document space; the anchor penalty coef*(1-cos(e_theta(q), e_E0(q))) bounds
+  # it directly. Two coefficients give the dose-response; the LR arm is the
+  # code-free control for "less movement overall"; the seed replicates the
+  # winner per the repo's three-seed convention.
+  G3-R2-RL-GradedNDCG-Anchor010:
+    group: G3
+    objective: rl
+    scope: query_only
+    control: G3-R2-RL-GradedNDCG
+    protocol:
+      retrieval_reward: graded_ndcg_at_10
+      retrieval_relevance: graded_qrel_3_evidence_2_answer_1
+      unjudged_documents: zero_gain
+      target_alignment: 0.80
+      exploration_schedule: fixed
+      anchor: e0_cosine_coef_0.1
+    overrides:
+      rag_retrieval_reward: ndcg
+      rag_relevance_scheme: graded
+      rag_group_size: 32
+      rag_anchor_coef: 0.1
+
+  G3-R2-RL-GradedNDCG-Anchor050:
+    group: G3
+    objective: rl
+    scope: query_only
+    control: G3-R2-RL-GradedNDCG
+    protocol:
+      retrieval_reward: graded_ndcg_at_10
+      retrieval_relevance: graded_qrel_3_evidence_2_answer_1
+      unjudged_documents: zero_gain
+      target_alignment: 0.80
+      exploration_schedule: fixed
+      anchor: e0_cosine_coef_0.5
+    overrides:
+      rag_retrieval_reward: ndcg
+      rag_relevance_scheme: graded
+      rag_group_size: 32
+      rag_anchor_coef: 0.5
+
+  G3-R2-RL-GradedNDCG-LRHalf:
+    group: G3
+    objective: rl
+    scope: query_only
+    control: G3-R2-RL-GradedNDCG
+    protocol:
+      retrieval_reward: graded_ndcg_at_10
+      retrieval_relevance: graded_qrel_3_evidence_2_answer_1
+      unjudged_documents: zero_gain
+      target_alignment: 0.80
+      exploration_schedule: fixed
+      learning_rate: 0.0000025
+    overrides:
+      rag_retrieval_reward: ndcg
+      rag_relevance_scheme: graded
+      rag_group_size: 32
+      learning_rate: 0.0000025
+
+  G3-R2-RL-GradedNDCG-Seed3407:
+    group: G3
+    objective: rl
+    scope: query_only
+    control: G3-R2-RL-GradedNDCG
+    seed: 3407
+    protocol:
+      retrieval_reward: graded_ndcg_at_10
+      retrieval_relevance: graded_qrel_3_evidence_2_answer_1
+      unjudged_documents: zero_gain
+      target_alignment: 0.80
+      exploration_schedule: fixed
+    overrides:
+      rag_retrieval_reward: ndcg
+      rag_relevance_scheme: graded
+      rag_group_size: 32
+
+  # --- Round 3: static-slate RL -------------------------------------------
+  # Rank a fixed slate instead of searching the corpus per rollout. Removes
+  # 4,096 ANN searches per step and, more importantly, makes the reward a
+  # deterministic function of an enumerable candidate set -- the condition the
+  # conditional-projection estimator needs. Slate 20 + shortlist 15 + the mean
+  # spans ~36 of 1024 dimensions, matching G1's working recipe; a wider slate
+  # would saturate the span and silently reduce CP to score-function.
+  # These two arms differ ONLY in the estimator.
+  G3-R2-ShortRL-CP-Graded:
+    group: G3
+    objective: shortlist_rl
+    scope: query_only
+    protocol:
+      retrieval_reward: graded_ndcg_at_10_over_static_slate
+      retrieval_relevance: graded_qrel_3_evidence_2_answer_1
+      candidate_access: static_slate_plus_cross_device_shortlist
+      gradient_estimator: conditional_projection
+      target_alignment: 0.70
+      exploration_schedule: fixed
+    overrides:
+      rag_relevance_scheme: graded
+      rag_gradient_estimator: conditional_projection
+      rag_slate_size: 20
+      rag_shortlist_size: 15
+      rag_cross_device_negatives: true
+      rag_group_size: 32
+      rag_target_alignment: 0.70
+
+  G3-R2-ShortRL-SF-Graded:
+    group: G3
+    objective: shortlist_rl
+    scope: query_only
+    control: G3-R2-ShortRL-CP-Graded
+    protocol:
+      retrieval_reward: graded_ndcg_at_10_over_static_slate
+      retrieval_relevance: graded_qrel_3_evidence_2_answer_1
+      candidate_access: static_slate_plus_cross_device_shortlist
+      gradient_estimator: score_function
+      target_alignment: 0.70
+      exploration_schedule: fixed
+    overrides:
+      rag_relevance_scheme: graded
+      rag_gradient_estimator: score_function
+      rag_slate_size: 20
+      rag_shortlist_size: 15
+      rag_cross_device_negatives: true
+      rag_group_size: 32
+      rag_target_alignment: 0.70

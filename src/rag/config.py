@@ -3,8 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
+from rag.relevance import RELEVANCE_SCHEMES
+from rag.shortlist_rl import GRADIENT_ESTIMATORS
 
-SUPPORTED_RAG_OBJECTIVES = ("infonce", "ranknet", "rl")
+
+SUPPORTED_RAG_OBJECTIVES = ("infonce", "ranknet", "lambdaloss", "rl", "shortlist_rl")
 SUPPORTED_RAG_REWARDS = (
     "mrr",
     "ndcg",
@@ -37,9 +40,99 @@ class RAGDatasetArguments:
     rag_max_train_samples: Optional[int] = field(
         default=None, metadata={"help": "Optional smoke-test cap; null keeps the full selected split"}
     )
+    rag_relevance_scheme: str = field(
+        default="binary",
+        metadata={
+            "help": (
+                "binary: external qrels only (the historical G3 behaviour). "
+                "answer_masked: qrel positives, with answer-bearing non-positives "
+                "dropped from the contrastive denominator instead of demoted. "
+                "graded: qrel=3, evidence=2, answer-bearing=1 gains for nDCG."
+            )
+        },
+    )
+    rag_use_in_batch_candidates: bool = field(
+        default=False,
+        metadata={"help": "CL-Strong: score every other query's candidates as extra negatives"},
+    )
+    rag_in_batch_include_negatives: bool = field(
+        default=False,
+        metadata={"help": "Use each query's full candidate list in the cross-query pool, not just its representative"},
+    )
+    rag_cross_device_negatives: bool = field(
+        default=False,
+        metadata={"help": "Gather the cross-query negative pool across all data-parallel ranks"},
+    )
+    rag_in_batch_pool_size: int = field(
+        default=15,
+        metadata={"help": "Candidates sampled per other query when rag_in_batch_include_negatives is set"},
+    )
+    rag_tuning_eval: bool = field(
+        default=False,
+        metadata={"help": "Re-rank the tuning split at every save point and log answer recall/MRR"},
+    )
+    rag_tuning_eval_samples: Optional[int] = field(
+        default=None,
+        metadata={"help": "Cap on tuning queries scored per probe; null uses the whole split"},
+    )
+    rag_retrieval_probe: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "Run a real full-corpus ANN search over a fixed slice of the "
+                "evaluation suite at each save point, reported separately for "
+                "in-domain (nq/hotpotqa) and held-out datasets. Unlike "
+                "rag_tuning_eval this measures retrieval rather than re-ranking, "
+                "which is the axis round 2 regressed on."
+            )
+        },
+    )
+    rag_retrieval_probe_per_dataset: int = field(
+        default=96,
+        metadata={"help": "Probe queries sampled per evaluation dataset"},
+    )
+    rag_retrieval_probe_k: int = field(
+        default=20,
+        metadata={"help": "Retrieval depth for the probe; each passage costs a corpus text read"},
+    )
+    rag_anchor_coef: float = field(
+        default=0.0,
+        metadata={
+            "help": (
+                "Weight of the E0 anchor penalty, coef * (1 - cos(e_theta(q), e_E0(q))). "
+                "0 disables (round-3 recipe). Round 3 measured the best arm at "
+                "+0.0214 in-domain / -0.0072 held-out; this bounds the drift that "
+                "causes the held-out term. The anchors are precomputed once with "
+                "the initial weights and cached on the shared disk."
+            )
+        },
+    )
+
+    def _validate_anchor(self) -> None:
+        if self.rag_anchor_coef < 0:
+            raise ValueError("rag_anchor_coef must be non-negative")
 
     def __post_init__(self) -> None:
         self.rag_objective = self.rag_objective.strip().lower()
+        self.rag_relevance_scheme = self.rag_relevance_scheme.strip().lower()
+        if self.rag_relevance_scheme not in RELEVANCE_SCHEMES:
+            raise ValueError(
+                f"Unsupported rag_relevance_scheme={self.rag_relevance_scheme!r}; "
+                f"expected one of {RELEVANCE_SCHEMES}"
+            )
+        if self.rag_in_batch_pool_size <= 0:
+            raise ValueError("rag_in_batch_pool_size must be positive")
+        self._validate_anchor()
+        if self.rag_in_batch_include_negatives and not self.rag_use_in_batch_candidates:
+            raise ValueError("rag_in_batch_include_negatives requires rag_use_in_batch_candidates")
+        # shortlist_rl builds its own cross-query pool, so it reads the flag
+        # directly rather than through the contrastive in-batch path.
+        if (
+            self.rag_cross_device_negatives
+            and not self.rag_use_in_batch_candidates
+            and self.rag_objective != "shortlist_rl"
+        ):
+            raise ValueError("rag_cross_device_negatives requires rag_use_in_batch_candidates")
         if self.rag_objective not in SUPPORTED_RAG_OBJECTIVES:
             raise ValueError(
                 f"Unsupported rag_objective={self.rag_objective!r}; "
@@ -97,9 +190,39 @@ class RAGRewardArguments:
     rag_target_alignment: Optional[float] = field(default=None)
     rag_final_alignment: Optional[float] = field(default=None)
     rag_exploration_schedule: str = field(default="fixed")
+    rag_gradient_estimator: str = field(
+        default="score_function",
+        metadata={
+            "help": (
+                "score_function or conditional_projection. CP requires static "
+                "candidates (rag_objective=shortlist_rl); under live full-corpus "
+                "retrieval the reward depends on documents outside the returned "
+                "top-k, which makes the projection biased rather than merely "
+                "lower-variance."
+            )
+        },
+    )
+    rag_slate_size: int = field(
+        default=20,
+        metadata={"help": "Own candidates ranked per query under shortlist_rl"},
+    )
+    rag_shortlist_size: int = field(
+        default=15,
+        metadata={"help": "Negatives borrowed from other queries per shortlist_rl step"},
+    )
 
     def __post_init__(self) -> None:
         from policy_math import validate_exploration
+        self.rag_gradient_estimator = self.rag_gradient_estimator.strip().lower()
+        if self.rag_gradient_estimator not in GRADIENT_ESTIMATORS:
+            raise ValueError(
+                f"Unsupported rag_gradient_estimator={self.rag_gradient_estimator!r}; "
+                f"expected one of {GRADIENT_ESTIMATORS}"
+            )
+        if self.rag_slate_size <= 1:
+            raise ValueError("rag_slate_size must exceed one")
+        if self.rag_shortlist_size < 0:
+            raise ValueError("rag_shortlist_size must be non-negative")
         validate_exploration(self.rag_target_alignment, self.rag_final_alignment, self.rag_exploration_schedule)
         if self.rag_advantage_norm not in {"none", "shared", "per_component"}:
             raise ValueError("Unsupported RAG advantage normalization")

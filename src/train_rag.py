@@ -25,7 +25,10 @@ from rag.data import CandidateManifestDataset, RAGQueryCollator
 from rag.generator import FrozenGeneratorClient
 from rag.index import FrozenDistributedIndex, sha256_file
 from rag.models import RAGRLModel, RAGSupervisedModel
+from rag.shortlist_rl import RAGShortlistRLModel
 from rag.protocol import validate_query_index_protocol
+from rag.retrieval_probe import RAGRetrievalProbeCallback, load_probe_queries
+from rag.tuning_eval import RAGTuningEvalCallback
 from train import (
     apply_gradient_checkpointing,
     guard_output_dir,
@@ -45,11 +48,15 @@ class RAGTrainer(EmbeddingTrainerMixin, HFTrainer):
     def _extra_train_metrics(self, outputs):
         return self._output_field(outputs, "exploration_metrics") or {}
 
-    train_metric_names = ("reward_mean", "reward_std", "degenerate_fraction")
+    train_metric_names = ("reward_mean", "reward_std", "degenerate_fraction", "span_rank")
     train_metric_log_names = {
         "reward_mean": "reward/mean",
         "reward_std": "reward/std",
         "degenerate_fraction": "advantages/degenerate_frac",
+        # Watch this under conditional projection: if the span saturates at the
+        # embedding dimension the projector is the identity and CP has silently
+        # degenerated into the score-function estimator.
+        "span_rank": "projection/query_span_rank_mean",
     }
 
 
@@ -251,13 +258,40 @@ def main() -> None:
             system_prompt=generator_args.rag_generator_system_prompt,
         )
 
-    if data_args.rag_objective in {"infonce", "ranknet"}:
+    if data_args.rag_objective in {"infonce", "ranknet", "lambdaloss"}:
         model = RAGSupervisedModel(
             backbone,
             index,
             objective=data_args.rag_objective,
             temperature=data_args.rag_temperature,
             pooling_method=model_args.pooling_method,
+            relevance_scheme=data_args.rag_relevance_scheme,
+            anchor_coef=data_args.rag_anchor_coef,
+            ndcg_k=reward_args.rag_retrieval_k,
+            use_in_batch_candidates=data_args.rag_use_in_batch_candidates,
+            in_batch_include_negatives=data_args.rag_in_batch_include_negatives,
+            cross_device_negatives=data_args.rag_cross_device_negatives,
+            in_batch_pool_size=data_args.rag_in_batch_pool_size,
+        )
+    elif data_args.rag_objective == "shortlist_rl":
+        model = RAGShortlistRLModel(
+            backbone,
+            index,
+            relevance_scheme=data_args.rag_relevance_scheme,
+            reward_k=reward_args.rag_retrieval_k,
+            slate_size=reward_args.rag_slate_size,
+            shortlist_size=reward_args.rag_shortlist_size,
+            group_size=reward_args.rag_group_size,
+            kappa=reward_args.rag_kappa,
+            pooling_method=model_args.pooling_method,
+            gradient_estimator=reward_args.rag_gradient_estimator,
+            advantage_baseline=reward_args.rag_advantage_baseline,
+            advantage_norm=reward_args.rag_advantage_norm,
+            target_alignment=reward_args.rag_target_alignment,
+            final_alignment=reward_args.rag_final_alignment,
+            exploration_schedule=reward_args.rag_exploration_schedule,
+            cross_device_negatives=data_args.rag_cross_device_negatives,
+            anchor_coef=data_args.rag_anchor_coef,
         )
     else:
         model = RAGRLModel(
@@ -277,6 +311,8 @@ def main() -> None:
             target_alignment=reward_args.rag_target_alignment,
             final_alignment=reward_args.rag_final_alignment,
             exploration_schedule=reward_args.rag_exploration_schedule,
+            relevance_scheme=data_args.rag_relevance_scheme,
+            anchor_coef=data_args.rag_anchor_coef,
         )
     model.train()
     apply_gradient_checkpointing(model, training_args, lora_args)
@@ -294,12 +330,87 @@ def main() -> None:
         query_max_length=min(data_args.rag_query_max_length, model_args.embedding_max_length),
         append_token=model_args.append_token,
     )
+
+    # E0 anchors for the drift penalty (rag_anchor_coef > 0). The precompute
+    # runs at on_train_begin, not here: the backbone was loaded under DeepSpeed's
+    # ZeRO-3 init context and its parameters are partitioned until the Trainer
+    # wraps it (a plain forward raises "'weight' must be 2-D"). The callback
+    # encodes through the wrapped model, whose forward gathers on the fly, and
+    # no optimizer step has run at that point so the weights are still the
+    # initialization the anchors must capture.
+    anchor_callback = None
+    if data_args.rag_anchor_coef > 0:
+        from rag.anchors import RAGAnchorPrecomputeCallback, anchor_cache_path
+
+        cache_dir = Path(data_args.rag_candidate_manifest).parent / "anchors"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        # One cache per (manifest, split, tuning split, sample cap): a smoke run
+        # with a sample cap must never be read back as a full-split cache.
+        variant = (
+            f"{data_args.rag_split}:{data_args.rag_tuning_fraction}:"
+            f"{data_args.rag_tuning_seed}:{data_args.rag_max_train_samples}"
+        )
+        anchor_callback = RAGAnchorPrecomputeCallback(
+            dataset=train_dataset,
+            tokenizer=tokenizer,
+            training_args=training_args,
+            data_args=data_args,
+            model_args=model_args,
+            dimension=backbone.config.hidden_size,
+            vector_path=anchor_cache_path(data_args.rag_candidate_manifest, cache_dir, variant),
+        )
     resume_checkpoint = None
     if not training_args.overwrite_output_dir and os.path.isdir(training_args.output_dir):
         resume_checkpoint = get_last_checkpoint(training_args.output_dir)
 
+    # Monitoring only. The tuning split is held out whenever rag_split is
+    # "train"; under rag_split "full" it is in-sample and the numbers read as a
+    # drift probe rather than generalization.
+    tuning_callback = None
+    if data_args.rag_tuning_eval:
+        tuning_dataset = CandidateManifestDataset(
+            data_args.rag_candidate_manifest,
+            split="tuning",
+            tuning_fraction=data_args.rag_tuning_fraction,
+            tuning_seed=data_args.rag_tuning_seed,
+            query_prompt_template=model_args.query_prompt_template,
+            max_samples=data_args.rag_tuning_eval_samples,
+        )
+        tuning_callback = RAGTuningEvalCallback(
+            model=model,
+            index=index,
+            dataset=tuning_dataset,
+            collator=collator,
+            batch_size=training_args.per_device_train_batch_size,
+        )
+
+    # Measures retrieval rather than re-ranking, and separates in-domain from
+    # held-out datasets. Round 2's re-ranking probe rose while the real metric
+    # fell, so this is the one that can be trusted for model selection.
+    retrieval_callback = None
+    if data_args.rag_retrieval_probe:
+        retrieval_callback = RAGRetrievalProbeCallback(
+            model=model,
+            index=index,
+            tokenizer=tokenizer,
+            queries=load_probe_queries(
+                Path(data_args.rag_dataset_root).parent / "flashrag_manifest.json",
+                per_dataset=data_args.rag_retrieval_probe_per_dataset,
+            ),
+            retrieval_k=data_args.rag_retrieval_probe_k,
+            batch_size=training_args.per_device_train_batch_size,
+            query_max_length=data_args.rag_query_max_length,
+            append_token=model_args.append_token,
+            query_prompt_template=model_args.query_prompt_template,
+        )
+
     from grpo_trainer import restore_exploration_state
     restore_exploration_state(model, resume_checkpoint)
+    callbacks = [
+        cb
+        for cb in (tuning_callback, retrieval_callback, anchor_callback)
+        if cb is not None
+    ]
     trainer = RAGTrainer(
         model_args=model_args,
         model=model,
@@ -307,7 +418,10 @@ def main() -> None:
         args=training_args,
         train_dataset=train_dataset,
         data_collator=collator,
+        callbacks=callbacks or None,
     )
+    for callback in callbacks:
+        callback.trainer = trainer
     training_started = time.perf_counter()
     trainer.train(resume_from_checkpoint=True if resume_checkpoint else None)
     elapsed_seconds = time.perf_counter() - training_started

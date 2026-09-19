@@ -12,6 +12,7 @@ from fixed_corpus.environment import (
 )
 from rag.generator import FrozenGeneratorClient
 from rag.metrics import max_token_f1
+from rag.relevance import RELEVANCE_SCHEMES, build_relevance
 
 
 class RAGResultRewardProvider:
@@ -23,9 +24,13 @@ class RAGResultRewardProvider:
         retrieval_k: int = 10,
         generator: FrozenGeneratorClient | None = None,
         generator_top_k: int = 10,
+        relevance_scheme: str = "binary",
     ) -> None:
         if reward_type not in {"mrr", "ndcg", "answer_f1"}:
             raise ValueError(f"Unsupported reward_type={reward_type}")
+        if relevance_scheme not in RELEVANCE_SCHEMES:
+            raise ValueError(f"Unsupported relevance_scheme={relevance_scheme}")
+        self.relevance_scheme = relevance_scheme
         if retrieval_k <= 0:
             raise ValueError("retrieval_k must be positive")
         if generator_top_k <= 0:
@@ -143,6 +148,8 @@ class RAGResultRewardProvider:
         evidence_passage_groups: Sequence[Sequence[Sequence[int]]],
         candidate_passage_ids: torch.Tensor | None = None,
         training_positive_mask: torch.Tensor | None = None,
+        answer_positive_mask: torch.Tensor | None = None,
+        evidence_positive_mask: torch.Tensor | None = None,
         **_: Any,
     ) -> torch.Tensor:
         if route_ids is not None:
@@ -161,12 +168,21 @@ class RAGResultRewardProvider:
                     "Fixed-label RAG rewards require candidate_passage_ids and "
                     "training_positive_mask as passage-level relevance judgments"
                 )
+            view = build_relevance(
+                scheme=self.relevance_scheme,
+                training_positive_mask=training_positive_mask,
+                answer_positive_mask=(
+                    training_positive_mask if answer_positive_mask is None else answer_positive_mask
+                ),
+                evidence_positive_mask=evidence_positive_mask,
+                candidate_mask=candidate_passage_ids >= 0,
+            )
             return self.retrieval_reward(
                 result_ids=result_ids,
                 result_scores=result_scores,
                 candidate_ordinals=candidate_passage_ids,
-                relevance_labels=training_positive_mask.float(),
-                candidate_mask=candidate_passage_ids >= 0,
+                relevance_labels=view.labels,
+                candidate_mask=view.scoring_mask,
             )
         raise AssertionError(f"Unhandled reward_type={self.reward_type}")
 
