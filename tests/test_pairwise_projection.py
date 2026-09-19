@@ -98,7 +98,7 @@ def test_ties_zero_pairs_and_collinear_directions_are_finite(no_pairs):
     assert stats['reward/pairwise/active_pair_fraction'] == 0
 
 
-@pytest.mark.parametrize('coefficient,binary_weight', [(.25,0.), (.5,0.), (.25,.25)])
+@pytest.mark.parametrize('coefficient,binary_weight', [(.25,0.), (.5,0.), (.25,.25), (.5,.25)])
 def test_full_shortlist_objective_matches_separate_list_and_pair_oracles(monkeypatch, coefficient, binary_weight):
     torch.manual_seed(43)
     source = torch.randn(3, 4, 13)
