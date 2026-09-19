@@ -473,8 +473,9 @@ macro ordering loosely but not exactly, so it remains a monitoring signal, not
 a selection rule.
 
 The two anchor arms (2081553/2081554) and the generation backfill (2081830)
-failed on new code paths, were diagnosed and fixed, and are **pending
-relaunch** (launches were paused at the user's request):
+failed on new code paths and were diagnosed and fixed; the relaunches went out
+on 2026-09-20 (Anchor010-v2 2082629, Anchor050-v2 2082630, gen-eval-CL4-v2
+2082633 — all elastic, image redaccel:0.12.1-gpu):
 
 - **Anchor arms:** `RuntimeError: 'weight' must be 2-D`. The backbone is loaded
   under DeepSpeed's ZeRO-3 init context, so before the Trainer exists its
