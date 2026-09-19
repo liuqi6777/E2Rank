@@ -5,13 +5,15 @@ index. Round 1 (before this document) trained every arm for 200 steps and lost
 to its own initialization; rounds 2–4 here diagnose that, repair what is
 repairable, and establish what actually moves the number.
 
-**Status as of 2026-09-19.** Best result: `G3-R2-RL-GradedNDCG` (dynamic
-full-corpus RL, graded nDCG@10) is the only arm to reach the untrained E0
-baseline on the macro average — training-domain +0.0214, held-out −0.0072,
-macro +0.0010 `answer_mrr@10`. Round 4 (E0-anchor regularization) is
-partially run: two arms in flight, two failed on a ZeRO-3 interaction (fixed,
-relaunch pending). Generation metrics (`generator_em`/`generator_token_f1`)
-are blank everywhere pending a vLLM backfill whose script is ready.
+**Status as of 2026-09-19 (late).** Best result: `G3-R2-RL-GradedNDCG-LRHalf`
+(dynamic full-corpus RL, graded nDCG@10, half LR) at training-domain +0.0200,
+held-out −0.0055, **macro +0.0018** `answer_mrr@10` — and the plain-LR winner's
++0.0010 macro replicates on seed 3407 (§6.4). Dynamic RL is the only family
+that reaches E0 on the macro average. Round 4 is partially run: the anchor
+arms failed on a ZeRO-3 interaction (fixed, relaunch pending), so the
+anchor dose-response is still open. Generation metrics
+(`generator_em`/`generator_token_f1`) are blank everywhere pending a vLLM
+backfill whose script is ready.
 
 Contents: [1](#1-round-1-was-a-negative-result) background ·
 [2](#2-root-cause-diagnosis-and-its-limits) diagnosis ·
@@ -432,13 +434,47 @@ universe.
 **Where the remaining loss lives.** Even the winning arm pays −0.0072 held-out
 for +0.0214 in-domain. Round 4 attacks that residual drift directly (§4.3).
 
-### 6.4 Round 4 — status
+### 6.4 Round 4 — partial results (LR-half and seed replication complete)
 
-Two arms ran from the start (LRHalf 2081555, Seed3407 2081557 — both on
-round-3-proven code paths). The two anchor arms (2081553/2081554) and the
-generation backfill (2081830) failed on new code paths, were diagnosed and
-fixed, and are **pending relaunch** (launches were paused at the user's
-request):
+Two of the four round-4 arms completed one epoch plus the full retrieval-only
+evaluation on 2026-09-19 late evening (LRHalf 2081555, Seed3407 2081557 — both
+on round-3-proven code paths):
+
+| run | anchor | LR | seed | training domain | held-out | macro | probe @806 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| RL-GradedNDCG (round 3) | 0 | 5e-6 | 42 | +0.0214 | −0.0072 | +0.0010 | 0.5825 |
+| **LRHalf** | 0 | 2.5e-6 | 42 | +0.0200 | **−0.0055** | **+0.0018** | 0.5807 |
+| Seed3407 | 0 | 5e-6 | 3407 | +0.0225 | −0.0076 | +0.0010 | 0.5818 |
+
+Three readings:
+
+**The +0.0010 macro replicates across seeds.** Seed3407 lands on in-domain
++0.0225 / held-out −0.0076 / macro +0.0010 against seed 42's
++0.0214 / −0.0072 / +0.0010 — every column within 0.0012 of the original, and
+the probe within 0.0007. The round-3 winner is a real effect, not a seed
+lottery, and its `degenerate_frac` profile also replicates (max ~0.21).
+
+**Less movement is a better trade.** Halving the LR keeps nearly all the
+in-domain gain (+0.0200 vs +0.0214) while shrinking the held-out loss to
+−0.0055 — the best macro in the study so far. This is exactly what the drift
+account predicts: the held-out cost is the price of moving the encoder, and
+gentler movement buys the gain more cheaply. It also independently supports the
+anchor arms' premise, since the anchor penalty attacks the same drift with a
+targeted mechanism instead of a global LR cut.
+
+**LR-half trades in-domain for held-out almost one-for-one** (+0.0214 →
++0.0200 in-domain buys −0.0072 → −0.0055 held-out, roughly 1:1), which sets the
+scale for what the anchor penalty would have to achieve to beat it: recover
+in-domain gain at a lower held-out price than the LR knob already gets.
+
+Both arms' tuning-probe curves rise monotonically and plateau late (0.5807 /
+0.5818), matching their round-3 sibling; the probe ordering again tracks the
+macro ordering loosely but not exactly, so it remains a monitoring signal, not
+a selection rule.
+
+The two anchor arms (2081553/2081554) and the generation backfill (2081830)
+failed on new code paths, were diagnosed and fixed, and are **pending
+relaunch** (launches were paused at the user's request):
 
 - **Anchor arms:** `RuntimeError: 'weight' must be 2-D`. The backbone is loaded
   under DeepSpeed's ZeRO-3 init context, so before the Trainer exists its
@@ -494,19 +530,22 @@ between its retrieval and generation phases, so the two do not contend.
 
 ## 8. Further work
 
-Ordered by expected value against the current best (macro +0.0010):
+Ordered by expected value against the current best (LRHalf, macro +0.0018):
 
-1. **Relaunch round 4** (pending go-ahead): Anchor010-v2, Anchor050-v2,
-   gen-eval-CL4-v2. The anchor dose-response decides whether the held-out
-   −0.0072 can be shrunk without giving back the +0.0214 in-domain gain; the
-   generation backfill completes the headline table for all arms.
-2. **Finish seed replication** of `RL-GradedNDCG` (Seed3407 in flight, Seed2026
-   unsubmitted). n=3 is the repo's reproducibility convention, not a
-   significance claim (`docs/seed_variance_analysis.md`).
-3. **Anchor-F1 RL** once the vLLM endpoint is up: the answer-F1 reward
+1. **Relaunch the anchor arms** (pending go-ahead): Anchor010-v2, Anchor050-v2.
+   Round 4's LR-half result sharpens the question the anchors answer: a global
+   LR cut already trades in-domain for held-out roughly 1:1, so the anchor
+   penalty is worth its complexity only if it buys in-domain gain at a
+   *sub-linear* held-out price — i.e. suppresses the drift component of the
+   update specifically rather than the whole update.
+2. **Generation backfill** (gen-eval-CL4-v2 ready, fixed, unlaunched): fills
+   `generator_em` / `generator_token_f1` for all eight completed arms. vLLM on
+   the cluster is proven (server up in ~310 s with the flashinfer patch).
+3. **Seed 2026** of the winner (at half LR, given §6.4) completes n=3.
+4. **Answer-F1 RL** once the vLLM endpoint is up: the answer-F1 reward
    (`rag_retrieval_reward: answer_f1`) is the remaining untried reward family,
    and round 3 suggests reward shape matters more than anything else tried.
-4. **Refresh the candidate pool during training (ANCE-style).** Round 2's
+5. **Refresh the candidate pool during training (ANCE-style).** Round 2's
    mechanism suggests its own fix: the pool is mined once with E0, so every
    negative a query ever sees is already an E0 near-neighbour, and the model
    never learns to suppress passages that become near-neighbours only after its
@@ -515,6 +554,6 @@ Ordered by expected value against the current best (macro +0.0010):
    the dynamic RL arm already pays). The dynamic RL arm already has this
    property, which round 3 confirmed transfers; refreshed-pool CL is the
    natural follow-up if a cheaper-than-RL method is wanted.
-5. **ShortRL-SF contrast** is implemented and preflighted but low priority: the
+6. **ShortRL-SF contrast** is implemented and preflighted but low priority: the
    static slate failed on universe grounds, so the estimator contrast on it is
    no longer informative.
