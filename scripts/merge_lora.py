@@ -34,6 +34,7 @@ from transformers import AutoModel, AutoTokenizer
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--base", required=True, help="Base model id or path the adapter was trained on")
+    parser.add_argument("--revision", help="Immutable Hugging Face revision for --base")
     parser.add_argument("--adapter", required=True, help="Directory holding adapter_config.json")
     parser.add_argument("--out", required=True, help="Destination for the merged checkpoint")
     parser.add_argument(
@@ -64,7 +65,10 @@ def main() -> None:
 
     dtype = getattr(torch, args.dtype)
     print(f"Loading base model {args.base} ({args.dtype})")
-    model = AutoModel.from_pretrained(args.base, torch_dtype=dtype, trust_remote_code=True)
+    revision_kwargs = {"revision": args.revision} if args.revision else {}
+    model = AutoModel.from_pretrained(
+        args.base, torch_dtype=dtype, trust_remote_code=True, **revision_kwargs
+    )
 
     print(f"Applying adapter {adapter_dir}")
     model = PeftModel.from_pretrained(model, str(adapter_dir), torch_dtype=dtype)
@@ -85,7 +89,8 @@ def main() -> None:
             padding_side = json.load(handle).get("padding_side", padding_side)
     print(f"Saving tokenizer from {tokenizer_source}")
     AutoTokenizer.from_pretrained(
-        str(tokenizer_source), padding_side=padding_side, trust_remote_code=True
+        str(tokenizer_source), padding_side=padding_side, trust_remote_code=True,
+        **(revision_kwargs if str(tokenizer_source) == args.base else {}),
     ).save_pretrained(str(out_dir))
     if protocol_path.is_file():
         shutil.copy2(protocol_path, out_dir / protocol_path.name)

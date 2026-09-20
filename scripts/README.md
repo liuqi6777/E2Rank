@@ -27,6 +27,7 @@ BRIGHT，`summary` 汇总三 seed 的均值/标准差/最差成绩。无时间�
 |---|---|
 | `experiment.py` | G1/G2/G3 的 prepare、encode、list、show、check、train |
 | `experiments/iclr2027.py` | 实验定义解析、预算与依赖检查、实际启动；由公共入口调用 |
+| `run_qwen3_embedding_4b_lora.py` | 8 卡 Qwen3-Embedding-4B LoRA：Table 1 三方法、三个核心 RL 消融、E0、adapter 合并和最终 BRIGHT；见 [实验说明](../docs/qwen3_embedding_4b_lora.md) |
 | `run_g1_mrr_seed_repeats.sh` | 预检并顺序运行最终 G1 MRR 配方的 seed 3407、2026；每次训练后自动评测 BRIGHT |
 | `run_g1_cl_seed_repeats.sh` | 预检并顺序运行 G1 joint InfoNCE 的 seed 3407、2026；复用已有 seed 42 |
 | `diagnose_rollout_gradients.py` | 固定 checkpoint 和训练 batch，仅改变 rollout，统计完整参数梯度的噪声与方向一致性 |
@@ -42,7 +43,7 @@ BRIGHT，`summary` 汇总三 seed 的均值/标准差/最差成绩。无时间�
 | `rag_acceptance.sh` / `rag_toy_distributed.py` | RAG 分布式索引和端到端验收 |
 | `measure_score_gaps.py` | embedding 分数间隔诊断 |
 | `analyze_embeddings.py` | 缓存编码、全库排序、几何、query vMF 扰动与报告；见 [分析指南](../docs/embedding_analysis.md) |
-| `merge_lora.py` | 显式 LoRA 实验的 adapter 合并；当前 full FT 主实验不需要 |
+| `merge_lora.py` | 显式 LoRA 实验的 adapter 合并，支持固定 base-model revision |
 | `zero3.json` | 模型配置共用的 DeepSpeed ZeRO-3 参数 |
 | `tests/` | CPU 数据、mask 和实验解析测试 |
 

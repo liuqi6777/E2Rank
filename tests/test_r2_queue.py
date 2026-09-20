@@ -286,6 +286,52 @@ def test_simple_baseline_runner_launches_and_retries_eval_without_hash_contracts
     assert calls == expected_eval
 
 
+def test_qwen3_embedding_4b_lora_suite_keeps_controlled_rl_comparisons():
+    e = night.experiments
+    suite_path = ROOT / 'configs/experiments/iclr2027/suite_qwen3_embedding_4b_lora.yaml'
+    settings = ROOT / 'configs/experiments_qwen3_embedding_4b_lora.yaml'
+    suite = e.apply_settings(e.load_suite(suite_path), settings)
+    rows = {name: e.resolve_run(suite, suite_path, name, nproc=8)
+            for name in e.ordered_run_ids(suite)}
+
+    assert len(rows) == 19
+    assert sum(row['kind'] == 'train' for row in rows.values()) == 18
+    for row in rows.values():
+        config = row['config']
+        assert config['model_name_or_path'] == 'Qwen/Qwen3-Embedding-4B'
+        assert config['model_revision'] == '5cf2132abc99cad020ac570b19d031efec650f2b'
+        if row['kind'] == 'train':
+            assert config['lora_enabled']
+            assert config['lora_r'] == 16
+            assert config['per_device_train_batch_size'] * config['gradient_accumulation_steps'] * 8 == 128
+
+    def differences(left, right):
+        left = rows[left]['config']
+        right = rows[right]['config']
+        return {key for key in set(left) | set(right) if left.get(key) != right.get(key)}
+
+    assert differences('Q4B-LORA-RELER', 'Q4B-LORA-RELER-NoPairwise-CP') == {
+        'reward_shortlist_pairwise_coef', 'output_dir', 'run_name'
+    }
+    assert differences('Q4B-LORA-RELER-NoPairwise-CP', 'Q4B-LORA-RELER-NoPairwise-RLOO') == {
+        'gradient_estimator', 'output_dir', 'run_name'
+    }
+    assert differences('Q4B-LORA-RELER', 'Q4B-LORA-RELER-NoRescale') == {
+        'frozen_doc_rescale', 'output_dir', 'run_name'
+    }
+
+    post = e.post_train_commands_for(rows['Q4B-LORA-RELER'])
+    assert len(post) == 2
+    assert Path(post[0][1]).name == 'merge_lora.py'
+    assert post[0][post[0].index('--revision') + 1] == '5cf2132abc99cad020ac570b19d031efec650f2b'
+    assert post[1][post[1].index('--model') + 1].endswith('-merged')
+    assert post[1][post[1].index('--batch_size') + 1] == '8'
+
+    reference = e.post_train_commands_for(rows['Q4B-LORA-E0'])
+    assert len(reference) == 1
+    assert reference[0][reference[0].index('--model') + 1] == 'Qwen/Qwen3-Embedding-4B'
+
+
 def test_r2_strong_auxiliary_config_matches_graded_cp_control(monkeypatch):
     e = night.experiments
     suite = e.apply_settings(e.load_suite(night.SUITE), night.SETTINGS)

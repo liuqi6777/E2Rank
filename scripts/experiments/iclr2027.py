@@ -277,7 +277,9 @@ def resolve_run(suite, suite_path, run_id, root=ROOT, nproc=1):
 
     seed = run_seed(suite, run_id)
     output = run_output_dir(suite, run_id, root)
-    config.update(seed=seed, data_seed=seed, lora_enabled=False, overwrite_output_dir=False,
+    # The selected profile owns the fine-tuning mode. Existing profiles default
+    # to full fine-tuning; larger-model suites may explicitly enable LoRA.
+    config.update(seed=seed, data_seed=seed, overwrite_output_dir=False,
                   output_dir=str(output), run_name=run_id)
     dependency = None
     if run.get('init_from'):
@@ -574,15 +576,22 @@ def run_simple_baselines(suite_path, settings_path, run_ids, action, nproc=8):
         cfg = row['config']
         out = Path(cfg['output_dir'])
         if action == 'train':
+            if row['kind'] != 'train':
+                raise ValueError(f'{row["run_id"]} is not a training run')
             if out.exists() and any(out.iterdir()):
                 raise ValueError(f'Training output already exists: {out}; use eval to retry evaluation or choose a new output_dir')
+            merged = _merged_lora_output_dir(row)
+            if cfg.get('lora_enabled') and merged.exists():
+                raise ValueError(f'Merged LoRA output already exists: {merged}; use eval or choose a new output_dir')
             config_dir = out.parent / '.cl_strong_configs'
             config_dir.mkdir(parents=True, exist_ok=True)
             runtime = config_dir / f'{out.name}.json'
             runtime.write_text(json.dumps(cfg, indent=2) + '\n')
             subprocess.run(command_for(row, runtime, nproc), cwd=ROOT, env=env, check=True)
-        elif not (out / 'config.json').is_file():
-            raise ValueError(f'Missing trained model for evaluation: {out}')
+        elif row['kind'] == 'train':
+            required = 'adapter_config.json' if cfg.get('lora_enabled') else 'config.json'
+            if not (out / required).is_file():
+                raise ValueError(f'Missing trained model for evaluation: {out / required}')
         for command in post_train_commands_for(row):
             subprocess.run(command, cwd=ROOT, env=env, check=True)
 
@@ -614,18 +623,60 @@ def _frozen_document_revision(resolved, root=ROOT):
     return next(iter(revisions), None)
 
 
+def _merged_lora_output_dir(resolved):
+    return Path(str(resolved['config']['output_dir']) + '-merged')
+
+
+def _lora_merge_command(resolved, root=ROOT):
+    config = resolved['config']
+    command = [
+        sys.executable,
+        str(root / 'scripts/merge_lora.py'),
+        '--base', str(config['model_name_or_path']),
+        '--adapter', str(config['output_dir']),
+        '--out', str(_merged_lora_output_dir(resolved)),
+        '--dtype', 'bfloat16' if config.get('bf16') else 'float16',
+    ]
+    base = Path(str(config['model_name_or_path']))
+    if config.get('model_revision') and not base.exists():
+        command.extend(['--revision', str(config['model_revision'])])
+    return command
+
+
 def _post_mteb_command(resolved, benchmark, result_name, root=ROOT):
-    output_dir = Path(resolved['config']['output_dir'])
+    config = resolved['config']
+    output_dir = Path(config['output_dir'])
+    reference = resolved['kind'] == 'evaluation'
+    if reference:
+        model = config['model_name_or_path']
+    elif config.get('lora_enabled'):
+        model = str(_merged_lora_output_dir(resolved))
+    else:
+        model = str(output_dir)
+    model_kwargs = {
+        'instruction_dict_path': str(root / 'eval_mteb/scripts/task_prompts.json'),
+    }
+    if reference:
+        model_kwargs.update({
+            'max_length': config['embedding_max_length'],
+            'pooler_type': config['pooling_method'],
+            'padding_side': config['padding_side'],
+            'append_token': config['append_token'],
+            'do_norm': True,
+            'use_instruction': '{task_description}' in config['query_prompt_template'],
+            'query_prompt_template': config['query_prompt_template'],
+            'document_prompt_template': config['document_prompt_template'],
+        })
+        if config.get('model_revision'):
+            model_kwargs['revision'] = config['model_revision']
     return [
         sys.executable,
         str(root / 'eval_mteb/run_mteb.py'),
-        '--model', str(output_dir),
+        '--model', str(model),
         '--precision', 'fp16',
-        '--model_kwargs', json.dumps({
-            'instruction_dict_path': str(root / 'eval_mteb/scripts/task_prompts.json'),
-        }),
+        '--model_kwargs', json.dumps(model_kwargs),
         '--output_dir', str(output_dir / 'mteb_eval' / result_name),
-        '--batch_size', '16',
+        '--batch_size', str(config.get('mteb_eval_batch_size', 16)),
         '--langs', 'eng',
         '--benchmark', benchmark,
         '--fail_on_task_error',
@@ -640,6 +691,15 @@ def post_train_commands_for(resolved, root=ROOT):
     or every intermediate save.
     """
     commands = []
+    if resolved['kind'] == 'train' and resolved['config'].get('lora_enabled'):
+        merged = _merged_lora_output_dir(resolved)
+        has_config = (merged / 'config.json').is_file()
+        has_weights = bool(list(merged.glob('*.safetensors')) or list(merged.glob('pytorch_model*.bin')))
+        if not (has_config and has_weights):
+            command = _lora_merge_command(resolved, root)
+            if merged.exists():
+                command.append('--overwrite')
+            commands.append(command)
     for evaluation in resolved['final_evaluation']:
         if evaluation == 'mteb_eng_v2':
             commands.append(_post_mteb_command(

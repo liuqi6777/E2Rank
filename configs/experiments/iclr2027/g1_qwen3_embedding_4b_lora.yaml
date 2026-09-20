@@ -1,0 +1,25 @@
+_base_:
+  - ./g1_r2.yaml
+  - ../../model/qwen3_embedding_4b.yaml
+
+# Preserve 113 optimizer steps and global batch 128. On eight GPUs the suite
+# resolver turns this microbatch into 16 gradient-accumulation steps.
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 16
+learning_rate: 0.0001
+
+lora_enabled: true
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.0
+lora_bias: none
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+
+mteb_eval_batch_size: 8
