@@ -2,7 +2,9 @@
 
 2026-09-20：补充分析的[计划](ANALYSIS_PLAN.md)、[代表 checkpoint 配置](analysis/bright_representatives.json)和[结果目录](analysis_results/README.md)统一放在 `paper/` 下，避开 `iclr2027/` 的 Git ignore 规则。配置的输出路径为 `paper/analysis_results/iclr2027_representatives_s3407/`；分析尚未运行，RAG 仍是后续必须完成的实验。
 
-补充分析现分为 embedding 几何与检索行为、梯度诊断、RL 训练 reward 曲线三组。Reward 曲线选取 RELER、Listwise、BinaryMix 各三个 seed，见[运行清单](analysis/reward_curve_runs.csv)；优先复用已有训练日志，输出到 `paper/analysis_results/reward_curves/`，目前尚未生成曲线。
+补充分析现分为 embedding 几何与检索行为、梯度诊断、RL 训练 reward 曲线三组。Reward 曲线选取 RELER、Listwise 各三个 seed，见[运行清单](analysis/reward_curve_runs.csv)；优先复用已有训练日志，输出到 `paper/analysis_results/reward_curves/`，目前尚未生成曲线。
+
+2026-09-20 论文呈现精简：监督对照保留 InfoNCE（历史 CL-Strong 配方）与 LambdaLoss（graded 标签），未微调基线使用模型名称 Qwen3-Embedding-0.6B。正文、附录及后续分析统一清理原 local-pool InfoNCE、binary LambdaLoss 和 binary mixture 的展示；主表、奖励消融和初始化表由原始结果重新生成。表格内容统一为 `\scriptsize`，当前 [PDF](iclr2027/build/main.pdf) 为 24 页，已完成编译及版面检查。下面的旧轮次说明保留作历史记录。
 
 第 3 节复核：统一联合分布、求导条件、梯度方向和符号；3.3 从单个 query action 的几何直觉出发解释 conditional projection，再推导逐单元格 LOO 更新及其保证。18 类代数/梯度数值核对通过，详见 [写作复核记录](iclr2027/WRITING_REVIEW.md)；数值实现细节集中在附录。
 

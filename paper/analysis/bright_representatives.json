@@ -19,7 +19,7 @@
       "model_config": "configs/model/qwen3_embedding_0.6b.yaml",
       "revision": "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3"
     },
-    "CLStrong": {
+    "InfoNCE": {
       "path": "checkpoints/iclr2027-r2/G1-R2-CL-Strong-Seed3407-s3407",
       "model_config": "configs/model/qwen3_embedding_0.6b.yaml"
     },
@@ -33,10 +33,6 @@
     },
     "Listwise": {
       "path": "checkpoints/iclr2027-r2/G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K7-T1-Seed3407-s3407",
-      "model_config": "configs/model/qwen3_embedding_0.6b.yaml"
-    },
-    "BinaryMix": {
-      "path": "checkpoints/iclr2027-r2/G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K7-T1-Binary025-Seed3407-s3407",
       "model_config": "configs/model/qwen3_embedding_0.6b.yaml"
     }
   },
