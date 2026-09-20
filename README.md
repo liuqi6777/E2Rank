@@ -78,6 +78,9 @@ bash scripts/run_g2_rl.sh train 8
 
 ## 数据
 
+G2-R2 新增基于 G1 `Align070 / Uniform K7 / T1 / Pairwise050` 的 E/W/D RL 迁移实验，
+配置、启动与补评命令见 [G2-R2 shortlist/pairwise 方案](docs/g2_r2_shortlist_pairwise.md)。
+
 G1 使用 `data/processed/reasonrank_multi/train.ready.jsonl` 中的 4,963 条训练输入记录，无 dev。
 保留全部已知正例；现有采样器丢尾后的实际索引为 4,896 条，数据哈希及运行约定见[新实验计划](paper/EXPERIMENT_PLAN.md)。
 `prepare G1` 每个 query 固定抽一个正例作为 in-batch 代表，同时保留其余已知正例和变长负例，生成 `train.ready.jsonl`。
