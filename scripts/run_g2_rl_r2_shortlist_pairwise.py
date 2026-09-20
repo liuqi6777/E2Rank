@@ -1,0 +1,34 @@
+#!/usr/bin/env python3
+"""G2-R2 E2Rank: transfer G1 CP/Align070/Uniform K7/T1/Pairwise050; seed 42, 1200 steps."""
+import argparse
+from pathlib import Path
+import subprocess
+import sys
+
+from experiments.iclr2027 import ROOT, run_simple_baselines
+
+
+RUN_SUFFIX = 'RL-Align070-ShortlistUniform-K7-T1-Pairwise050'
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('action', nargs='?', default='check', choices=['check', 'train', 'eval'])
+    parser.add_argument('--branches', nargs='+', choices=['E', 'W', 'D'], default=['E', 'W', 'D'])
+    parser.add_argument('--config', type=Path, default=ROOT / 'configs/experiments_g2_rl_r2.yaml')
+    args = parser.parse_args()
+    runs = [f'G2-R2-{branch}-{RUN_SUFFIX}' for branch in dict.fromkeys(args.branches)]
+    if args.action == 'train':
+        import torch
+        if torch.cuda.device_count() != 8 or not torch.cuda.is_bf16_supported():
+            raise ValueError('Expose exactly eight CUDA GPUs with BF16 support (CUDA_VISIBLE_DEVICES)')
+    run_simple_baselines(ROOT / 'configs/experiments/iclr2027/suite_g2_rl_r2_shortlist_pairwise.yaml',
+                         args.config, runs, args.action)
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (ValueError, OSError, KeyError, subprocess.CalledProcessError) as exc:
+        print(f'Error: {exc}', file=sys.stderr)
+        raise SystemExit(2)
