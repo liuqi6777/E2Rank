@@ -513,6 +513,9 @@ on 2026-09-20 (Anchor010-v2 2082629, Anchor050-v2 2082630, gen-eval-CL4-v2
   the barrier) and opens it `"r+"`; `tests/test_rag_anchor.py` covers the
   penalty math, cache validation, and the disjoint-row writes that caught it.
 
+The second relaunch went out the same morning (Anchor010 2088952, Anchor050
+2088953, gen-eval 2088954).
+
 ## 7. Instrumentation notes
 
 **`src/rag/retrieval_probe.py`** replaces the re-ranking probe for model
