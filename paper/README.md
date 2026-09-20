@@ -4,17 +4,21 @@
 
 补充分析现分为 embedding 几何与检索行为、梯度诊断、RL 训练 reward 曲线三组。Reward 曲线选取 RELER、Listwise、BinaryMix 各三个 seed，见[运行清单](analysis/reward_curve_runs.csv)；优先复用已有训练日志，输出到 `paper/analysis_results/reward_curves/`，目前尚未生成曲线。
 
-2026-09-19：shortlist 四组实验已整理为 [G1 Shortlist 结果总结](G1_SHORTLIST_RESULTS.md)，覆盖 **17 个配方、51 次训练**。当前最佳已测 Uniform K15/T1 / alignment 0.70 为 **22.25 ± 0.27**，CL-Strong 为 **22.64 ± 0.20**；双方均为 113 steps。文档包含 K/T、hard 比例、候选来源、alignment 和领域分析。用 `python scripts/analyze_g1_shortlist_results.py` 复算；下文旧主结果决策及 LaTeX/PDF 尚未同步这批 shortlist 结果。
+第 3 节复核：统一联合分布、求导条件、梯度方向和符号；3.3 从单个 query action 的几何直觉出发解释 conditional projection，再推导逐单元格 LOO 更新及其保证。18 类代数/梯度数值核对通过，详见 [写作复核记录](iclr2027/WRITING_REVIEW.md)；数值实现细节集中在附录。
+
+2026-09-19 写作修订：`iclr2027/` 已完成 Introduction / Method 重写，补入 CP 正式命题与证明，并同步主配方 alignment 0.80、原 0.90 奖励对照、78 次核心消融、51 次 shortlist、CL-Strong、动态检索及 G2 九条结果。正文明确区分匹配估计器收益与较强监督配方比较；方法名称统一为 RLOO / RLOO+CP（历史实验 ID 不变），3.2 直接说明与 GRPO 的梯度对应条件及奖励标准化对无偏性的影响，G3 仍无结果。新增附录表直接从原始 CSV 复算，未启动训练或改写结果。当前 [PDF](iclr2027/build/main.pdf) 与 [写作复核记录](iclr2027/WRITING_REVIEW.md) 对应本轮修订。该目录沿用现有 Git ignore 设置，论文源码与 PDF 更新在本地。
+
+2026-09-19：shortlist 四组实验已整理为 [G1 Shortlist 结果总结](G1_SHORTLIST_RESULTS.md)，覆盖 **17 个配方、51 次训练**。当前最佳已测 Uniform K15/T1 / alignment 0.70 为 **22.25 ± 0.27**，CL-Strong 为 **22.64 ± 0.20**；双方均为 113 steps。文档包含 K/T、hard 比例、候选来源、alignment 和领域分析。用 `python scripts/analyze_g1_shortlist_results.py` 复算；shortlist 结果现已纳入候选对照及附录，原匹配主配方保持不变。
 
 2026-09-18 后续：新增 [ReasonEmbed 三方法实验](../docs/g2_reasonembed_cl.md)，D/E/W 各 CL、CL-Strong、binary CP，共九条 seed 42 训练，**每阶段 1 epoch**，最终 BRIGHT；新输出根目录隔离旧 1200-step 产物。配置和入口已准备，尚未启动训练。下文 E2Rank 的结果与呈现建议保持不变。
 
-2026-09-18：E2Rank G2-R2 的 **D/E/W × CL / CL-Strong / RL 九条结果已同步**，见 [结果与呈现建议](G2_R2_RESULTS.md) 和 [原始总分表](_summary/g2_r2_mteb_v2/run_summary.csv)。三个分支的 RL Retrieval 均值均低于两种 CL；建议正文若讨论直接训练则聚焦 D，附录保留完整结果。脚本和配置已恢复原 D/E/W 版本，本次只更新文档，没有重跑或新增训练。LaTeX/PDF 尚未同步 G2 结果。
+2026-09-18：E2Rank G2-R2 的 **D/E/W × CL / CL-Strong / RL 九条结果已同步**，见 [结果与呈现建议](G2_R2_RESULTS.md) 和 [原始总分表](_summary/g2_r2_mteb_v2/run_summary.csv)。三个分支的 RL Retrieval 均值均低于两种 CL；建议正文若讨论直接训练则聚焦 D，附录保留完整结果。脚本和配置已恢复原 D/E/W 版本，本次只更新文档，没有重跑或新增训练。G2 完整结果现已纳入附录，正文简述其检索负结果。
 
-论文正文已于 2026-09-16 同步新协议与 G1-R2 结果：方法部分加入条件投影推导；实验部分报告 27 次训练、三 seed 主表和全参数配对梯度探针；附录包含全部九方法的逐领域结果。该版正文仍将 G2/G3 列为计划；G2 最新结果以上述 2026-09-18 文档为准。当前 PDF：[`iclr2027/build/main.pdf`](iclr2027/build/main.pdf)。结果来源见 [G1_R2_RESULTS.md](G1_R2_RESULTS.md)，后续计划见 [EXPERIMENT_PLAN.md](EXPERIMENT_PLAN.md) 和 [G2_CL_R2_PLAN.md](G2_CL_R2_PLAN.md)。
+论文正文已于 2026-09-16 同步新协议与 G1-R2 结果：方法部分加入条件投影推导；实验部分报告 27 次训练、三 seed 主表和全参数配对梯度探针；附录包含全部九方法的逐领域结果。当时将 G2/G3 列为计划；本轮已同步 G2，仅 G3 继续作为未测扩展。当前 PDF：[`iclr2027/build/main.pdf`](iclr2027/build/main.pdf)。结果来源见 [G1_R2_RESULTS.md](G1_R2_RESULTS.md)，后续计划见 [EXPERIMENT_PLAN.md](EXPERIMENT_PLAN.md) 和 [G2_CL_R2_PLAN.md](G2_CL_R2_PLAN.md)。
 
-最新结果文档已于 2026-09-17 扩展到 **117 次训练 + 2 条 E0**：包含全部 G1-R2 消融、动态检索和 DIVER 初始化实验，见 [G1_R2_RESULTS.md](G1_R2_RESULTS.md) 与 [完整附表](g1_r2_results/all_runs.md)。CP 的优势跨 alignment/G 保持；DIVER 上 RL 优于 LL/CL，但仍低于自身 E0。论文 LaTeX/PDF 尚未纳入这批新增结果。用 `python scripts/analyze_g1_r2_results.py` 可重新生成结果支撑表与输入审计。
+最新结果文档已于 2026-09-17 扩展到 **117 次训练 + 2 条 E0**：包含全部 G1-R2 消融、动态检索和 DIVER 初始化实验，见 [G1_R2_RESULTS.md](G1_R2_RESULTS.md) 与 [完整附表](g1_r2_results/all_runs.md)。CP 的优势跨 alignment/G 保持；DIVER 上 RL 优于 LL/CL，但仍低于自身 E0。Qwen 消融与动态结果现已纳入论文；DIVER 继续遵循下述不纳入决定。用 `python scripts/analyze_g1_r2_results.py` 可重新生成结果支撑表与输入审计。
 
-结果呈现决策（2026-09-17）：**主结果采用 graded CP/G64/alignment 0.80，配对 SF-0.80**，分别为 20.76 ± 0.20 与 18.81 ± 0.30；对 SF 的增益 +1.94，对 LL-Graded +1.39。0.80 根据本轮探索消融选择；机制消融和梯度探针保留 0.90 的匹配对照，原 run 名称与配置不变。当前 LaTeX/PDF 仍为原 0.90 版本，尚未同步这项呈现决策。
+结果呈现决策（2026-09-17）：**主结果采用 graded CP/G64/alignment 0.80，配对 SF-0.80**，分别为 20.76 ± 0.20 与 18.81 ± 0.30；对 SF 的增益 +1.94，对 LL-Graded +1.39。0.80 根据本轮探索消融选择；机制消融和梯度探针保留 0.90 的匹配对照，原 run 名称与配置不变。本轮 LaTeX/PDF 已同步该决定，原 0.90 结果保留为奖励与机制对照。
 
 论文纳入决策（2026-09-17）：**DIVER 实验仅作内部记录，不纳入论文正文、附录、实验计数或主张。** 数据匹配问题是内部优先假设，尚未验证；上述 117 次训练与两条 E0 是归档总数。
 
