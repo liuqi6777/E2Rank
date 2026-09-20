@@ -55,8 +55,8 @@ def validate_contracts(run_ids: list[str], settings: Path) -> None:
                 'lora_r': 16,
                 'lora_alpha': 32,
                 'max_steps': 113,
-                'per_device_train_batch_size': 4,
-                'gradient_accumulation_steps': 4,
+                'per_device_train_batch_size': 8,
+                'gradient_accumulation_steps': 2,
             }
             mismatch = {key: (config.get(key), value) for key, value in expected.items()
                         if config.get(key) != value}
