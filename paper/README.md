@@ -1,5 +1,9 @@
 # Paper workspace
 
+2026-09-20：补充分析的[计划](ANALYSIS_PLAN.md)、[代表 checkpoint 配置](analysis/bright_representatives.json)和[结果目录](analysis_results/README.md)统一放在 `paper/` 下，避开 `iclr2027/` 的 Git ignore 规则。配置的输出路径为 `paper/analysis_results/iclr2027_representatives_s3407/`；分析尚未运行，RAG 仍是后续必须完成的实验。
+
+补充分析现分为 embedding 几何与检索行为、梯度诊断、RL 训练 reward 曲线三组。Reward 曲线选取 RELER、Listwise、BinaryMix 各三个 seed，见[运行清单](analysis/reward_curve_runs.csv)；优先复用已有训练日志，输出到 `paper/analysis_results/reward_curves/`，目前尚未生成曲线。
+
 2026-09-19：shortlist 四组实验已整理为 [G1 Shortlist 结果总结](G1_SHORTLIST_RESULTS.md)，覆盖 **17 个配方、51 次训练**。当前最佳已测 Uniform K15/T1 / alignment 0.70 为 **22.25 ± 0.27**，CL-Strong 为 **22.64 ± 0.20**；双方均为 113 steps。文档包含 K/T、hard 比例、候选来源、alignment 和领域分析。用 `python scripts/analyze_g1_shortlist_results.py` 复算；下文旧主结果决策及 LaTeX/PDF 尚未同步这批 shortlist 结果。
 
 2026-09-18 后续：新增 [ReasonEmbed 三方法实验](../docs/g2_reasonembed_cl.md)，D/E/W 各 CL、CL-Strong、binary CP，共九条 seed 42 训练，**每阶段 1 epoch**，最终 BRIGHT；新输出根目录隔离旧 1200-step 产物。配置和入口已准备，尚未启动训练。下文 E2Rank 的结果与呈现建议保持不变。
@@ -26,6 +30,9 @@ Seed 重复后的最新机制讨论见 [rollout 方差复盘](../docs/rollout_va
 paper/
 ├── README.md                 # this guide
 ├── EXPERIMENT_PLAN.md        # experiment source of truth
+├── ANALYSIS_PLAN.md          # supplementary analyses and pending experiments
+├── analysis/                # checkpoint analysis configurations
+├── analysis_results/        # analysis outputs, grouped by batch
 ├── archive/                  # local historical PDFs; ignored by Git
 ├── scripts/
 │   ├── draw_pipeline_figure.py

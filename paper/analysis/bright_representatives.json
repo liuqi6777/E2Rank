@@ -1,0 +1,76 @@
+{
+  "output_dir": "paper/analysis_results/iclr2027_representatives_s3407",
+  "reference": "E0",
+  "seed": 42,
+  "data": {
+    "kind": "bright",
+    "query_set": "original",
+    "revision": "3066d29c9651a576c8aba4832d249807b181ecae",
+    "subsets": [
+      "biology",
+      "earth_science",
+      "robotics",
+      "theoremqa_theorems"
+    ]
+  },
+  "models": {
+    "E0": {
+      "path": "Qwen/Qwen3-Embedding-0.6B",
+      "model_config": "configs/model/qwen3_embedding_0.6b.yaml",
+      "revision": "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3"
+    },
+    "CLStrong": {
+      "path": "checkpoints/iclr2027-r2/G1-R2-CL-Strong-Seed3407-s3407",
+      "model_config": "configs/model/qwen3_embedding_0.6b.yaml"
+    },
+    "LambdaLoss": {
+      "path": "checkpoints/iclr2027-r2/G1-R2-LL-Graded-Seed3407-s3407",
+      "model_config": "configs/model/qwen3_embedding_0.6b.yaml"
+    },
+    "RELER": {
+      "path": "checkpoints/iclr2027-r2/G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K7-T1-Pairwise050-Seed3407-s3407",
+      "model_config": "configs/model/qwen3_embedding_0.6b.yaml"
+    },
+    "Listwise": {
+      "path": "checkpoints/iclr2027-r2/G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K7-T1-Seed3407-s3407",
+      "model_config": "configs/model/qwen3_embedding_0.6b.yaml"
+    },
+    "BinaryMix": {
+      "path": "checkpoints/iclr2027-r2/G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K7-T1-Binary025-Seed3407-s3407",
+      "model_config": "configs/model/qwen3_embedding_0.6b.yaml"
+    }
+  },
+  "encoding": {
+    "device": "cuda",
+    "precision": "fp16",
+    "batch_size": 8,
+    "max_query_length": 8192,
+    "max_document_length": 8192
+  },
+  "retrieval": {
+    "k": 10,
+    "top_k": 1000,
+    "block_size": 8192
+  },
+  "geometry": {
+    "pairs": 100000,
+    "anchors": 2000,
+    "neighbor_k": 10,
+    "candidate_k": 100,
+    "procrustes": false
+  },
+  "perturb": {
+    "scope": "candidates",
+    "alignments": [
+      1.0,
+      0.99,
+      0.95,
+      0.9,
+      0.8,
+      0.7
+    ],
+    "samples": 64,
+    "candidate_k": 100,
+    "max_queries": 200
+  }
+}
