@@ -20,7 +20,7 @@ profiles:
       learning_rate: 0.0001
       eval_steps: 25
       global_batch_size: 128
-      micro_batch_size: 1
+      micro_batch_size: 4
       positive_selection: retain_all_seeded_in_batch_representative
       positive_selection_seed: 42
 

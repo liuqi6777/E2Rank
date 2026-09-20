@@ -24,7 +24,7 @@ RELER 固定使用 graded nDCG@10、CP、G=64、alignment=0.70、跨卡全部候
 - base model 固定为 `Qwen/Qwen3-Embedding-4B` revision `5cf2132abc99cad020ac570b19d031efec650f2b`。
 - LoRA 使用 rank 16、alpha 32、dropout 0，覆盖 attention 和 MLP 的七类 projection。
 - 学习率固定为 `1e-4`，不做 LR sweep；这是本轮唯一的 4B LoRA 训练配方。
-- 每卡 microbatch 1、gradient accumulation 16，在 8 卡上保持 global batch 128。
+- 每卡 microbatch 4、gradient accumulation 4，在 8 卡上保持 global batch 128。
 - 使用 BF16、gradient checkpointing 和 ZeRO-3。训练结束后自动把 adapter 合并到固定 revision 的 base model，再按统一 embedding protocol 运行 BRIGHT。
 
 ## 推荐执行顺序

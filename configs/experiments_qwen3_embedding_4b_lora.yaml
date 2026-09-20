@@ -6,4 +6,4 @@ G1:
   steps: 113
   checkpoint_every: 25
   batch_size: 128
-  micro_batch_size: 1
+  micro_batch_size: 4
