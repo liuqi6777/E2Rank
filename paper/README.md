@@ -1,5 +1,7 @@
 # Paper workspace
 
+2026-09-20 写作与排版优化：摘要和引言从 embedding model 在语义检索中的地位切入，聚焦针对 BRIGHT 的优化及相同训练数据下的比较；ReasonRank 细节留在实验设置。方法正文精简，辅助推导移至附录，保留 CP 的直觉、核心公式与保证。表格保持 `\scriptsize`，恢复默认行列间距，仅三张超宽领域表局部缩小列间距；主表的子集列居中、Avg. 左对齐，两层表头加粗。Algorithm 1 改为展示奖励矩阵、逐 pair LOO/CP 和参数更新的数学伪代码。当前 [PDF](iclr2027/build/main.pdf) 为 24 页，正文、复现与伦理说明在前 8 页内；已完成编译及版面检查。
+
 2026-09-20：补充分析的[计划](ANALYSIS_PLAN.md)、[代表 checkpoint 配置](analysis/bright_representatives.json)和[结果目录](analysis_results/README.md)统一放在 `paper/` 下，避开 `iclr2027/` 的 Git ignore 规则。配置的输出路径为 `paper/analysis_results/iclr2027_representatives_s3407/`；分析尚未运行，RAG 仍是后续必须完成的实验。
 
 补充分析现分为 embedding 几何与检索行为、梯度诊断、RL 训练 reward 曲线三组。Reward 曲线选取 RELER、Listwise 各三个 seed，见[运行清单](analysis/reward_curve_runs.csv)；优先复用已有训练日志，输出到 `paper/analysis_results/reward_curves/`，目前尚未生成曲线。
