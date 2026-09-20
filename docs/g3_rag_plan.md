@@ -475,20 +475,37 @@ a selection rule.
 The two anchor arms (2081553/2081554) and the generation backfill (2081830)
 failed on new code paths and were diagnosed and fixed; the relaunches went out
 on 2026-09-20 (Anchor010-v2 2082629, Anchor050-v2 2082630, gen-eval-CL4-v2
-2082633 — all elastic, image redaccel:0.12.1-gpu):
+2082633 — all elastic, image redaccel:0.12.1-gpu) and promptly failed on two
+*further* bugs, both fixed the same morning:
 
-- **Anchor arms:** `RuntimeError: 'weight' must be 2-D`. The backbone is loaded
-  under DeepSpeed's ZeRO-3 init context, so before the Trainer exists its
-  parameters are partitioned and a plain forward fails. Fix: the precompute
-  moved into a `RAGAnchorPrecomputeCallback` that runs at `on_train_begin` and
-  encodes through the wrapped model (whose forward gathers on the fly); no
-  optimizer step has run at that point, so the weights are still the
-  initialization the anchors must capture.
-- **Generation backfill:** the `source cluster_setup.sh` positional-parameter
-  bug of §5.2, this time in the generation script (`$1` is a RUN_ID). vLLM
-  itself worked — server up in ~310 s with the flashinfer patch
-  (`setup_venv.sh` then `patch_flashinfer_py311.sh` as specified). Fix:
-  `source ... install`.
+- **Anchor arms (first failure, 2081553/2081554):** `RuntimeError: 'weight'
+  must be 2-D`. The backbone is loaded under DeepSpeed's ZeRO-3 init context,
+  so before the Trainer exists its parameters are partitioned and a plain
+  forward fails. Fix: the precompute moved into a `RAGAnchorPrecomputeCallback`
+  that runs at `on_train_begin` and encodes through the wrapped model (whose
+  forward gathers on the fly); no optimizer step has run at that point, so the
+  weights are still the initialization the anchors must capture.
+- **Anchor arms (relaunch failure, 2082629/2082630):** `AttributeError:
+  'RAGAnchorPrecomputeCallback' object has no attribute 'on_init_end'`, ~2.5
+  minutes in. The `CallbackHandler` fires *every* event on every registered
+  callback, starting with `on_init_end` inside `Trainer.__init__` — before
+  `on_train_begin` ever runs — and the callback was a plain class with only
+  the one method. Fix: it subclasses `TrainerCallback` (as the probe and
+  tuning callbacks already did), and `tests/test_rag_anchor.py` now drives the
+  real handler's `on_init_end` so the regression cannot recur silently.
+- **Generation backfill (first failure, 2081830):** the
+  `source cluster_setup.sh` positional-parameter bug of §5.2, this time in the
+  generation script (`$1` is a RUN_ID). vLLM itself worked — server up in
+  ~310 s with the flashinfer patch (`setup_venv.sh` then
+  `patch_flashinfer_py311.sh` as specified). Fix: `source ... install`.
+- **Generation backfill (relaunch failure, 2082633):** `Frozen index does not
+  fit on cuda:0 ... only 2 GB is free`. The server came up fine, but the
+  eval's retrieval phase spreads the frozen index over every visible CUDA
+  device while vLLM already holds GPUs 0–3, so the capacity check rejects
+  cuda:0. Fix: the evaluation is pinned to the complementary GPUs
+  (`CUDA_VISIBLE_DEVICES=4..7` with TP=4); each free H800 then carries a
+  quarter of the 21M-passage index, ~25 GB with the resize/staging headroom
+  the check budgets for.
 - **Anchor memmap truncation (caught by test, before it ever hit GPU):**
   `np.memmap` mode `"w+"` truncates on every open, so each rank's open would
   have wiped the rows the other ranks had already written, leaving most anchors

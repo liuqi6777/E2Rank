@@ -16,6 +16,7 @@ import torch
 from torch import nn
 
 from rag.anchors import (
+    RAGAnchorPrecomputeCallback,
     anchor_cache_path,
     encode_anchor_rows,
     validate_anchor_cache,
@@ -130,11 +131,24 @@ class _StubTokenizer:
 
 
 class _StubDataset:
+    def __init__(self):
+        self.anchor_memmap = None
+
     def __len__(self):
         return 7
 
     def __getitem__(self, index):
-        return {"question": f"q{index}", "query_id": f"id{index}", "source": "nq"}
+        record = {"question": f"q{index}", "query_id": f"id{index}", "source": "nq"}
+        if self.anchor_memmap is not None:
+            record["anchor_embedding"] = torch.from_numpy(
+                np.array(self.anchor_memmap[index])
+            )
+        return record
+
+    def attach_anchors(self, vector_path, dimension):
+        self.anchor_memmap = np.memmap(
+            vector_path, dtype=np.float16, mode="r", shape=(len(self), dimension)
+        )
 
 
 def test_encode_anchor_rows_writes_disjoint_rows_and_pooling_is_last_token():
@@ -241,6 +255,112 @@ def test_rl_identical_anchors_leave_the_loss_unchanged():
         ).detach(),
     ).loss.item()
     assert abs(without - with_equal) < 1e-4
+
+
+class _FakeArgs:
+    device = torch.device("cpu")
+
+
+def test_precompute_callback_full_flow(tmp_path=None):
+    """Exercise the exact on_train_begin path that failed on GPU (2081553).
+
+    Uses a stub "engine" whose forward mimics DeepSpeed ZeRO-3: the stub's
+    parameters are 1-D partitions and would raise 'weight' must be 2-D on a
+    plain forward -- the callback must instead call the object it is handed,
+    which handles gathering itself.
+    """
+    import embedding_protocol as protocol_module
+
+    class PartitionedBackbone(nn.Module):
+        """Parameters stored 1-D, as ZeRO-3 leaves them before the Trainer."""
+
+        def __init__(self):
+            super().__init__()
+            self.weight = nn.Parameter(torch.randn(64 * DIM))
+            self.config = types.SimpleNamespace(hidden_size=DIM)
+
+        def forward(self, input_ids=None, attention_mask=None, **_):
+            return types.SimpleNamespace(
+                last_hidden_state=self.weight.view(64, DIM)[input_ids]
+            )
+
+    original = protocol_module.tokenize_embedding_texts
+    protocol_module.tokenize_embedding_texts = (
+        lambda texts, tok, append, max_length=None: _StubTokenizer()(texts)
+    )
+    try:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = root / "m.jsonl"
+            manifest.write_text("{}\n")
+            dataset = _StubDataset()
+            callback = __import__("rag.anchors", fromlist=["RAGAnchorPrecomputeCallback"]).RAGAnchorPrecomputeCallback(
+                dataset=dataset,
+                tokenizer=_StubTokenizer(),
+                training_args=types.SimpleNamespace(per_device_train_batch_size=2),
+                data_args=types.SimpleNamespace(
+                    rag_candidate_manifest=str(manifest),
+                    rag_query_max_length=128,
+                ),
+                model_args=types.SimpleNamespace(
+                    model_name_or_path="stub", model_revision="rev1",
+                    query_prompt_template="q", embedding_max_length=512,
+                    append_token="pad",
+                ),
+                dimension=DIM,
+                vector_path=root / "anchors.npy",
+            )
+            engine = PartitionedBackbone()  # stands in for the DS engine
+            callback.on_train_begin(_FakeArgs(), state=None, control=None, model=engine)
+
+            anchors = np.memmap(callback.vector_path, dtype=np.float16, mode="r", shape=(7, DIM))
+            written = torch.from_numpy(np.array(anchors)).float()
+            # Rows 0-6 were all encoded (single rank, world 1): none left zero.
+            norms = written.norm(dim=-1)
+            assert (norms > 0.9).all() and (norms < 1.1).all(), norms
+            # The dataset is attached and serves anchors per row.
+            record = dataset[3]
+            assert record["anchor_embedding"].shape == (DIM,)
+            assert torch.allclose(
+                record["anchor_embedding"].float(), written[3], atol=1e-3
+            )
+            # The meta pins the manifest so a changed manifest rebuilds.
+            meta = json.loads((root / "anchors.npy.meta.json").read_text())
+            assert meta["row_count"] == 7 and meta["dimension"] == DIM
+    finally:
+        protocol_module.tokenize_embedding_texts = original
+
+
+def test_callback_survives_trainer_init_events():
+    """Trials 2082629/2082630: Trainer.__init__ fires on_init_end on every
+    registered callback before on_train_begin ever runs, so the callback must
+    carry the whole TrainerCallback event interface, not just on_train_begin."""
+    from transformers import TrainerControl, TrainerState, TrainingArguments
+    from transformers.trainer_callback import CallbackHandler
+
+    with tempfile.TemporaryDirectory() as directory:
+        callback = RAGAnchorPrecomputeCallback(
+            dataset=_StubDataset(),
+            tokenizer=_StubTokenizer(),
+            training_args=types.SimpleNamespace(per_device_train_batch_size=2),
+            data_args=types.SimpleNamespace(
+                rag_candidate_manifest=str(Path(directory) / "m.jsonl"),
+                rag_query_max_length=128,
+            ),
+            model_args=types.SimpleNamespace(
+                model_name_or_path="stub",
+                model_revision=None,
+                query_prompt_template="q",
+                embedding_max_length=512,
+                append_token="pad",
+            ),
+            dimension=DIM,
+            vector_path=Path(directory) / "anchors.npy",
+        )
+        handler = CallbackHandler([callback], None, None, None, None)
+        handler.on_init_end(
+            TrainingArguments(output_dir=directory), TrainerState(), TrainerControl()
+        )
 
 
 def main() -> int:

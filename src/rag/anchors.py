@@ -29,6 +29,7 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.distributed as dist
+from transformers import TrainerCallback
 
 from embedding_protocol import format_embedding_text, pool_embeddings
 from rag.data import RAG_TASK_DESCRIPTION
@@ -181,7 +182,7 @@ def barrier_if_distributed() -> None:
         dist.barrier()
 
 
-class RAGAnchorPrecomputeCallback:
+class RAGAnchorPrecomputeCallback(TrainerCallback):
     """Build the anchor cache at ``on_train_begin``, through the wrapped model.
 
     The precompute cannot run earlier in ``train_rag.main``: the backbone is
@@ -191,6 +192,12 @@ class RAGAnchorPrecomputeCallback:
     Trainer's model is the DeepSpeed engine, whose forward gathers on the fly
     -- and no optimizer step has run yet, so the weights are still the
     initialization the anchors are supposed to capture.
+
+    Subclassing ``TrainerCallback`` is not cosmetic: the ``CallbackHandler``
+    fires every event on every registered callback, starting with
+    ``on_init_end`` inside ``Trainer.__init__`` -- before ``on_train_begin``
+    ever runs. A plain class without the inherited no-op events dies there
+    with ``AttributeError`` (observed on trials 2082629/2082630).
     """
 
     def __init__(
@@ -213,8 +220,6 @@ class RAGAnchorPrecomputeCallback:
         self.vector_path = Path(vector_path)
 
     def __call__(self, args, state, control, model=None, **kwargs):
-        from transformers.trainer_callback import TrainerCallback  # noqa: F401
-
         distributed = dist.is_available() and dist.is_initialized()
         rank = dist.get_rank() if distributed else 0
         world_size = dist.get_world_size() if distributed else 1
