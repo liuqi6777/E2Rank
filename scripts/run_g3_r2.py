@@ -38,6 +38,9 @@ ALL_RUNS = [
     "G3-R2-RL-GradedNDCG-Anchor050",
     "G3-R2-RL-GradedNDCG-LRHalf",
     "G3-R2-RL-GradedNDCG-Seed3407",
+    "G3-R2-RL-GradedNDCG-Seed2026",
+    "G3-R2-RL-GradedNDCG-LRQuarter",
+    "G3-R2-CL-AnswerMasked-Anchor050",
 ]
 
 

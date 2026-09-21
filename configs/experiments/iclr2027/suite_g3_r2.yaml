@@ -253,6 +253,61 @@ runs:
       rag_relevance_scheme: graded
       rag_group_size: 32
 
+  # Held until the anchor dose-response reports (scripts/qs_g3_round4_resume.sh next).
+  G3-R2-RL-GradedNDCG-Seed2026:
+    group: G3
+    objective: rl
+    scope: query_only
+    control: G3-R2-RL-GradedNDCG
+    seed: 2026
+    protocol:
+      retrieval_reward: graded_ndcg_at_10
+      retrieval_relevance: graded_qrel_3_evidence_2_answer_1
+      unjudged_documents: zero_gain
+      target_alignment: 0.80
+      exploration_schedule: fixed
+    overrides:
+      rag_retrieval_reward: ndcg
+      rag_relevance_scheme: graded
+      rag_group_size: 32
+
+  G3-R2-RL-GradedNDCG-LRQuarter:
+    group: G3
+    objective: rl
+    scope: query_only
+    control: G3-R2-RL-GradedNDCG
+    protocol:
+      retrieval_reward: graded_ndcg_at_10
+      retrieval_relevance: graded_qrel_3_evidence_2_answer_1
+      unjudged_documents: zero_gain
+      target_alignment: 0.80
+      exploration_schedule: fixed
+      learning_rate: 0.00000125
+    overrides:
+      rag_retrieval_reward: ndcg
+      rag_relevance_scheme: graded
+      rag_group_size: 32
+      learning_rate: 0.00000125
+
+  # Diagnostic ablation, not a candidate: CL has no in-domain gain for the
+  # anchor to protect (§6.2: in-domain flat at -0.0008 while held-out collapses
+  # -0.0329), so this arm tests WHAT the CL regression is made of. If anchoring
+  # lands CL back at ~E0, the whole -0.033 was drift and the §6.2
+  # universe-mismatch account needs that amendment; if it stays ~-0.02, the
+  # re-ranking objective itself (not encoder movement) carries the damage.
+  # Dose 0.5 matches the RL winner Anchor050.
+  G3-R2-CL-AnswerMasked-Anchor050:
+    group: G3
+    objective: infonce
+    scope: query_only
+    control: G3-R2-CL-AnswerMasked
+    protocol:
+      training_relevance: qrel_positives_answer_bearing_unjudged
+      anchor: e0_cosine_coef_0.5
+    overrides:
+      rag_relevance_scheme: answer_masked
+      rag_anchor_coef: 0.5
+
   # --- Round 3: static-slate RL -------------------------------------------
   # Rank a fixed slate instead of searching the corpus per rollout. Removes
   # 4,096 ANN searches per step and, more importantly, makes the reward a

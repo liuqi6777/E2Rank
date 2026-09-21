@@ -122,6 +122,37 @@ def test_binary_penalises_answer_bearing_passages_more_than_answer_masked():
     assert _forward(masked).loss.item() < _forward(binary).loss.item()
 
 
+def test_anchor_penalty_adds_to_the_supervised_loss():
+    """The CL+anchor ablation (G3-R2-CL-AnswerMasked-Anchor050) rides anchors
+    through the same collator field the RL arms use: identical anchors must
+    leave the loss unchanged, and displaced ones must raise it by exactly
+    coef * mean(1 - cos), with the penalty reaching the backward pass."""
+    from rag.models import anchor_penalty
+
+    plain = _build(relevance_scheme="answer_masked")
+    anchored = _build(relevance_scheme="answer_masked", anchor_coef=0.5)
+    anchored.model.load_state_dict(plain.model.state_dict())
+    query, ordinals, qrel, answer, evidence = _batch()
+    kwargs = dict(
+        query=query,
+        candidate_passage_ids=ordinals,
+        training_positive_mask=qrel,
+        answer_positive_mask=answer,
+        evidence_positive_mask=evidence,
+    )
+    base = plain(**kwargs).loss
+    means = anchored.encode_query(query)
+    same = anchored(**kwargs, anchor_embeddings=means.detach()).loss
+    assert abs((same - base).item()) < 1e-6
+    displaced = torch.roll(means.detach(), 1, dims=0)
+    raised = anchored(**kwargs, anchor_embeddings=displaced).loss
+    expected = 0.5 * anchor_penalty(means.detach(), displaced).item()
+    assert abs((raised - base).item() - expected) < 1e-5
+    raised.backward()
+    grad = anchored.model.embedding.weight.grad
+    assert grad is not None and torch.isfinite(grad).all()
+
+
 def main() -> int:
     tests = [value for name, value in sorted(globals().items()) if name.startswith("test_")]
     failures = 0
