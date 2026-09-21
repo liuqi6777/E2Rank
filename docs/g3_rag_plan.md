@@ -5,15 +5,21 @@ index. Round 1 (before this document) trained every arm for 200 steps and lost
 to its own initialization; rounds 2–4 here diagnose that, repair what is
 repairable, and establish what actually moves the number.
 
-**Status as of 2026-09-19 (late).** Best result: `G3-R2-RL-GradedNDCG-LRHalf`
-(dynamic full-corpus RL, graded nDCG@10, half LR) at training-domain +0.0200,
-held-out −0.0055, **macro +0.0018** `answer_mrr@10` — and the plain-LR winner's
-+0.0010 macro replicates on seed 3407 (§6.4). Dynamic RL is the only family
-that reaches E0 on the macro average. Round 4 is partially run: the anchor
-arms failed on a ZeRO-3 interaction (fixed, relaunch pending), so the
-anchor dose-response is still open. Generation metrics
-(`generator_em`/`generator_token_f1`) are blank everywhere pending a vLLM
-backfill whose script is ready.
+**Status as of 2026-09-20 (evening).** Best result: `G3-R2-RL-GradedNDCG-Anchor050`
+(dynamic full-corpus RL, graded nDCG@10, E0-anchor coef 0.5, full LR) at
+training-domain +0.0203, held-out **+0.0002**, **macro +0.0059** `answer_mrr@10`
+— 3× the previous best (LRHalf +0.0018) with the in-domain gain intact. The
+anchor penalty buys the round-3 in-domain gain at essentially zero held-out
+cost, dominating the LR knob at every point of the dose-response (§6.4). The
+plain-LR winner's +0.0010 macro replicates on seed 3407. Generation metrics
+are filled for every arm: the CL family loses end-to-end (macro EM −0.015 to
+−0.019, §6.2) and CL-Graded is a mathematical duplicate of CL-AnswerMasked,
+while the RL family holds EM at E0 level or above (§6.4) — though EM's seed
+noise (~±0.007) cannot resolve the anchor's retrieval-side advantage at n=1.
+The CL+anchor ablation (§6.2) shows only ~14% of CL's held-out loss is drift:
+the rest is the re-ranking objective itself. Single-seed caveat: the anchor
+arms ran on seed 42 only; the round-3 seed noise band is ±0.0012 per column,
+and +0.0059 is ~5× that band.
 
 Contents: [1](#1-round-1-was-a-negative-result) background ·
 [2](#2-root-cause-diagnosis-and-its-limits) diagnosis ·
@@ -223,6 +229,48 @@ reused. Coefficients 0.1 and 0.5 give the dose-response, a half-LR arm is the
 code-free control for "less movement overall", and a seed replication follows
 the repo's three-seed convention.
 
+**The penalty is the RLHF KL term, in this parameterization.** Both have the
+shape `task_reward − coef · divergence(current, frozen reference)`: RLHF
+penalizes `KL(π_θ ‖ π_ref)` against a frozen SFT reference, we penalize the
+rotation of each query embedding against its frozen E0 vector. The reason both
+regularizers exist is the same: the trainable objective is a proxy that is
+only trustworthy in a neighborhood of the reference. The reward model is
+calibrated on the reference policy's outputs, so straying far rewards hacking
+its blind spots; our nDCG reward only grades the training queries' retrieval
+through an index built in E0's language, so the reward cannot see the damage
+the same update does to every other query's embedding. Both terms say: improve
+locally, do not chase the proxy into regions where it lies.
+
+The correspondence is exact, not analogical, in this setup. The exploration
+policy is vMF around the current query embedding, with the concentration
+resolved from the suite's `target_alignment: 0.80` (κ ≈ 2274 at d = 1024, via
+`policy_math.kappa_for_alignment`) and held fixed. The KL between two vMF
+distributions that share κ closes as
+
+    KL(vMF(m_θ, κ) ‖ vMF(m_E0, κ)) = κ · A(κ) · (1 − cos θ) = 1819 · (1 − cos θ)
+
+where A(κ) is the mean resultant length — which here *is* the target
+alignment, 0.80, by construction. Since a vMF law is determined by its mean
+direction, constraining the embedding's rotation angle *is* constraining the
+action distribution's KL from the E0 reference policy: the anchor is the GRPO
+KL-to-reference term written in closed form, and coef 0.5 corresponds to a
+per-query KL coefficient of 0.5/1819 ≈ 2.7e−4. Writing it as `1 − cos` rather
+than a literal KL buys boundedness ([0, 2]), no expectation estimation, and a
+metric that measures exactly what normalized ANN search cares about —
+direction.
+
+Two disanalogies with RLHF are worth keeping straight. First, the failure
+being prevented: RLHF's KL guards against reward-model over-optimization on
+the *policy's own outputs*; the anchor guards against collateral damage
+through parameter sharing — updates that improve the training queries drag
+held-out queries' embeddings off the index manifold, and the anchor on
+training queries bounds that drag only via the encoder's smoothness (which is
+why the round-4 result is an empirical validation, not a foregone conclusion).
+Second, the geometry: KL is an asymmetric, unbounded divergence on
+distributions; the anchor is a bounded, symmetric rotation metric on points —
+equivalent here only because the action distribution collapses onto its mean
+direction.
+
 ## 5. Execution and verification
 
 ### 5.1 Suite and arms
@@ -365,6 +413,28 @@ macro. Graded labels land exactly on AnswerMasked (0.3739 vs 0.3739), so the
 grading machinery matters for the RL reward, not for InfoNCE. The cross-device
 pool adds +0.0001. Neither approaches the −0.024 gap.
 
+**CL-Graded is a mathematical duplicate of CL-AnswerMasked, not a replicate.**
+The two runs' 806-step loss curves are byte-identical. Cause, verified against
+the data: `multi_positive_infonce_loss` consumes only `positive_mask` and
+`denominator_mask`, never the graded 3/2/1 `labels`, and on this candidate
+pool evidence passages are *always* qrel positives (0 of 20 000 sampled rows
+have an evidence candidate outside the qrel set), so the graded view's masks
+collapse onto answer_masked's exactly. Two consequences: the round-2 CL suite
+effectively ran three arms, not four; and the evidence=2 tier of the graded
+scheme is inert on this data *everywhere* — the RL graded reward is in practice
+a two-tier 3/1 scheme, which is why it still differs from binary. The
+graded-vs-binary effect in RL comes from the 3-vs-1 contrast, not from the
+evidence tier.
+
+**The generation half confirms the retrieval half (backfill 2026-09-20,
+trial 2088954).** With vLLM co-located on GPUs 0–3 and the eval pinned to 4–7,
+`generator_em`/`generator_token_f1` filled for all four CL arms: macro EM
+−0.0147 to −0.0187 vs E0 (transmission ≈0.6× of the MRR loss), held-out EM
+−0.017 to −0.021 vs in-domain −0.009 to −0.013 — same shape as the retrieval
+side, so the CL regression is end-to-end, not a retrieval-metric artifact.
+Arm differences on EM span 0.004 (noise); Strong-AnswerMasked is nominally
+best. The graded duplicate is identical here too, as it must be.
+
 **Training buys nothing, even in-domain.** On the two sources it trains on,
 `answer_mrr@10` is flat (−0.0008) and `answer_recall@5` is *down* 0.0209. On
 the five it does not see, both fall hard. Round 1 at 200 steps landed at
@@ -381,6 +451,27 @@ the universe, so nothing in the loss penalizes moving the query embedding
 somewhere that pulls in different — and worse — documents from the other
 ~21M. Re-ranking within a frozen pool is simply not the operation that runs at
 inference.
+
+**The anchor ablation quantifies the split (2026-09-21, trial 2092426).**
+`G3-R2-CL-AnswerMasked-Anchor050` — the round-2 recipe under the round-4
+winning anchor dose — lands at in-domain +0.0039 / held-out −0.0284 / macro
+−0.0192, against the unanchored arm's −0.0008 / −0.0329 / −0.0237. The anchor
+recovers only ~14% of CL's held-out loss (and turns in-domain slightly
+positive), so the regression is ~86% objective mismatch and only ~14% drift.
+Set against the RL side, where the same penalty recovered ~100% of the
+held-out loss (§6.4), the anchor acts as a decomposition probe: when the
+training objective *is* the inference operation (dynamic RL: real ANN search),
+held-out damage is pure drift and removable; when it is not (CL: re-ranking a
+frozen pool), the damage is intrinsic to the objective and anchoring cannot
+buy it back.
+
+The generation half of the ablation (backfilled 2026-09-21, run locally on
+the freed 8×L20Y machine after the cluster queue stalled) mirrors the split:
+macro EM recovers from −0.0149 to −0.0123 — ~17% of the gap, against
+retrieval's ~14% — with the in-domain EM recovering more (−0.0086 → −0.0045)
+than held-out (−0.0174 → −0.0154). The anchor's small rescue concentrates
+where the drift was; the bulk of the end-to-end regression belongs to the
+objective.
 
 Two consequences followed. First, the re-ranking probe is unfit for model
 selection — held out in queries but in-domain in distribution, and measuring
@@ -434,87 +525,140 @@ universe.
 **Where the remaining loss lives.** Even the winning arm pays −0.0072 held-out
 for +0.0214 in-domain. Round 4 attacks that residual drift directly (§4.3).
 
-### 6.4 Round 4 — partial results (LR-half and seed replication complete)
+### 6.4 Round 4 — the anchor penalty buys the gain at zero held-out cost
 
-Two of the four round-4 arms completed one epoch plus the full retrieval-only
-evaluation on 2026-09-19 late evening (LRHalf 2081555, Seed3407 2081557 — both
-on round-3-proven code paths):
+All four round-4 arms completed one epoch plus the full retrieval-only
+evaluation (LRHalf 2081555 and Seed3407 on 2026-09-19; Anchor010 2089180 and
+Anchor050 2089181 on 2026-09-20 after the five-failure debug trail below):
 
 | run | anchor | LR | seed | training domain | held-out | macro | probe @806 |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | RL-GradedNDCG (round 3) | 0 | 5e-6 | 42 | +0.0214 | −0.0072 | +0.0010 | 0.5825 |
-| **LRHalf** | 0 | 2.5e-6 | 42 | +0.0200 | **−0.0055** | **+0.0018** | 0.5807 |
+| **LRHalf** | 0 | 2.5e-6 | 42 | +0.0200 | −0.0055 | +0.0018 | 0.5807 |
 | Seed3407 | 0 | 5e-6 | 3407 | +0.0225 | −0.0076 | +0.0010 | 0.5818 |
+| Anchor010 | 0.1 | 5e-6 | 42 | +0.0210 | −0.0036 | +0.0034 | 0.5835 |
+| **Anchor050** | 0.5 | 5e-6 | 42 | **+0.0203** | **+0.0002** | **+0.0059** | 0.5794 |
 
-Three readings:
+Four readings:
 
-**The +0.0010 macro replicates across seeds.** Seed3407 lands on in-domain
-+0.0225 / held-out −0.0076 / macro +0.0010 against seed 42's
-+0.0214 / −0.0072 / +0.0010 — every column within 0.0012 of the original, and
-the probe within 0.0007. The round-3 winner is a real effect, not a seed
-lottery, and its `degenerate_frac` profile also replicates (max ~0.21).
+**The anchor dose-response is monotone and dominates the LR knob.** Held-out
+cost shrinks monotonically with the coefficient (−0.0072 → −0.0036 → +0.0002)
+while the in-domain gain barely moves (+0.0214 → +0.0210 → +0.0203). Every
+anchor point beats the LR-half trade: Anchor010 keeps *more* in-domain gain
+than LRHalf (+0.0210 vs +0.0200) at *less* held-out cost (−0.0036 vs −0.0055);
+Anchor050 keeps essentially the full gain at essentially zero cost. The
+exchange rate is ~7:1 favorable where the LR knob trades 1:1 — exactly the
+sub-linear signature the drift account predicted for a penalty that suppresses
+only the drift component of the update. In the trust-region language of
+§4.3: the anchor constrains how far the *function output* moves (as the PPO
+clip does), the LR constrains how far the *parameters* move (as a small step
+size does) — and the damage here lives entirely in the output movement while
+the gain does not, which is why the output-space constraint removes exactly
+the bad part.
 
-**Less movement is a better trade.** Halving the LR keeps nearly all the
-in-domain gain (+0.0200 vs +0.0214) while shrinking the held-out loss to
-−0.0055 — the best macro in the study so far. This is exactly what the drift
-account predicts: the held-out cost is the price of moving the encoder, and
-gentler movement buys the gain more cheaply. It also independently supports the
-anchor arms' premise, since the anchor penalty attacks the same drift with a
-targeted mechanism instead of a global LR cut.
+**Anchor050 is the study's best arm on every retrieval metric.** Macro
+`answer_mrr@10` +0.0059 (3× LRHalf), macro `answer_recall@5` +0.0095 (vs
++0.0023 unanchored), and the held-out scope is *positive* on recall@5 (+0.0054
+vs −0.0043 unanchored) — the held-out recovery is across metrics, not an MRR
+artifact.
 
-**LR-half trades in-domain for held-out almost one-for-one** (+0.0214 →
-+0.0200 in-domain buys −0.0072 → −0.0055 held-out, roughly 1:1), which sets the
-scale for what the anchor penalty would have to achieve to beat it: recover
-in-domain gain at a lower held-out price than the LR knob already gets.
+**No collapse at coef 0.5.** The pre-registered worry was that 0.5 pins the
+encoder to E0 and forfeits the in-domain gain; it does not (+0.0203 intact),
+so the dose ceiling, if any, lies above 0.5. What saturates instead is the
+held-out cost: it is already ~0, so a higher coefficient could only spend
+in-domain gain for nothing. The open direction is not more anchor but more
+epoch/LR under the anchor, since the anchor removes the drift penalty that
+motivated gentleness.
 
-Both arms' tuning-probe curves rise monotonically and plateau late (0.5807 /
-0.5818), matching their round-3 sibling; the probe ordering again tracks the
-macro ordering loosely but not exactly, so it remains a monitoring signal, not
-a selection rule.
+**The probe ordering inverts at the top.** Anchor050 has the *lowest* late
+probe (0.5794) and the best macro; Anchor010 the highest probe (0.5835) and a
+mid macro. The probe measures in-domain re-ranking movement, which the anchor
+deliberately damps — final confirmation that it is a monitoring signal, not a
+selection rule.
 
-The two anchor arms (2081553/2081554) and the generation backfill (2081830)
-failed on new code paths and were diagnosed and fixed; the relaunches went out
-on 2026-09-20 (Anchor010-v2 2082629, Anchor050-v2 2082630, gen-eval-CL4-v2
-2082633 — all elastic, image redaccel:0.12.1-gpu) and promptly failed on two
-*further* bugs, both fixed the same morning:
+**The generation backfill (2026-09-21, trial 2092096) confirms no end-to-end
+regression but cannot resolve the anchor's advantage.** EM/F1 are now filled
+for all eight RL-family arms. The RL family holds macro EM at E0 level or
+above (best Anchor010 +0.0038; worst of the dynamic arms MRR-Graded −0.0058)
+with held-out EM ≈ 0 throughout — the round-3/4 retrieval gains and costs
+transmit to the generator without damaging it. But the arm ordering does not
+carry over: Anchor050's macro EM (+0.0017) is mid-pack despite its +0.0059
+macro MRR lead, because EM's seed noise is far larger than retrieval's — the
+s42/Seed3407 pair, one config at two seeds, differs by 0.0073 macro EM and
+0.0098 held-out EM, an order of magnitude above the seed noise of the
+retrieval columns (±0.0012). The ≈0.6× MRR→EM transmission measured on the CL
+arms does not hold at this scale: s42's held-out MRR of −0.0072 coexists with
+held-out EM of +0.0023. Consequence for the claims: the anchor's advantage is
+established on retrieval metrics; EM at n=1 seeds can only certify "no
+end-to-end damage", and resolving EM differences would need multi-seed
+averaging. The static-slate arm (ShortRL-CP, EM −0.0181) regresses end-to-end
+like the CL family — consistent with both training on objectives other than
+the inference operation (§6.2's anchor ablation).
 
-- **Anchor arms (first failure, 2081553/2081554):** `RuntimeError: 'weight'
-  must be 2-D`. The backbone is loaded under DeepSpeed's ZeRO-3 init context,
-  so before the Trainer exists its parameters are partitioned and a plain
-  forward fails. Fix: the precompute moved into a `RAGAnchorPrecomputeCallback`
-  that runs at `on_train_begin` and encodes through the wrapped model (whose
-  forward gathers on the fly); no optimizer step has run at that point, so the
-  weights are still the initialization the anchors must capture.
-- **Anchor arms (relaunch failure, 2082629/2082630):** `AttributeError:
-  'RAGAnchorPrecomputeCallback' object has no attribute 'on_init_end'`, ~2.5
-  minutes in. The `CallbackHandler` fires *every* event on every registered
-  callback, starting with `on_init_end` inside `Trainer.__init__` — before
-  `on_train_begin` ever runs — and the callback was a plain class with only
-  the one method. Fix: it subclasses `TrainerCallback` (as the probe and
-  tuning callbacks already did), and `tests/test_rag_anchor.py` now drives the
-  real handler's `on_init_end` so the regression cannot recur silently.
-- **Generation backfill (first failure, 2081830):** the
-  `source cluster_setup.sh` positional-parameter bug of §5.2, this time in the
-  generation script (`$1` is a RUN_ID). vLLM itself worked — server up in
-  ~310 s with the flashinfer patch (`setup_venv.sh` then
-  `patch_flashinfer_py311.sh` as specified). Fix: `source ... install`.
-- **Generation backfill (relaunch failure, 2082633):** `Frozen index does not
-  fit on cuda:0 ... only 2 GB is free`. The server came up fine, but the
-  eval's retrieval phase spreads the frozen index over every visible CUDA
-  device while vLLM already holds GPUs 0–3, so the capacity check rejects
-  cuda:0. Fix: the evaluation is pinned to the complementary GPUs
-  (`CUDA_VISIBLE_DEVICES=4..7` with TP=4); each free H800 then carries a
-  quarter of the 21M-passage index, ~25 GB with the resize/staging headroom
-  the check budgets for.
+Seed-replication and LR-arm notes (from the 2026-09-19 partial results, kept
+for the record): Seed3407 lands within 0.0012 of seed 42 on every column, so
+the round-3 +0.0010 macro is real, and its `degenerate_frac` profile
+replicates (max ~0.21). LRHalf's 1:1 trade was the pre-registered bar the
+anchor arms had to beat; they clear it by a wide margin. The anchor arms ran
+on seed 42 only — the natural replication is Seed 2026 at coef 0.5 (§8).
+
+Both LR arms' tuning-probe curves rise monotonically and plateau late (0.5807
+/ 0.5818), matching their round-3 sibling.
+
+The two anchor arms and the generation backfill took five launch attempts
+(2026-09-19/20) to reach the results above — each attempt failed fast in the
+smoke phase (256 queries, 3 steps), which is what the smoke is for: no queue
+slot was wasted on a full epoch. The full failure trail, kept for the record:
+
+- **Anchor arms, attempts 1–2 (2081553/2081554, 2082629/2082630):**
+  `RuntimeError: 'weight' must be 2-D`, then `AttributeError:
+  'RAGAnchorPrecomputeCallback' object has no attribute 'on_init_end'`. First:
+  the backbone is loaded under DeepSpeed's ZeRO-3 init context, so before the
+  Trainer exists its parameters are partitioned and a plain forward fails —
+  the precompute moved into a `RAGAnchorPrecomputeCallback` at
+  `on_train_begin`, encoding through the wrapped model (whose forward gathers
+  on the fly), before any optimizer step. Second: the `CallbackHandler` fires
+  *every* event on every registered callback, starting with `on_init_end`
+  inside `Trainer.__init__`, and the callback was a plain class with only the
+  one method — it now subclasses `TrainerCallback` (as the probe and tuning
+  callbacks already did), and `tests/test_rag_anchor.py` drives the real
+  handler's `on_init_end`.
+- **Anchor arms, attempt 3 (2088952/2088953):** `TypeError:
+  RAGRLModel.forward() missing 1 required positional argument: 'query'`. The
+  model the callback is handed is the engine wrapping `RAGRLModel`, whose
+  forward takes `(query, reward_inputs)` for the RL loss. Fix: the precompute
+  calls `encode_query` — the wrappers' own query path (pooling and
+  normalization included), the same one the probe and tuning callbacks already
+  used on the round-3/4 RL runs — with a direct-forward fallback for bare
+  backbones.
+- **Anchor arms, attempt 4 (2089107/2089108):** `NameError: name 'np' is not
+  defined` in `CandidateManifestDataset.__getitem__` at step 0: the anchor
+  path referenced numpy through an import that only existed inside
+  `attach_anchors`. Every earlier test used a stub dataset (which imports
+  numpy itself); the new regression test drives the *real* dataset and
+  collator. The same pass fixed a not-yet-triggered race: both anchor arms
+  resolved to one anchor cache path (same manifest, same variant), so a
+  concurrently starting trial's rank 0 could truncate the file mid-write under
+  the other's ranks; the cache variant now includes the run's output_dir, so
+  each trial owns its file.
+- **Generation backfill, attempts 1–2 (2081830, 2082633):** the
+  `source cluster_setup.sh` positional-parameter bug of §5.2 (`$1` is a
+  RUN_ID), then `Frozen index does not fit on cuda:0 ... only 2 GB is free` —
+  the eval's retrieval phase spreads the frozen index over every visible CUDA
+  device while vLLM already holds GPUs 0–3. Fix: `source ... install`, and the
+  evaluation is pinned to the complementary GPUs (`CUDA_VISIBLE_DEVICES=4..7`
+  with TP=4; a quarter of the 21M-passage index per free H800, ~25 GB with
+  the budgeted headroom). The third attempt (2088954) completed all four CL
+  arms.
 - **Anchor memmap truncation (caught by test, before it ever hit GPU):**
   `np.memmap` mode `"w+"` truncates on every open, so each rank's open would
   have wiped the rows the other ranks had already written, leaving most anchors
-  silently zero. `encode_anchor_rows` now pre-sizes the file (rank 0, before
-  the barrier) and opens it `"r+"`; `tests/test_rag_anchor.py` covers the
-  penalty math, cache validation, and the disjoint-row writes that caught it.
+  silently zero. `encode_anchor_rows` pre-sizes the file (rank 0, before the
+  barrier) and opens it `"r+"`.
 
-The second relaunch went out the same morning (Anchor010 2088952, Anchor050
-2088953, gen-eval 2088954).
+Attempt 5 (Anchor010 2089180, Anchor050 2089181, 2026-09-20) passed the smoke
+end-to-end — precompute on 8 ranks, anchor penalty live in three optimizer
+steps — and produced the results above.
 
 ## 7. Instrumentation notes
 
@@ -551,22 +695,26 @@ between its retrieval and generation phases, so the two do not contend.
 
 ## 8. Further work
 
-Ordered by expected value against the current best (LRHalf, macro +0.0018):
+Ordered by expected value against the current best (Anchor050, macro +0.0059):
 
-1. **Relaunch the anchor arms** (pending go-ahead): Anchor010-v2, Anchor050-v2.
-   Round 4's LR-half result sharpens the question the anchors answer: a global
-   LR cut already trades in-domain for held-out roughly 1:1, so the anchor
-   penalty is worth its complexity only if it buys in-domain gain at a
-   *sub-linear* held-out price — i.e. suppresses the drift component of the
-   update specifically rather than the whole update.
-2. **Generation backfill** (gen-eval-CL4-v2 ready, fixed, unlaunched): fills
-   `generator_em` / `generator_token_f1` for all eight completed arms. vLLM on
-   the cluster is proven (server up in ~310 s with the flashinfer patch).
-3. **Seed 2026** of the winner (at half LR, given §6.4) completes n=3.
-4. **Answer-F1 RL** once the vLLM endpoint is up: the answer-F1 reward
+1. **Push in-domain gain under the anchor.** The anchor removes the drift
+   penalty that motivated the LR cut, and coef 0.5 already runs at full LR —
+   yet the held-out cost has saturated at ~0 while the in-domain gain still
+   matches the unanchored arm. The unexplored direction is buying *more*
+   in-domain: two epochs at coef 0.5, or a higher LR under the anchor. The
+   dose-response says a higher coefficient is the wrong knob (nothing left to
+   save on held-out); more optimization under the same anchor is the right one.
+2. **Seed 2026 at coef 0.5** completes the winner's seed replication. The
+   +0.0059 macro is ~5× the round-3 seed noise band (±0.0012 per column), so
+   this is confirmation, not exploration.
+3. **Answer-F1 RL under the anchor**: the answer-F1 reward
    (`rag_retrieval_reward: answer_f1`) is the remaining untried reward family,
    and round 3 suggests reward shape matters more than anything else tried.
-5. **Refresh the candidate pool during training (ANCE-style).** Round 2's
+   The vLLM co-location path is now proven (§6.2 backfill and the 2026-09-21
+   RL backfill), so the in-training generator endpoint is an engineering step,
+   not a research risk. Combining it with coef 0.5 tests whether the anchor's
+   zero-cost property survives a different reward.
+4. **Refresh the candidate pool during training (ANCE-style).** Round 2's
    mechanism suggests its own fix: the pool is mined once with E0, so every
    negative a query ever sees is already an E0 near-neighbour, and the model
    never learns to suppress passages that become near-neighbours only after its
@@ -574,7 +722,15 @@ Ordered by expected value against the current best (LRHalf, macro +0.0018):
    Re-mining is cheap here (one search per training query, vs the 4,096/step
    the dynamic RL arm already pays). The dynamic RL arm already has this
    property, which round 3 confirmed transfers; refreshed-pool CL is the
-   natural follow-up if a cheaper-than-RL method is wanted.
-6. **ShortRL-SF contrast** is implemented and preflighted but low priority: the
-   static slate failed on universe grounds, so the estimator contrast on it is
-   no longer informative.
+   natural follow-up if a cheaper-than-RL method is wanted. The CL+anchor
+   ablation sharpens the bar: 86% of refreshed-pool CL's expected held-out
+   loss is the objective, not drift, so the pool must actually be refreshed
+   for CL to compete — anchoring alone cannot save it.
+5. **ShortRL-SF contrast** is implemented and preflighted but low priority: the
+   static slate failed on universe grounds (and end-to-end: EM −0.0181), so
+   the estimator contrast on it is no longer informative.
+
+Done along the way: the generation backfill now covers every trained arm,
+`CL-AnswerMasked-Anchor050` included (filled 2026-09-21 by running the
+co-located vLLM eval on the locally freed 8×L20Y machine after the cluster
+queue stalled; its EM confirms the §6.2 drift/objective split end-to-end).
