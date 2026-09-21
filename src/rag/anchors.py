@@ -157,10 +157,20 @@ def encode_anchor_rows(
                 texts, tokenizer, append_token, max_length=query_max_length
             )
             inputs = {key: value.to(device) for key, value in dict(tokenized).items()}
-            hidden = model(**inputs).last_hidden_state
-            embeddings = pool_embeddings(
-                hidden, inputs["attention_mask"], pooling_method="last", normalize=True
-            )
+            # The Trainer hands this function its full model -- under DeepSpeed
+            # that is the engine wrapping RAGRLModel, whose forward() takes
+            # (query, reward_inputs) for the RL loss and rejects a raw token
+            # batch (trial 2088952). encode_query is the wrappers' own query
+            # path, pooling and normalization included, and is what the probe
+            # and tuning callbacks already call; a bare backbone falls back to
+            # a direct forward.
+            if hasattr(model, "encode_query"):
+                embeddings = model.encode_query(inputs)
+            else:
+                hidden = model(**inputs).last_hidden_state
+                embeddings = pool_embeddings(
+                    hidden, inputs["attention_mask"], pooling_method="last", normalize=True
+                )
             embeddings = embeddings.float().cpu().numpy().astype(np.float16)
             for position, row in enumerate(chunk):
                 sink[row] = embeddings[position]
@@ -236,8 +246,6 @@ class RAGAnchorPrecomputeCallback(TrainerCallback):
             )
             # Pre-size before any rank opens it: np.memmap "w+" truncates on
             # open, so later opens must find the file at full size.
-            import numpy as np
-
             self.vector_path.parent.mkdir(parents=True, exist_ok=True)
             with open(self.vector_path, "wb") as handle:
                 handle.truncate(row_count * self.dimension * np.dtype(np.float16).itemsize)

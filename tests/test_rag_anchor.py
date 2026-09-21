@@ -262,14 +262,21 @@ class _FakeArgs:
 
 
 def test_precompute_callback_full_flow(tmp_path=None):
-    """Exercise the exact on_train_begin path that failed on GPU (2081553).
+    """Exercise the exact on_train_begin path that failed on GPU.
 
-    Uses a stub "engine" whose forward mimics DeepSpeed ZeRO-3: the stub's
-    parameters are 1-D partitions and would raise 'weight' must be 2-D on a
-    plain forward -- the callback must instead call the object it is handed,
-    which handles gathering itself.
+    Two production failures shape this test:
+    - 2081553/2081554: encoding before the Trainer exists finds ZeRO-3
+      partitions ('weight' must be 2-D), so the callback must encode through
+      the model it is handed at on_train_begin.
+    - 2088952/2088953: that model is the engine wrapping RAGRLModel, whose
+      forward takes (query, reward_inputs) -- a raw token batch has to go
+      through encode_query instead.
+
+    The stub backbone stores its parameter 1-D (as ZeRO-3 leaves it), and the
+    stub wrapper's forward rejects token batches, so either wrong path raises.
     """
     import embedding_protocol as protocol_module
+    from embedding_protocol import pool_embeddings
 
     class PartitionedBackbone(nn.Module):
         """Parameters stored 1-D, as ZeRO-3 leaves them before the Trainer."""
@@ -282,6 +289,24 @@ def test_precompute_callback_full_flow(tmp_path=None):
         def forward(self, input_ids=None, attention_mask=None, **_):
             return types.SimpleNamespace(
                 last_hidden_state=self.weight.view(64, DIM)[input_ids]
+            )
+
+    class RLWrapper(nn.Module):
+        """The Trainer's model for an RL run, minus the engine shell."""
+
+        def __init__(self):
+            super().__init__()
+            self.model = PartitionedBackbone()
+
+        def forward(self, query, **reward_inputs):
+            raise TypeError("forward() missing 1 required positional argument: 'query'")
+
+        def encode_query(self, inputs):
+            return pool_embeddings(
+                self.model(**inputs).last_hidden_state,
+                inputs["attention_mask"],
+                pooling_method="last",
+                normalize=True,
             )
 
     original = protocol_module.tokenize_embedding_texts
@@ -310,7 +335,7 @@ def test_precompute_callback_full_flow(tmp_path=None):
                 dimension=DIM,
                 vector_path=root / "anchors.npy",
             )
-            engine = PartitionedBackbone()  # stands in for the DS engine
+            engine = RLWrapper()  # stands in for the DS engine wrapping RAGRLModel
             callback.on_train_begin(_FakeArgs(), state=None, control=None, model=engine)
 
             anchors = np.memmap(callback.vector_path, dtype=np.float16, mode="r", shape=(7, DIM))
@@ -361,6 +386,53 @@ def test_callback_survives_trainer_init_events():
         handler.on_init_end(
             TrainingArguments(output_dir=directory), TrainerState(), TrainerControl()
         )
+
+
+def test_real_dataset_and_collator_serve_anchors():
+    """Trial 2089107 died at step 0: the real dataset's __getitem__ referenced
+    numpy through an import that only existed inside attach_anchors. The stub
+    dataset used by the other tests imports numpy itself, so only the real
+    class can catch this. Drives dataset -> collator, the two pieces the
+    precompute hands its anchors to."""
+    import rag.data as data_module
+    from rag.data import CandidateManifestDataset, RAGQueryCollator
+
+    original = data_module.tokenize_embedding_texts
+    data_module.tokenize_embedding_texts = (
+        lambda texts, tok, append, max_length=None: _StubTokenizer()(texts)
+    )
+    try:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = root / "manifest.jsonl"
+            records = [
+                {
+                    "query_id": f"q{i}",
+                    "source": "nq",
+                    "question": f"question {i}",
+                    "golden_answers": [f"answer {i}"],
+                    "candidate_passage_ids": [10 * i, 10 * i + 1],
+                    "answer_positive_mask": [True, False],
+                }
+                for i in range(5)
+            ]
+            manifest.write_text("".join(json.dumps(record) + "\n" for record in records))
+            dataset = CandidateManifestDataset(str(manifest), split="full")
+            vectors = np.memmap(root / "a.npy", dtype=np.float16, mode="w+", shape=(5, DIM))
+            vectors[:] = np.arange(5 * DIM, dtype=np.float16).reshape(5, DIM)
+            vectors.flush()
+            dataset.attach_anchors(str(root / "a.npy"), DIM)
+
+            row = dataset[3]
+            assert row["anchor_embedding"].shape == (DIM,)
+            batch = RAGQueryCollator(_StubTokenizer())([dataset[i] for i in (0, 3)])
+            assert batch["anchor_embeddings"].shape == (2, DIM)
+            assert torch.allclose(
+                batch["anchor_embeddings"][1].float(),
+                torch.arange(5 * DIM, dtype=torch.float32).reshape(5, DIM)[3],
+            )
+    finally:
+        data_module.tokenize_embedding_texts = original
 
 
 def main() -> int:

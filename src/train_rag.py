@@ -344,11 +344,15 @@ def main() -> None:
 
         cache_dir = Path(data_args.rag_candidate_manifest).parent / "anchors"
         cache_dir.mkdir(parents=True, exist_ok=True)
-        # One cache per (manifest, split, tuning split, sample cap): a smoke run
-        # with a sample cap must never be read back as a full-split cache.
+        # One cache per (manifest, split, tuning split, sample cap, run): the
+        # callback unlinks and rewrites its file, so two anchor arms launched
+        # together must not resolve to the same path -- one trial's rank 0
+        # would truncate the file mid-write out from under the other's ranks,
+        # and the loser would attach to a half-written file of zero rows.
         variant = (
             f"{data_args.rag_split}:{data_args.rag_tuning_fraction}:"
-            f"{data_args.rag_tuning_seed}:{data_args.rag_max_train_samples}"
+            f"{data_args.rag_tuning_seed}:{data_args.rag_max_train_samples}:"
+            f"{training_args.output_dir}"
         )
         anchor_callback = RAGAnchorPrecomputeCallback(
             dataset=train_dataset,

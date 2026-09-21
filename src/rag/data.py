@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from typing import Any, Iterator, Sequence
 
+import numpy as np
 import torch
 from torch.utils.data import Dataset
 
@@ -127,8 +128,6 @@ class CandidateManifestDataset(Dataset):
 
     def attach_anchors(self, vector_path: str, dimension: int) -> None:
         """Attach an fp16 anchor memmap keyed by this dataset's row order."""
-        import numpy as np
-
         self.anchor_dimension = int(dimension)
         self.anchor_memmap = np.memmap(
             vector_path, dtype=np.float16, mode="r", shape=(len(self), self.anchor_dimension)
