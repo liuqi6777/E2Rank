@@ -251,7 +251,7 @@ def main() -> None:
             endpoint=generator_args.rag_generator_endpoint or "",
             model=generator_args.rag_generator_model,
             revision=generator_args.rag_generator_revision,
-            cache_path=generator_args.rag_generator_cache,
+            cache_path="",
             max_input_length=generator_args.rag_generator_max_input_length,
             max_new_tokens=generator_args.rag_generator_max_new_tokens,
             timeout_seconds=generator_args.rag_generator_timeout_seconds,

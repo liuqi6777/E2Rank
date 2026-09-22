@@ -5,6 +5,7 @@ import json
 import sqlite3
 import threading
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Sequence
 
@@ -38,15 +39,18 @@ class FrozenGeneratorClient:
     Greedy decoding does not make the endpoint reproducible: continuous batching
     varies the reduction order, and on this corpus about 2-3% of answers change
     when the same prompts are grouped differently, moving aggregate EM by ~0.2.
-    The cache is what makes a run repeatable, by pinning the first answer produced
-    for a given question and context.
+    A non-empty ``cache_path`` pins the first answer per (question, passage-set)
+    in sqlite, which is what makes an evaluation replayable. An empty
+    ``cache_path`` disables the cache entirely: training rollouts essentially
+    never repeat a pair (measured ~0% hits), and on network storage the per-row
+    INSERT costs ~80 ms through FUSE -- tens of hours over a 3M-rollout epoch.
     """
 
     def __init__(
         self,
         endpoint: str,
         model: str,
-        cache_path: str,
+        cache_path: str = "",
         revision: str | None = None,
         max_input_length: int = 2048,
         max_new_tokens: int = 32,
@@ -58,7 +62,12 @@ class FrozenGeneratorClient:
             raise ValueError("A generator endpoint is required for answer_f1 reward")
         if max_prompts_per_request <= 0:
             raise ValueError("max_prompts_per_request must be positive")
-        self.endpoint = endpoint.rstrip("/")
+        # A comma-separated list runs one co-located vLLM instance per GPU
+        # group; batches are dispatched across them concurrently (below).
+        self.endpoints = [part.rstrip("/") for part in str(endpoint).split(",") if part.strip()]
+        if not self.endpoints:
+            raise ValueError("A generator endpoint is required for answer_f1 reward")
+        self.endpoint = self.endpoints[0]
         self.model = model
         self.revision = revision
         self.max_input_length = max_input_length
@@ -68,14 +77,33 @@ class FrozenGeneratorClient:
         self.max_prompts_per_request = int(max_prompts_per_request)
         self.tokenizer = AutoTokenizer.from_pretrained(model, revision=revision, trust_remote_code=True)
         self.resolved_revision = getattr(self.tokenizer, "_commit_hash", None) or revision
-        cache_file = Path(cache_path)
-        cache_file.parent.mkdir(parents=True, exist_ok=True)
-        # A caller may drive generation from a worker thread to overlap it with GPU
-        # work, so the cache is shared rather than pinned to the creating thread.
-        # Every statement below runs under _lock; the counters have their own.
-        self.connection = sqlite3.connect(cache_file, timeout=120, check_same_thread=False)
         self._lock = threading.Lock()
         self._statistics_lock = threading.Lock()
+        self.requests = 0
+        self.cache_hits = 0
+        self.endpoint_calls = 0
+        self.manifest_hash = hashlib.sha256(json.dumps({
+            "model": model,
+            "revision": self.resolved_revision,
+            "system_prompt": self.system_prompt,
+            "prompt_format_version": 1,
+            "context_truncation": "drop_lowest_ranked_then_prefix",
+            "max_input_length": max_input_length,
+            "max_new_tokens": max_new_tokens,
+            "temperature": 0,
+        }, sort_keys=True).encode("utf-8")).hexdigest()
+        if not cache_path:
+            self._cache: dict[str, str] | None = None
+            self.connection = None
+            return
+        self._cache = {}
+        # A caller may drive generation from a worker thread to overlap it with
+        # GPU work, so the cache is shared rather than pinned to the creating
+        # thread. Every statement below runs under _lock; the counters have
+        # their own.
+        cache_file = Path(cache_path)
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        self.connection = sqlite3.connect(cache_file, timeout=120, check_same_thread=False)
         self.connection.execute("PRAGMA journal_mode=WAL")
         self.connection.execute(
             "CREATE TABLE IF NOT EXISTS generations (cache_key TEXT PRIMARY KEY, output TEXT NOT NULL)"
@@ -91,22 +119,8 @@ class FrozenGeneratorClient:
         # Past MAX_PRELOADED_ROWS the reads go to the file, batched; _stored_outputs
         # is what makes both routes return the same answers.
         rows = self.connection.execute("SELECT count(*) FROM generations").fetchone()[0]
-        self._cache: dict[str, str] = {}
         if rows <= MAX_PRELOADED_ROWS:
             self._cache = dict(self.connection.execute("SELECT cache_key, output FROM generations"))
-        self.requests = 0
-        self.cache_hits = 0
-        self.endpoint_calls = 0
-        self.manifest_hash = hashlib.sha256(json.dumps({
-            "model": model,
-            "revision": self.resolved_revision,
-            "system_prompt": self.system_prompt,
-            "prompt_format_version": 1,
-            "context_truncation": "drop_lowest_ranked_then_prefix",
-            "max_input_length": max_input_length,
-            "max_new_tokens": max_new_tokens,
-            "temperature": 0,
-        }, sort_keys=True).encode("utf-8")).hexdigest()
 
     def cache_key(
         self,
@@ -191,10 +205,12 @@ class FrozenGeneratorClient:
     def _stored_outputs(self, keys: Sequence[str]) -> dict[str, str]:
         """Re-read keys the in-memory snapshot does not hold.
 
-        Training shares one cache file across ranks, so a key absent at startup may
-        have been written by another rank since. Asking the file again keeps that
-        behaviour, at one round trip per batch rather than one per key.
+        A key absent at startup may have been written by another process since;
+        asking the file again keeps that behaviour, at one round trip per batch
+        rather than one per key.
         """
+        if self.connection is None:
+            return {}
         found: dict[str, str] = {}
         with self._lock:
             for start in range(0, len(keys), MAX_KEYS_PER_SELECT):
@@ -211,6 +227,15 @@ class FrozenGeneratorClient:
         self,
         requests: Sequence[tuple[str, str, Sequence[int], Sequence[dict]]],
     ) -> list[str]:
+        if self._cache is None:
+            # Cache-free mode: no lookup, no key hashing, no storage.
+            prompts = self._render_batch(
+                [(question, documents) for _, question, _, documents in requests]
+            )
+            generated = self._complete_all(prompts)
+            with self._statistics_lock:
+                self.requests += len(requests)
+            return generated
         outputs: list[str | None] = [None] * len(requests)
         # Hashing a request's context is pure CPU and touches no shared state, so it
         # stays outside the lock; with the lookups served from memory it would
@@ -255,11 +280,7 @@ class FrozenGeneratorClient:
         if missing_inputs:
             # Rendering tokenizes every prompt, so it stays outside the cache lock.
             missing_prompts = self._render_batch(missing_inputs)
-            generated = []
-            for start in range(0, len(missing_prompts), self.max_prompts_per_request):
-                generated.extend(
-                    self._complete(missing_prompts[start : start + self.max_prompts_per_request])
-                )
+            generated = self._complete_all(missing_prompts)
             with self._lock:
                 self.connection.executemany(
                     "INSERT OR REPLACE INTO generations(cache_key, output) VALUES (?, ?)",
@@ -272,7 +293,7 @@ class FrozenGeneratorClient:
                     outputs[index] = output
         return [str(output) for output in outputs]
 
-    def _complete(self, prompts: Sequence[str]) -> list[str]:
+    def _complete(self, prompts: Sequence[str], endpoint: str | None = None) -> list[str]:
         """Send one batch of prompts the server is willing to accept at once."""
         # Counted under its own lock: _lock is held across a commit, and waiting on
         # that here would delay the request the endpoint is idle waiting for.
@@ -285,7 +306,7 @@ class FrozenGeneratorClient:
             "max_tokens": self.max_new_tokens,
         }).encode("utf-8")
         request = urllib.request.Request(
-            f"{self.endpoint}/v1/completions",
+            f"{endpoint or self.endpoint}/v1/completions",
             data=body,
             headers={"Content-Type": "application/json"},
             method="POST",
@@ -299,6 +320,31 @@ class FrozenGeneratorClient:
             )
         return [choice["text"].strip() for choice in choices]
 
+    def _complete_all(self, prompts: Sequence[str]) -> list[str]:
+        """Send every server-sized batch, splitting across the endpoints.
+
+        One 1,024-prompt request already saturates a vLLM instance, so the
+        batches are dealt round-robin to the endpoints and sent concurrently --
+        sequential round-robin would leave each server idle while it waits for
+        the other's turn. Results are reassembled in prompt order.
+        """
+        batches = [
+            prompts[start : start + self.max_prompts_per_request]
+            for start in range(0, len(prompts), self.max_prompts_per_request)
+        ]
+        if len(self.endpoints) == 1 or len(batches) == 1:
+            generated = []
+            for batch in batches:
+                generated.extend(self._complete(batch))
+            return generated
+        with ThreadPoolExecutor(max_workers=len(batches)) as pool:
+            futures = [
+                pool.submit(self._complete, batch, self.endpoints[index % len(self.endpoints)])
+                for index, batch in enumerate(batches)
+            ]
+            # future.result() blocks in submission order while every batch runs.
+            return [output for future in futures for output in future.result()]
+
     def statistics(self) -> dict[str, float | int]:
         with self._statistics_lock:
             return {
@@ -310,4 +356,5 @@ class FrozenGeneratorClient:
             }
 
     def close(self) -> None:
-        self.connection.close()
+        if self.connection is not None:
+            self.connection.close()

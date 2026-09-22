@@ -5,7 +5,7 @@ index. Round 1 (before this document) trained every arm for 200 steps and lost
 to its own initialization; rounds 2–4 here diagnose that, repair what is
 repairable, and establish what actually moves the number.
 
-**Status as of 2026-09-20 (evening).** Best result: `G3-R2-RL-GradedNDCG-Anchor050`
+**Status as of 2026-09-22 (evening).** Best result: `G3-R2-RL-GradedNDCG-Anchor050`
 (dynamic full-corpus RL, graded nDCG@10, E0-anchor coef 0.5, full LR) at
 training-domain +0.0203, held-out **+0.0002**, **macro +0.0059** `answer_mrr@10`
 — 3× the previous best (LRHalf +0.0018) with the in-domain gain intact. The
@@ -17,7 +17,11 @@ are filled for every arm: the CL family loses end-to-end (macro EM −0.015 to
 while the RL family holds EM at E0 level or above (§6.4) — though EM's seed
 noise (~±0.007) cannot resolve the anchor's retrieval-side advantage at n=1.
 The CL+anchor ablation (§6.2) shows only ~14% of CL's held-out loss is drift:
-the rest is the re-ranking objective itself. Single-seed caveat: the anchor
+the rest is the re-ranking objective itself. Round 5 (§6.5) eliminates the
+direct answer-F1 reward at matched group 32: it is the first RL arm with a
+negative macro delta (−0.0047), 6× less in-domain gain, and the family's
+worst held-out — the smooth graded-nDCG proxy beats the sparse true objective
+on every scope. Single-seed caveat: the anchor
 arms ran on seed 42 only; the round-3 seed noise band is ±0.0012 per column,
 and +0.0059 is ~5× that band.
 
@@ -660,6 +664,86 @@ Attempt 5 (Anchor010 2089180, Anchor050 2089181, 2026-09-20) passed the smoke
 end-to-end — precompute on 8 ranks, anchor penalty live in three optimizer
 steps — and produced the results above.
 
+### 6.5 Round 5 — the direct-generation reward loses to the shaped retrieval reward
+
+`G3-R2-RL-AnswerF1` swaps the reward for the metric the suite actually
+reports: each rollout generates an answer with the frozen Qwen2.5-7B-Instruct
+over its own top-10 and scores `max_token_f1` against the gold answers
+(`src/rag/rewards.py:93`). Group size is 32, matching the graded-nDCG control,
+so this is the first reward-family comparison at matched exploration budget
+(round 3 varied reward with group 8 on MRR arms). Ran locally on 8×L20Y,
+2026-09-21→22, one epoch, 806 steps at ~103 s/step.
+
+Engineering notes, because this arm changed the runtime. Qwen2.5-7B has 28
+attention heads and 4 KV heads, so TP=8 is impossible (28 % 8 ≠ 0); the
+generator runs as two TP=4 vLLM instances on GPUs 0–3 and 4–7 at 45 % memory
+each, co-located with the trainer, and the client round-robins server-sized
+batches across both endpoints (`rag/generator.py:_complete_all`). The first
+group-32 launch ran at ~450 s/step: rank 0 was committing one sqlite row per
+rollout to the generator cache on JuiceFS, where a 3,000-row INSERT/COMMIT
+costs 244.9 s (~80 ms/row through FUSE; the same write on local disk is 0.4 s,
+and PRAGMA tuning does not help). Training hit rate was ~0 % anyway — the
+12,288 smoke requests were 12 full 1024-prompt POSTs with zero duplicates —
+so training now runs cache-free (`cache_path=""`, every request on the wire)
+and only the eval keeps the sqlite cache. Step time dropped to ~100 s (4×).
+The intermittent "rank 0 stuck" seen during the epoch is the generation
+phase: py-spy shows rank 0 blocked on the vLLM HTTP futures
+(`generator.py:346`) while the other ranks spin in the NCCL broadcast; it is
+uniform across the epoch (95–106 s/step for 23 h) and not a defect.
+
+Three-scope `answer_mrr@10` deltas vs E0 (in-domain = nq+hotpotqa,
+held-out = the other five datasets; all arms group 32, seed 42):
+
+| run | reward | in-domain | held-out | macro | EM macro | F1 macro |
+|---|---|---:|---:|---:|---:|---:|
+| RL-GradedNDCG (round 3) | graded nDCG@10 | +0.0214 | −0.0072 | +0.0010 | +0.0037 | +0.0011 |
+| RL-GradedNDCG-Anchor050 (round 4) | graded nDCG@10 | +0.0203 | **+0.0002** | **+0.0059** | +0.0017 | +0.0019 |
+| RL-AnswerF1 (round 5) | answer token-F1 | +0.0037 | −0.0080 | −0.0047 | −0.0038 | −0.0012 |
+
+Five readings:
+
+**The first RL arm with a negative macro delta.** Every previous RL arm was
+macro-positive or neutral; answer-F1 is −0.0047. The in-domain gain collapses
+6× (+0.0037 vs +0.0214): the reward that directly measures downstream
+usefulness buys almost no in-domain retrieval.
+
+**It is also the family's worst on held-out.** −0.0080, below even the
+unanchored graded-nDCG arm (−0.0072): the direct reward pays the full drift
+cost without the compensating in-domain gain. The anchor-free answer-F1 arm
+is dominated on every scope by both round-3/4 controls.
+
+**The generation metrics it optimizes do not move either.** EM −0.0038 and
+F1 −0.0012 vs E0 — within the ±0.007 EM seed band, but uniformly negative
+where graded nDCG was uniformly positive (+0.0037/+0.0011). The training
+reward did rise (0.40 → ~0.50 over the epoch), so the optimizer moved its
+objective; the movement just did not survive the eval suite.
+
+**Mechanism: the reward is piecewise-constant in the retrieved set.** Mean
+`degenerate_frac` over the epoch is 0.484 — nearly half of all groups return
+identical F1 for all 32 rollouts, because at κ≈2272 the vMF perturbations
+mostly retrieve the same top-10, and an identical set yields an identical
+answer and an identical score. Those groups carry zero advantage; the
+effective group budget is halved, and the surviving signal comes only from
+set-flipping rollouts — sparse, high-variance, and gameable through
+token-overlap shortcuts that need not generalize. The graded-nDCG proxy is
+dense and smooth by comparison: any pairwise swap in the ranking changes it.
+
+**The proxy beats the true objective, everywhere, at matched budget.** Round
+3's "reward shape matters more than anything else tried" now has its sharper
+form: what matters is that the reward be *smooth and dense* in the policy's
+outputs, not that it be *close to the end metric*. Optimizing token-F1
+through a frozen generator is a step function of the query embedding;
+optimizing graded nDCG over judged relevance is a continuous function of the
+ranking. The classic shaping result — a well-chosen proxy learns faster than
+the sparse true objective — holds here even though the proxy is what the
+true objective is evaluated through.
+
+This closes the reward-family axis for candidate winners. The anchor
+combination (§8.3's second half, `G3-R2-RL-AnswerF1-Anchor050`, launched
+2026-09-22) remains in flight, but as a mechanism probe — whether the anchor
+still holds held-out at ~zero under a noisier reward — not as a candidate
+best arm.
+
 ## 7. Instrumentation notes
 
 **`src/rag/retrieval_probe.py`** replaces the re-ranking probe for model
@@ -707,13 +791,13 @@ Ordered by expected value against the current best (Anchor050, macro +0.0059):
 2. **Seed 2026 at coef 0.5** completes the winner's seed replication. The
    +0.0059 macro is ~5× the round-3 seed noise band (±0.0012 per column), so
    this is confirmation, not exploration.
-3. **Answer-F1 RL under the anchor**: the answer-F1 reward
-   (`rag_retrieval_reward: answer_f1`) is the remaining untried reward family,
-   and round 3 suggests reward shape matters more than anything else tried.
-   The vLLM co-location path is now proven (§6.2 backfill and the 2026-09-21
-   RL backfill), so the in-training generator endpoint is an engineering step,
-   not a research risk. Combining it with coef 0.5 tests whether the anchor's
-   zero-cost property survives a different reward.
+3. **Answer-F1 RL under the anchor** — first half done, second half in flight.
+   The plain answer-F1 arm ran (§6.5) and lost on every scope at matched
+   group 32, eliminating the reward family as a candidate winner; what
+   remains is the mechanism question, and `G3-R2-RL-AnswerF1-Anchor050`
+   (launched 2026-09-22) asks whether the anchor's zero-cost property
+   survives a reward whose degenerate fraction (0.48) halves the effective
+   group budget.
 4. **Refresh the candidate pool during training (ANCE-style).** Round 2's
    mechanism suggests its own fix: the pool is mined once with E0, so every
    negative a query ever sees is already an E0 near-neighbour, and the model

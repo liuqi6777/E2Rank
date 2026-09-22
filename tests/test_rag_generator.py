@@ -22,7 +22,7 @@ CHAT_TEMPLATE = (
 )
 
 
-def client(tmp_path, max_input_length):
+def client(tmp_path, max_input_length, endpoint="http://127.0.0.1:1", cache_path=None, **kwargs):
     """A client over a whitespace tokenizer, so a token is a word and budgets are exact."""
     backend = Tokenizer(WordLevel({"[UNK]": 0, "[PAD]": 1}, unk_token="[UNK]"))
     backend.pre_tokenizer = WhitespaceSplit()
@@ -33,10 +33,11 @@ def client(tmp_path, max_input_length):
     model_dir = tmp_path / "tokenizer"
     tokenizer.save_pretrained(model_dir)
     return FrozenGeneratorClient(
-        "http://127.0.0.1:1",
+        endpoint,
         str(model_dir),
-        str(tmp_path / "cache.sqlite3"),
+        str(tmp_path / "cache.sqlite3") if cache_path is None else cache_path,
         max_input_length=max_input_length,
+        **kwargs,
     )
 
 
@@ -244,3 +245,76 @@ def test_cache_lookups_do_not_run_one_query_per_request(tmp_path):
 def test_empty_endpoint_is_rejected(tmp_path):
     with pytest.raises(ValueError, match="generator endpoint"):
         FrozenGeneratorClient("", "ignored", str(tmp_path / "cache.sqlite3"))
+
+
+def test_multiple_endpoints_split_batches_and_keep_order(tmp_path):
+    """The 8-GPU layout runs two vLLM instances; batches must be dealt to both
+    concurrently and the answers reassembled in prompt order."""
+    generator = client(
+        tmp_path,
+        max_input_length=4096,
+        endpoint="http://10.0.0.1:8000,http://10.0.0.2:8001",
+        max_prompts_per_request=2,
+    )
+    docs = documents(1, 3)
+    requests = [
+        (f"q{index}", f"question {index}", [index], docs) for index in range(6)
+    ]
+    seen = []
+
+    def complete(prompts, endpoint=None):
+        seen.append((endpoint, len(prompts)))
+        return [f"{endpoint}#{position}" for position in range(len(prompts))]
+
+    generator._complete = complete
+    outputs = generator.generate_batch(requests)
+
+    # Three server-sized batches, round-robin over the two endpoints.
+    assert seen == [
+        ("http://10.0.0.1:8000", 2),
+        ("http://10.0.0.2:8001", 2),
+        ("http://10.0.0.1:8000", 2),
+    ]
+    assert outputs == [
+        "http://10.0.0.1:8000#0", "http://10.0.0.1:8000#1",
+        "http://10.0.0.2:8001#0", "http://10.0.0.2:8001#1",
+        "http://10.0.0.1:8000#0", "http://10.0.0.1:8000#1",
+    ]
+    generator.close()
+
+
+def test_single_endpoint_keeps_the_sequential_path(tmp_path):
+    """One endpoint must not change behaviour for the existing callers."""
+    generator = client(tmp_path, max_input_length=4096, max_prompts_per_request=2)
+    docs = documents(1, 3)
+    requests = [(f"q{index}", f"question {index}", [index], docs) for index in range(4)]
+    seen = []
+
+    def complete(prompts, endpoint=None):
+        seen.append(endpoint)
+        return [f"a{index}" for index in range(len(prompts))]
+
+    generator._complete = complete
+    outputs = generator.generate_batch(requests)
+    assert seen == [None, None]
+    # The stub answers every batch with the same two labels; what matters is
+    # that both batches went through the one-endpoint sequential path.
+    assert outputs == ["a0", "a1", "a0", "a1"]
+    generator.close()
+
+
+def test_cache_free_mode_sends_every_request_and_writes_nothing(tmp_path):
+    generator = client(tmp_path, max_input_length=4096, cache_path="")
+    docs = documents(1, 3)
+    requests = [("q1", "question", [0], docs), ("q1", "question", [0], docs)]
+
+    def complete(prompts, endpoint=None):
+        return [f"a{index}" for index in range(len(prompts))]
+
+    generator._complete = complete
+    assert generator.generate_batch(requests) == ["a0", "a1"]
+    stats = generator.statistics()
+    assert stats["generation_requests"] == 2
+    assert stats["generation_cache_hits"] == 0
+    assert not (tmp_path / "cache.sqlite3").exists()
+    generator.close()

@@ -308,6 +308,62 @@ runs:
       rag_relevance_scheme: answer_masked
       rag_anchor_coef: 0.5
 
+  # Round 5: the answer-shaped reward. Round 3 established reward shape as the
+  # strongest lever among retrieval-shaped rewards (graded nDCG > binary nDCG >
+  # MRR); answer_f1 scores what the pipeline actually produces -- the frozen
+  # generator's answer quality over each action's top-10. Group size 32, the
+  # round-3 convention: one vLLM generation per rollout makes an epoch cost
+  # ~3.3M generations, so the launcher co-locates TWO TP=4 vLLM instances
+  # (GPUs 0-3 and 4-7, ~45% each) and the generator client dispatches batches
+  # across both endpoints concurrently -- one instance saturates at prefill
+  # compute, and Qwen2.5-7B's 28 attention heads do not divide by 8, so TP=8
+  # is not an option. Runs WITHOUT the anchor: the primary question is whether
+  # an answer-shaped reward beats the retrieval-shaped one on its own terms;
+  # anchor coef 0.5 stacks later (§8) if it does.
+  G3-R2-RL-AnswerF1:
+    group: G3
+    objective: rl
+    scope: query_only
+    control: G3-R2-RL-GradedNDCG
+    protocol:
+      retrieval_reward: answer_f1_generator_top_10
+      retrieval_relevance: graded_qrel_3_evidence_2_answer_1
+      unjudged_documents: zero_gain
+      target_alignment: 0.80
+      exploration_schedule: fixed
+      generator: qwen2.5_7b_instruct_greedy_cached_x2
+      group_size: 32
+    overrides:
+      rag_retrieval_reward: answer_f1
+      rag_relevance_scheme: graded
+      rag_group_size: 32
+      rag_generator_endpoint: http://127.0.0.1:8000,http://127.0.0.1:8001
+
+  # Round 5: whether the anchor's zero-cost property survives a reward change.
+  # Round 4 measured coef 0.5 as full in-domain gain at ~zero held-out cost for
+  # graded-nDCG RL; answer-F1 is the other reward family, so this arm reads as
+  # a replication of that property test, not a dose search.
+  G3-R2-RL-AnswerF1-Anchor050:
+    group: G3
+    objective: rl
+    scope: query_only
+    control: G3-R2-RL-AnswerF1
+    protocol:
+      retrieval_reward: answer_f1_generator_top_10
+      retrieval_relevance: graded_qrel_3_evidence_2_answer_1
+      unjudged_documents: zero_gain
+      target_alignment: 0.80
+      exploration_schedule: fixed
+      generator: qwen2.5_7b_instruct_greedy_cached_x2
+      group_size: 32
+      anchor: e0_cosine_coef_0.5
+    overrides:
+      rag_retrieval_reward: answer_f1
+      rag_relevance_scheme: graded
+      rag_group_size: 32
+      rag_generator_endpoint: http://127.0.0.1:8000,http://127.0.0.1:8001
+      rag_anchor_coef: 0.5
+
   # --- Round 3: static-slate RL -------------------------------------------
   # Rank a fixed slate instead of searching the corpus per rollout. Removes
   # 4,096 ANN searches per step and, more importantly, makes the reward a

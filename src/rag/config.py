@@ -251,7 +251,6 @@ class RAGGeneratorArguments:
         )
     )
     rag_generator_endpoint: Optional[str] = field(default=None)
-    rag_generator_cache: str = field(default="data/rag/generator_cache.sqlite3")
     rag_generator_top_k: int = field(default=10)
     rag_generator_max_input_length: int = field(default=2048)
     rag_generator_max_new_tokens: int = field(default=32)
