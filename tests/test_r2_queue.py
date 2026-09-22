@@ -14,6 +14,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / 'scripts'), str(ROOT / 'src')]
 import run_g1_r2 as night
+import run_qwen3_embedding_4b_lora_calibration as q4b_calibration
 from config import BaselineArguments, DataArguments, LoraArguments, ModelArguments, RLArguments, TrainingArguments, MTEBEvalArguments
 from embedding_data import SingleSourceBatchSampler
 from train import build_embedding_data, load_backbone_and_tokenizer
@@ -330,6 +331,45 @@ def test_qwen3_embedding_4b_lora_suite_keeps_controlled_rl_comparisons():
     reference = e.post_train_commands_for(rows['Q4B-LORA-E0'])
     assert len(reference) == 1
     assert reference[0][reference[0].index('--model') + 1] == 'Qwen/Qwen3-Embedding-4B'
+
+
+def test_qwen3_embedding_4b_lora_calibration_changes_one_factor_at_a_time():
+    e = night.experiments
+    main_suite_path = ROOT / 'configs/experiments/iclr2027/suite_qwen3_embedding_4b_lora.yaml'
+    main_settings = ROOT / 'configs/experiments_qwen3_embedding_4b_lora.yaml'
+    main_suite = e.apply_settings(e.load_suite(main_suite_path), main_settings)
+    control = e.resolve_run(main_suite, main_suite_path, 'Q4B-LORA-RELER', nproc=8)['config']
+
+    suite = e.apply_settings(e.load_suite(q4b_calibration.SUITE), q4b_calibration.SETTINGS)
+    rows = {name: e.resolve_run(suite, q4b_calibration.SUITE, name, nproc=8)
+            for name in e.ordered_run_ids(suite)}
+    assert len(rows) == 18
+    assert q4b_calibration.selected_runs(list(q4b_calibration.RECIPES), [42]) == [
+        q4b_calibration.RECIPES[name] for name in q4b_calibration.RECIPES
+    ]
+    assert q4b_calibration.selected_runs(['lr050'], [3407, 2026]) == [
+        'Q4B-LORA-RELER-Cal-LR050-Seed3407',
+        'Q4B-LORA-RELER-Cal-LR050-Seed2026',
+    ]
+
+    expected = {
+        'LR050': ('learning_rate', 0.00005),
+        'LR200': ('learning_rate', 0.0002),
+        'K3': ('reward_shortlist_size', 3),
+        'K15': ('reward_shortlist_size', 15),
+        'Align065': ('target_alignment', 0.65),
+        'Align080': ('target_alignment', 0.80),
+    }
+    ignored = {'output_dir', 'run_name'}
+    for suffix, (factor, value) in expected.items():
+        row = rows[f'Q4B-LORA-RELER-Cal-{suffix}']['config']
+        differences = {key for key in set(control) | set(row)
+                       if control.get(key) != row.get(key)} - ignored
+        assert differences == {factor}
+        assert row[factor] == value
+        assert row['per_device_train_batch_size'] == 8
+        assert row['gradient_accumulation_steps'] == 2
+        assert row['model_revision'] == '5cf2132abc99cad020ac570b19d031efec650f2b'
 
 
 def test_r2_strong_auxiliary_config_matches_graded_cp_control(monkeypatch):

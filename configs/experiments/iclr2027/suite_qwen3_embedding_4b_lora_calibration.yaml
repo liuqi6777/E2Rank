@@ -1,0 +1,148 @@
+# Qwen3-Embedding-4B LoRA RELER calibration: one factor at a time around LR1e-4/K7/A0.70.
+version: 1
+plan: docs/qwen3_embedding_4b_lora_calibration.md
+seed: 42
+output_root: checkpoints/iclr2027-qwen3-embedding-4b-lora-calibration
+pending: {}
+
+profiles:
+  G1:
+    config: g1_qwen3_embedding_4b_lora.yaml
+    dataset_manifest: data/processed/reasonrank_multi/manifest.json
+    selection: fixed_budget_final_checkpoint
+    final_evaluation: [bright]
+    requirements: []
+    protocol:
+      labels: teacher_grades_and_original_binary_positives
+      sampling: per_source_epoch_shuffle_retained_tail_v1
+      training_budget: fixed_steps
+      max_steps: 113
+      learning_rate: 0.0001
+      eval_steps: 25
+      global_batch_size: 128
+      micro_batch_size: 8
+      positive_selection: retain_all_seeded_in_batch_representative
+      positive_selection_seed: 42
+
+runs:
+  Q4B-LORA-RELER-Cal-LR050: &lr050
+    group: G1
+    scope: joint
+    objective: rl
+    seed: 42
+    protocol: {labels: teacher_grades_and_original_binary_positives}
+    overrides: &lr050_params
+      lora_enabled: true
+      learning_rate: 0.00005
+      relevance_scheme: graded
+      reward_type: ndcg_in_batch
+      reward_ndcg_k: 10
+      ndcg_in_batch_include_negatives: true
+      reward_cross_device_negatives: true
+      cross_query_document_gradients: false
+      action_components: [[query], [positive, negative]]
+      sampling_law: vmf
+      rollout: product
+      rollout_seed: 42
+      gradient_estimator: conditional_projection
+      group_size: 64
+      target_alignment: 0.70
+      final_alignment: null
+      exploration_schedule: fixed
+      sigma_learnable: false
+      advantage_baseline: leave_one_out
+      advantage_norm: none
+      document_advantage_baseline: shared
+      document_log_prob_reduction: sum
+      frozen_doc_rescale: true
+      in_batch_use_sampled_documents: false
+      reward_combine: sum
+      reward_shortlist_count: 1
+      reward_shortlist_size: 7
+      reward_shortlist_hard_count: 0
+      reward_shortlist_hard_pool_size: 128
+      reward_shortlist_pairwise_coef: 0.5
+      aux_infonce_coef: 0.0
+      kl_coef: 0.0
+  Q4B-LORA-RELER-Cal-LR050-Seed3407:
+    <<: *lr050
+    seed: 3407
+    overrides: {<<: *lr050_params, rollout_seed: 3407}
+  Q4B-LORA-RELER-Cal-LR050-Seed2026:
+    <<: *lr050
+    seed: 2026
+    overrides: {<<: *lr050_params, rollout_seed: 2026}
+
+  Q4B-LORA-RELER-Cal-LR200: &lr200
+    <<: *lr050
+    overrides: &lr200_params
+      <<: *lr050_params
+      learning_rate: 0.0002
+  Q4B-LORA-RELER-Cal-LR200-Seed3407:
+    <<: *lr200
+    seed: 3407
+    overrides: {<<: *lr200_params, rollout_seed: 3407}
+  Q4B-LORA-RELER-Cal-LR200-Seed2026:
+    <<: *lr200
+    seed: 2026
+    overrides: {<<: *lr200_params, rollout_seed: 2026}
+
+  Q4B-LORA-RELER-Cal-K3: &k3
+    <<: *lr050
+    overrides: &k3_params
+      <<: *lr050_params
+      learning_rate: 0.0001
+      reward_shortlist_size: 3
+  Q4B-LORA-RELER-Cal-K3-Seed3407:
+    <<: *k3
+    seed: 3407
+    overrides: {<<: *k3_params, rollout_seed: 3407}
+  Q4B-LORA-RELER-Cal-K3-Seed2026:
+    <<: *k3
+    seed: 2026
+    overrides: {<<: *k3_params, rollout_seed: 2026}
+
+  Q4B-LORA-RELER-Cal-K15: &k15
+    <<: *lr050
+    overrides: &k15_params
+      <<: *lr050_params
+      learning_rate: 0.0001
+      reward_shortlist_size: 15
+  Q4B-LORA-RELER-Cal-K15-Seed3407:
+    <<: *k15
+    seed: 3407
+    overrides: {<<: *k15_params, rollout_seed: 3407}
+  Q4B-LORA-RELER-Cal-K15-Seed2026:
+    <<: *k15
+    seed: 2026
+    overrides: {<<: *k15_params, rollout_seed: 2026}
+
+  Q4B-LORA-RELER-Cal-Align065: &align065
+    <<: *lr050
+    overrides: &align065_params
+      <<: *lr050_params
+      learning_rate: 0.0001
+      target_alignment: 0.65
+  Q4B-LORA-RELER-Cal-Align065-Seed3407:
+    <<: *align065
+    seed: 3407
+    overrides: {<<: *align065_params, rollout_seed: 3407}
+  Q4B-LORA-RELER-Cal-Align065-Seed2026:
+    <<: *align065
+    seed: 2026
+    overrides: {<<: *align065_params, rollout_seed: 2026}
+
+  Q4B-LORA-RELER-Cal-Align080: &align080
+    <<: *lr050
+    overrides: &align080_params
+      <<: *lr050_params
+      learning_rate: 0.0001
+      target_alignment: 0.80
+  Q4B-LORA-RELER-Cal-Align080-Seed3407:
+    <<: *align080
+    seed: 3407
+    overrides: {<<: *align080_params, rollout_seed: 3407}
+  Q4B-LORA-RELER-Cal-Align080-Seed2026:
+    <<: *align080
+    seed: 2026
+    overrides: {<<: *align080_params, rollout_seed: 2026}

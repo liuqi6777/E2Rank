@@ -1,0 +1,9 @@
+output_dir: checkpoints/iclr2027-qwen3-embedding-4b-lora-calibration
+G1:
+  data: data/processed/reasonrank_multi
+  model: Qwen/Qwen3-Embedding-4B
+  learning_rate: 0.0001
+  steps: 113
+  checkpoint_every: 25
+  batch_size: 128
+  micro_batch_size: 8
