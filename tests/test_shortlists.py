@@ -33,7 +33,7 @@ def limit_threads():
 @pytest.mark.parametrize('pool_size,size,hard,band,count', [
     (100, 15, 8, 64, 4), (100, 15, 8, 16, 9), (70, 15, 8, 64, 6),
     (9, 15, 8, 64, 4), (1, 15, 8, 64, 3), (0, 15, 8, 64, 4),
-    (100, 15, 0, 64, 8), (100, 15, 15, 15, 4),
+    (100, 0, 0, 64, 1), (0, 0, 0, 64, 1), (100, 15, 0, 64, 8), (100, 15, 15, 15, 4),
 ])
 def test_coverage_is_maximal_and_no_list_contains_duplicates(pool_size, size, hard, band, count):
     scores = torch.arange(pool_size + 5, dtype=torch.float32)[None].repeat(2, 1)
@@ -149,7 +149,8 @@ def components(means, q, docs, valid):
 
 @pytest.mark.parametrize('estimator', ['score_function', 'conditional_projection'])
 @pytest.mark.parametrize('rescale', [True, False])
-def test_shared_encoder_gradient_matches_per_cell_oracle(monkeypatch, estimator, rescale):
+@pytest.mark.parametrize('size', [0, 2])
+def test_shared_encoder_gradient_matches_per_cell_oracle(monkeypatch, estimator, rescale, size):
     torch.manual_seed(8)
     source = torch.randn(3, 4, 17)
     weight = torch.eye(17, requires_grad=True)
@@ -164,7 +165,8 @@ def test_shared_encoder_gradient_matches_per_cell_oracle(monkeypatch, estimator,
         captured.append(result)
         return result
     monkeypatch.setattr(grpo_module, 'sample_shortlists', sample)
-    head = GRPO(**options(gradient_estimator=estimator, frozen_doc_rescale=rescale))
+    head = GRPO(**options(gradient_estimator=estimator, frozen_doc_rescale=rescale,
+                         reward_shortlist_size=size, reward_shortlist_hard_count=min(size, 1)))
     with torch.autocast('cpu', dtype=torch.bfloat16):
         loss, stats, _, _ = head._compute_component_loss(
             labels, None, components(means, q, docs, valid), candidate_mask=valid,
@@ -180,7 +182,7 @@ def test_shared_encoder_gradient_matches_per_cell_oracle(monkeypatch, estimator,
     assert actual.norm() > 0
     torch.testing.assert_close(stats['reward_mean'], reward.mean())
     torch.testing.assert_close(stats['reward_std'], reward.std(unbiased=False), atol=1e-6, rtol=1e-5)
-    assert stats['shortlist/unique_candidates_mean'] == 3  # 4, 5, 0 after identity filtering.
+    assert stats['shortlist/unique_candidates_mean'] == (3 if size else 0)  # 4, 5, 0 after identity filtering.
     if estimator == 'conditional_projection':
         assert stats['projection/query_span_rank_max'] <= 6  # 1 query + 3 own + 2 selected.
 
@@ -269,7 +271,7 @@ def test_two_ranks_with_uneven_tails_and_no_cross_candidates_on_one_rank(tmp_pat
                                nprocs=2, join=True)
 
 
-@pytest.mark.parametrize('changes', [dict(reward_shortlist_count=-1), dict(reward_shortlist_size=0),
+@pytest.mark.parametrize('changes', [dict(reward_shortlist_count=-1), dict(reward_shortlist_size=-1), dict(reward_shortlist_size=0),
     dict(reward_shortlist_hard_count=3), dict(reward_shortlist_hard_pool_size=0),
     dict(reward_cross_device_negatives=False), dict(cross_query_document_gradients=True),
     dict(reward_shortlist_pool_source='unknown'),

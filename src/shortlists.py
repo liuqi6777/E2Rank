@@ -11,7 +11,7 @@ SHORTLIST_VERSION = 1
 
 
 def validate_shortlist_sampling(count, size, hard_count, hard_pool_size):
-    for name, value, minimum in (("count", count, 0), ("size", size, 1),
+    for name, value, minimum in (("count", count, 0), ("size", size, 0),
                                  ("hard_count", hard_count, 0), ("hard_pool_size", hard_pool_size, 0)):
         if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
             raise ValueError(f"reward_shortlist_{name} must be an integer >= {minimum}")
@@ -102,6 +102,7 @@ def sample_shortlists(scores, valid, *, count, size, hard_count, hard_pool_size)
     different hard fraction; coverage takes priority over a fixed hard quota.
     The first list and RNG consumption do not depend on T.
 
+    size=0 retains the shortlist objective with only own candidates.
     On scarcity, transfer unavailable quota to the other stratum, then pad if
     the entire pool has fewer than K items. hard_count=0 is uniform over the
     entire allowed pool, not just the low-scoring remainder.
@@ -115,6 +116,8 @@ def sample_shortlists(scores, valid, *, count, size, hard_count, hard_pool_size)
     indices = torch.zeros((batch, count, size), dtype=torch.long, device=scores.device)
     mask = torch.zeros_like(indices, dtype=torch.bool)
     hard_mask = torch.zeros_like(mask)
+    if size == 0:
+        return indices, mask, hard_mask
     for b in range(batch):
         allowed = valid[b].nonzero(as_tuple=True)[0]
         if not allowed.numel():

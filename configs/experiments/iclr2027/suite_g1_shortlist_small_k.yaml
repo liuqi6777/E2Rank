@@ -1,0 +1,260 @@
+# Small-K endpoint controls: pure graded reward, T1, alignment 0.70.
+version: 1
+plan: docs/g1_shortlist_small_k.md
+seed: 42
+output_root: checkpoints/iclr2027-r2
+pending: {}
+profiles:
+  G1:
+    config: g1_r2.yaml
+    dataset_manifest: data/processed/reasonrank_multi/manifest.json
+    selection: fixed_budget_final_checkpoint
+    final_evaluation:
+    - bright
+    requirements: []
+    protocol:
+      labels: teacher_grades_3_2_1_0
+      sampling: per_source_epoch_shuffle_retained_tail_v1
+      training_budget: fixed_steps
+      max_steps: 113
+      learning_rate: 5.0e-06
+      eval_steps: 25
+      global_batch_size: 128
+      micro_batch_size: 16
+      positive_selection: retain_all_seeded_in_batch_representative
+      positive_selection_seed: 42
+runs:
+  G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K0-T1:
+    group: G1
+    scope: joint
+    objective: rl
+    seed: 42
+    overrides:
+      relevance_scheme: graded
+      reward_type: ndcg_in_batch
+      reward_ndcg_k: 10
+      gradient_estimator: conditional_projection
+      rollout_seed: 42
+      group_size: 64
+      target_alignment: 0.7
+      final_alignment: null
+      exploration_schedule: fixed
+      ndcg_in_batch_include_negatives: true
+      reward_cross_device_negatives: true
+      cross_query_document_gradients: false
+      document_advantage_baseline: shared
+      reward_combine: sum
+      reward_shortlist_count: 1
+      reward_shortlist_size: 0
+      reward_shortlist_hard_count: 0
+      reward_shortlist_hard_pool_size: 128
+      aux_infonce_coef: 0.0
+    analysis_group: shortlist_followup
+  G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K0-T1-Seed3407:
+    group: G1
+    scope: joint
+    objective: rl
+    seed: 3407
+    overrides:
+      relevance_scheme: graded
+      reward_type: ndcg_in_batch
+      reward_ndcg_k: 10
+      gradient_estimator: conditional_projection
+      rollout_seed: 3407
+      group_size: 64
+      target_alignment: 0.7
+      final_alignment: null
+      exploration_schedule: fixed
+      ndcg_in_batch_include_negatives: true
+      reward_cross_device_negatives: true
+      cross_query_document_gradients: false
+      document_advantage_baseline: shared
+      reward_combine: sum
+      reward_shortlist_count: 1
+      reward_shortlist_size: 0
+      reward_shortlist_hard_count: 0
+      reward_shortlist_hard_pool_size: 128
+      aux_infonce_coef: 0.0
+    analysis_group: shortlist_followup
+  G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K0-T1-Seed2026:
+    group: G1
+    scope: joint
+    objective: rl
+    seed: 2026
+    overrides:
+      relevance_scheme: graded
+      reward_type: ndcg_in_batch
+      reward_ndcg_k: 10
+      gradient_estimator: conditional_projection
+      rollout_seed: 2026
+      group_size: 64
+      target_alignment: 0.7
+      final_alignment: null
+      exploration_schedule: fixed
+      ndcg_in_batch_include_negatives: true
+      reward_cross_device_negatives: true
+      cross_query_document_gradients: false
+      document_advantage_baseline: shared
+      reward_combine: sum
+      reward_shortlist_count: 1
+      reward_shortlist_size: 0
+      reward_shortlist_hard_count: 0
+      reward_shortlist_hard_pool_size: 128
+      aux_infonce_coef: 0.0
+    analysis_group: shortlist_followup
+  G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K1-T1:
+    group: G1
+    scope: joint
+    objective: rl
+    seed: 42
+    overrides:
+      relevance_scheme: graded
+      reward_type: ndcg_in_batch
+      reward_ndcg_k: 10
+      gradient_estimator: conditional_projection
+      rollout_seed: 42
+      group_size: 64
+      target_alignment: 0.7
+      final_alignment: null
+      exploration_schedule: fixed
+      ndcg_in_batch_include_negatives: true
+      reward_cross_device_negatives: true
+      cross_query_document_gradients: false
+      document_advantage_baseline: shared
+      reward_combine: sum
+      reward_shortlist_count: 1
+      reward_shortlist_size: 1
+      reward_shortlist_hard_count: 0
+      reward_shortlist_hard_pool_size: 128
+      aux_infonce_coef: 0.0
+    analysis_group: shortlist_followup
+  G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K1-T1-Seed3407:
+    group: G1
+    scope: joint
+    objective: rl
+    seed: 3407
+    overrides:
+      relevance_scheme: graded
+      reward_type: ndcg_in_batch
+      reward_ndcg_k: 10
+      gradient_estimator: conditional_projection
+      rollout_seed: 3407
+      group_size: 64
+      target_alignment: 0.7
+      final_alignment: null
+      exploration_schedule: fixed
+      ndcg_in_batch_include_negatives: true
+      reward_cross_device_negatives: true
+      cross_query_document_gradients: false
+      document_advantage_baseline: shared
+      reward_combine: sum
+      reward_shortlist_count: 1
+      reward_shortlist_size: 1
+      reward_shortlist_hard_count: 0
+      reward_shortlist_hard_pool_size: 128
+      aux_infonce_coef: 0.0
+    analysis_group: shortlist_followup
+  G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K1-T1-Seed2026:
+    group: G1
+    scope: joint
+    objective: rl
+    seed: 2026
+    overrides:
+      relevance_scheme: graded
+      reward_type: ndcg_in_batch
+      reward_ndcg_k: 10
+      gradient_estimator: conditional_projection
+      rollout_seed: 2026
+      group_size: 64
+      target_alignment: 0.7
+      final_alignment: null
+      exploration_schedule: fixed
+      ndcg_in_batch_include_negatives: true
+      reward_cross_device_negatives: true
+      cross_query_document_gradients: false
+      document_advantage_baseline: shared
+      reward_combine: sum
+      reward_shortlist_count: 1
+      reward_shortlist_size: 1
+      reward_shortlist_hard_count: 0
+      reward_shortlist_hard_pool_size: 128
+      aux_infonce_coef: 0.0
+    analysis_group: shortlist_followup
+  G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K3-T1:
+    group: G1
+    scope: joint
+    objective: rl
+    seed: 42
+    overrides:
+      relevance_scheme: graded
+      reward_type: ndcg_in_batch
+      reward_ndcg_k: 10
+      gradient_estimator: conditional_projection
+      rollout_seed: 42
+      group_size: 64
+      target_alignment: 0.7
+      final_alignment: null
+      exploration_schedule: fixed
+      ndcg_in_batch_include_negatives: true
+      reward_cross_device_negatives: true
+      cross_query_document_gradients: false
+      document_advantage_baseline: shared
+      reward_combine: sum
+      reward_shortlist_count: 1
+      reward_shortlist_size: 3
+      reward_shortlist_hard_count: 0
+      reward_shortlist_hard_pool_size: 128
+      aux_infonce_coef: 0.0
+    analysis_group: shortlist_followup
+  G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K3-T1-Seed3407:
+    group: G1
+    scope: joint
+    objective: rl
+    seed: 3407
+    overrides:
+      relevance_scheme: graded
+      reward_type: ndcg_in_batch
+      reward_ndcg_k: 10
+      gradient_estimator: conditional_projection
+      rollout_seed: 3407
+      group_size: 64
+      target_alignment: 0.7
+      final_alignment: null
+      exploration_schedule: fixed
+      ndcg_in_batch_include_negatives: true
+      reward_cross_device_negatives: true
+      cross_query_document_gradients: false
+      document_advantage_baseline: shared
+      reward_combine: sum
+      reward_shortlist_count: 1
+      reward_shortlist_size: 3
+      reward_shortlist_hard_count: 0
+      reward_shortlist_hard_pool_size: 128
+      aux_infonce_coef: 0.0
+    analysis_group: shortlist_followup
+  G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K3-T1-Seed2026:
+    group: G1
+    scope: joint
+    objective: rl
+    seed: 2026
+    overrides:
+      relevance_scheme: graded
+      reward_type: ndcg_in_batch
+      reward_ndcg_k: 10
+      gradient_estimator: conditional_projection
+      rollout_seed: 2026
+      group_size: 64
+      target_alignment: 0.7
+      final_alignment: null
+      exploration_schedule: fixed
+      ndcg_in_batch_include_negatives: true
+      reward_cross_device_negatives: true
+      cross_query_document_gradients: false
+      document_advantage_baseline: shared
+      reward_combine: sum
+      reward_shortlist_count: 1
+      reward_shortlist_size: 3
+      reward_shortlist_hard_count: 0
+      reward_shortlist_hard_pool_size: 128
+      aux_infonce_coef: 0.0
+    analysis_group: shortlist_followup

@@ -700,7 +700,7 @@ class RLArguments:
         default=0, metadata={"help": "Number of separately rewarded/projected cross-pool shortlists; 0 disables"},
     )
     reward_shortlist_size: int = field(
-        default=15, metadata={"help": "Cross-query negatives per shortlist; own candidates are always retained"},
+        default=15, metadata={"help": "Cross-query negatives per shortlist; 0 keeps only own candidates (count > 0)"},
     )
     reward_shortlist_hard_count: int = field(
         default=8, metadata={"help": "Negatives per shortlist drawn from the highest-scoring stratum; 0 is uniform"},
