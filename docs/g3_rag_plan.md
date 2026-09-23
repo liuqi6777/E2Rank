@@ -21,7 +21,10 @@ the rest is the re-ranking objective itself. Round 5 (§6.5) eliminates the
 direct answer-F1 reward at matched group 32: it is the first RL arm with a
 negative macro delta (−0.0047), 6× less in-domain gain, and the family's
 worst held-out — the smooth graded-nDCG proxy beats the sparse true objective
-on every scope. Single-seed caveat: the anchor
+on every scope. The anchored answer-F1 arm confirms the anchor's held-out
+rescue is reward-independent (−0.0080 → −0.0007) but cannot rescue the
+reward itself (macro +0.0015 vs anchored graded nDCG's +0.0059). Single-seed
+caveat: the anchor
 arms ran on seed 42 only; the round-3 seed noise band is ±0.0012 per column,
 and +0.0059 is ~5× that band.
 
@@ -694,11 +697,12 @@ uniform across the epoch (95–106 s/step for 23 h) and not a defect.
 Three-scope `answer_mrr@10` deltas vs E0 (in-domain = nq+hotpotqa,
 held-out = the other five datasets; all arms group 32, seed 42):
 
-| run | reward | in-domain | held-out | macro | EM macro | F1 macro |
-|---|---|---:|---:|---:|---:|---:|
-| RL-GradedNDCG (round 3) | graded nDCG@10 | +0.0214 | −0.0072 | +0.0010 | +0.0037 | +0.0011 |
-| RL-GradedNDCG-Anchor050 (round 4) | graded nDCG@10 | +0.0203 | **+0.0002** | **+0.0059** | +0.0017 | +0.0019 |
-| RL-AnswerF1 (round 5) | answer token-F1 | +0.0037 | −0.0080 | −0.0047 | −0.0038 | −0.0012 |
+| run | reward | anchor | in-domain | held-out | macro | EM macro | F1 macro |
+|---|---|---|---:|---:|---:|---:|---:|
+| RL-GradedNDCG (round 3) | graded nDCG@10 | 0 | +0.0214 | −0.0072 | +0.0010 | +0.0037 | +0.0011 |
+| RL-GradedNDCG-Anchor050 (round 4) | graded nDCG@10 | 0.5 | +0.0203 | **+0.0002** | **+0.0059** | +0.0017 | +0.0019 |
+| RL-AnswerF1 (round 5) | answer token-F1 | 0 | +0.0037 | −0.0080 | −0.0047 | −0.0038 | −0.0012 |
+| RL-AnswerF1-Anchor050 (round 5) | answer token-F1 | 0.5 | +0.0069 | **−0.0007** | +0.0015 | −0.0011 | −0.0003 |
 
 Five readings:
 
@@ -738,11 +742,27 @@ ranking. The classic shaping result — a well-chosen proxy learns faster than
 the sparse true objective — holds here even though the proxy is what the
 true objective is evaluated through.
 
-This closes the reward-family axis for candidate winners. The anchor
-combination (§8.3's second half, `G3-R2-RL-AnswerF1-Anchor050`, launched
-2026-09-22) remains in flight, but as a mechanism probe — whether the anchor
-still holds held-out at ~zero under a noisier reward — not as a candidate
-best arm.
+**The anchor's zero-cost property survives the reward change.** The anchored
+answer-F1 arm (`G3-R2-RL-AnswerF1-Anchor050`, 2026-09-23) pulls held-out
+from −0.0080 back to −0.0007 — the same rescue the anchor performed for
+graded nDCG (−0.0072 → +0.0002) — and this time the in-domain number *rises*
+(+0.0037 → +0.0069) instead of paying the usual ~0.001 anchor tax. Its
+degenerate fraction is unchanged (0.495 vs 0.484: the anchor does not alter
+the reward's piecewise-constant structure, only the drift). So the trust
+region of §4.3 is reward-independent: it removes the drift component of the
+update whatever objective supplies the rest. But it cannot rescue the
+objective itself — even anchored, answer-F1 (+0.0015 macro) stays below
+anchored graded nDCG (+0.0059), exactly as the CL+anchor ablation found
+anchoring cannot repair an objective mismatch. Drift is what the anchor
+fixes; reward shape is not.
+
+This closes the reward-family axis for candidate winners. The sparsity axis
+has one more point in flight — `G3-R2-RL-AnswerEM-Anchor050` (launched
+2026-09-23), binary exact-match on top of the piecewise-constant F1 — as a
+mechanism probe: if sparsity is what kills the direct reward, EM should
+degrade further (degenerate fraction above F1's 0.48), and if the anchor
+still holds held-out at ~zero there too, the zero-cost property is confirmed
+reward-independent twice over.
 
 ## 7. Instrumentation notes
 
@@ -791,13 +811,13 @@ Ordered by expected value against the current best (Anchor050, macro +0.0059):
 2. **Seed 2026 at coef 0.5** completes the winner's seed replication. The
    +0.0059 macro is ~5× the round-3 seed noise band (±0.0012 per column), so
    this is confirmation, not exploration.
-3. **Answer-F1 RL under the anchor** — first half done, second half in flight.
-   The plain answer-F1 arm ran (§6.5) and lost on every scope at matched
-   group 32, eliminating the reward family as a candidate winner; what
-   remains is the mechanism question, and `G3-R2-RL-AnswerF1-Anchor050`
-   (launched 2026-09-22) asks whether the anchor's zero-cost property
-   survives a reward whose degenerate fraction (0.48) halves the effective
-   group budget.
+3. **Answer-F1 RL under the anchor** — done (§6.5). The plain answer-F1 arm
+   lost on every scope at matched group 32, and the anchored version
+   confirmed the anchor's held-out rescue is reward-independent
+   (−0.0080 → −0.0007) while leaving the reward-family ranking intact.
+   Remaining: the sparsity extreme `G3-R2-RL-AnswerEM-Anchor050` (binary EM
+   reward, in flight since 2026-09-23) — a mechanism probe for whether
+   sparsity is what kills the direct reward, not a candidate winner.
 4. **Refresh the candidate pool during training (ANCE-style).** Round 2's
    mechanism suggests its own fix: the pool is mined once with E0, so every
    negative a query ever sees is already an E0 near-neighbour, and the model

@@ -11,7 +11,7 @@ from fixed_corpus.environment import (
     KnownQrelsNDCGRewardProvider,
 )
 from rag.generator import FrozenGeneratorClient
-from rag.metrics import max_token_f1
+from rag.metrics import exact_match, max_token_f1
 from rag.relevance import RELEVANCE_SCHEMES, build_relevance
 
 
@@ -26,7 +26,7 @@ class RAGResultRewardProvider:
         generator_top_k: int = 10,
         relevance_scheme: str = "binary",
     ) -> None:
-        if reward_type not in {"mrr", "ndcg", "answer_f1"}:
+        if reward_type not in {"mrr", "ndcg", "answer_f1", "answer_em"}:
             raise ValueError(f"Unsupported reward_type={reward_type}")
         if relevance_scheme not in RELEVANCE_SCHEMES:
             raise ValueError(f"Unsupported relevance_scheme={relevance_scheme}")
@@ -35,8 +35,8 @@ class RAGResultRewardProvider:
             raise ValueError("retrieval_k must be positive")
         if generator_top_k <= 0:
             raise ValueError("generator_top_k must be positive")
-        if reward_type == "answer_f1" and generator_top_k > retrieval_k:
-            raise ValueError("answer_f1 generator_top_k cannot exceed retrieval_k")
+        if reward_type in {"answer_f1", "answer_em"} and generator_top_k > retrieval_k:
+            raise ValueError("generation rewards require generator_top_k <= retrieval_k")
         self.reward_type = reward_type
         self.generator = generator
         self.generator_top_k = int(generator_top_k)
@@ -89,8 +89,11 @@ class RAGResultRewardProvider:
                 for item in requests
             ]
         )
+        scorer = (
+            max_token_f1 if self.reward_type == "answer_f1" else exact_match
+        )
         return [
-            max_token_f1(output, item["answers"])
+            scorer(output, item["answers"])
             for output, item in zip(generations, requests)
         ]
 
@@ -105,7 +108,9 @@ class RAGResultRewardProvider:
         distributed = dist.is_available() and dist.is_initialized()
         is_rank_zero = not distributed or dist.get_rank() == 0
         if is_rank_zero and self.generator is None:
-            raise RuntimeError("answer_f1 reward requires a FrozenGeneratorClient")
+            raise RuntimeError(
+                f"{self.reward_type} reward requires a FrozenGeneratorClient"
+            )
 
         requests = self._generation_requests(
             index, query_ids, questions, golden_answers, result_ids
@@ -154,7 +159,7 @@ class RAGResultRewardProvider:
     ) -> torch.Tensor:
         if route_ids is not None:
             raise ValueError("RAG reward currently uses one shared corpus and no route_ids")
-        if self.reward_type == "answer_f1":
+        if self.reward_type in {"answer_f1", "answer_em"}:
             return self._distributed_generate(
                 index,
                 query_ids,

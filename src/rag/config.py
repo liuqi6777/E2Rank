@@ -12,6 +12,7 @@ SUPPORTED_RAG_REWARDS = (
     "mrr",
     "ndcg",
     "answer_f1",
+    "answer_em",
 )
 
 

@@ -364,6 +364,32 @@ runs:
       rag_generator_endpoint: http://127.0.0.1:8000,http://127.0.0.1:8001
       rag_anchor_coef: 0.5
 
+  # Round 5b: the sparsity axis pushed to its extreme. F1 is piecewise-constant
+  # in the retrieved set (degenerate_frac 0.48); EM is binary on top of that,
+  # so if sparsity is what kills the direct reward, this arm should degrade
+  # further -- and if the anchor still holds held-out at ~zero, the zero-cost
+  # property is reward-independent.
+  G3-R2-RL-AnswerEM-Anchor050:
+    group: G3
+    objective: rl
+    scope: query_only
+    control: G3-R2-RL-AnswerF1-Anchor050
+    protocol:
+      retrieval_reward: answer_em_generator_top_10
+      retrieval_relevance: graded_qrel_3_evidence_2_answer_1
+      unjudged_documents: zero_gain
+      target_alignment: 0.80
+      exploration_schedule: fixed
+      generator: qwen2.5_7b_instruct_greedy_cached_x2
+      group_size: 32
+      anchor: e0_cosine_coef_0.5
+    overrides:
+      rag_retrieval_reward: answer_em
+      rag_relevance_scheme: graded
+      rag_group_size: 32
+      rag_generator_endpoint: http://127.0.0.1:8000,http://127.0.0.1:8001
+      rag_anchor_coef: 0.5
+
   # --- Round 3: static-slate RL -------------------------------------------
   # Rank a fixed slate instead of searching the corpus per rollout. Removes
   # 4,096 ANN searches per step and, more importantly, makes the reward a
