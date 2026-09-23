@@ -1,4 +1,4 @@
-# Qwen3-Embedding-4B LoRA RELER calibration: one factor at a time around LR1e-4/K7/A0.70.
+# Qwen3-Embedding-4B LoRA RELER: original one-factor calibration plus follow-ups.
 version: 1
 plan: docs/qwen3_embedding_4b_lora_calibration.md
 seed: 42
@@ -86,6 +86,50 @@ runs:
     <<: *lr200
     seed: 2026
     overrides: {<<: *lr200_params, rollout_seed: 2026}
+
+  Q4B-LORA-RELER-Cal-LR200-K3: &lr200k3
+    <<: *lr200
+    overrides: &lr200k3_params
+      <<: *lr200_params
+      reward_shortlist_size: 3
+  Q4B-LORA-RELER-Cal-LR200-K3-Seed3407:
+    <<: *lr200k3
+    seed: 3407
+    overrides: {<<: *lr200k3_params, rollout_seed: 3407}
+  Q4B-LORA-RELER-Cal-LR200-K3-Seed2026:
+    <<: *lr200k3
+    seed: 2026
+    overrides: {<<: *lr200k3_params, rollout_seed: 2026}
+
+  Q4B-LORA-RELER-Cal-LR200-K3-NoPairwise: &lr200k3_nopairwise
+    <<: *lr200k3
+    overrides: &lr200k3_nopairwise_params
+      <<: *lr200k3_params
+      reward_shortlist_pairwise_coef: 0.0
+  Q4B-LORA-RELER-Cal-LR200-K3-NoPairwise-Seed3407:
+    <<: *lr200k3_nopairwise
+    seed: 3407
+    overrides: {<<: *lr200k3_nopairwise_params, rollout_seed: 3407}
+  Q4B-LORA-RELER-Cal-LR200-K3-NoPairwise-Seed2026:
+    <<: *lr200k3_nopairwise
+    seed: 2026
+    overrides: {<<: *lr200k3_nopairwise_params, rollout_seed: 2026}
+
+  # Disabling shortlists uses the ordinary cross-device fixed-pool nDCG path.
+  # K=3 is retained in the config but inactive when shortlist count is zero.
+  Q4B-LORA-RELER-Cal-LR200-K3-NoShortlist: &lr200k3_noshortlist
+    <<: *lr200k3_nopairwise
+    overrides: &lr200k3_noshortlist_params
+      <<: *lr200k3_nopairwise_params
+      reward_shortlist_count: 0
+  Q4B-LORA-RELER-Cal-LR200-K3-NoShortlist-Seed3407:
+    <<: *lr200k3_noshortlist
+    seed: 3407
+    overrides: {<<: *lr200k3_noshortlist_params, rollout_seed: 3407}
+  Q4B-LORA-RELER-Cal-LR200-K3-NoShortlist-Seed2026:
+    <<: *lr200k3_noshortlist
+    seed: 2026
+    overrides: {<<: *lr200k3_noshortlist_params, rollout_seed: 2026}
 
   Q4B-LORA-RELER-Cal-K3: &k3
     <<: *lr050

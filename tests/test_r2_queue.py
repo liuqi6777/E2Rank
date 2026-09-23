@@ -333,7 +333,7 @@ def test_qwen3_embedding_4b_lora_suite_keeps_controlled_rl_comparisons():
     assert reference[0][reference[0].index('--model') + 1] == 'Qwen/Qwen3-Embedding-4B'
 
 
-def test_qwen3_embedding_4b_lora_calibration_changes_one_factor_at_a_time():
+def test_qwen3_embedding_4b_lora_calibration_recipes():
     e = night.experiments
     main_suite_path = ROOT / 'configs/experiments/iclr2027/suite_qwen3_embedding_4b_lora.yaml'
     main_settings = ROOT / 'configs/experiments_qwen3_embedding_4b_lora.yaml'
@@ -343,7 +343,7 @@ def test_qwen3_embedding_4b_lora_calibration_changes_one_factor_at_a_time():
     suite = e.apply_settings(e.load_suite(q4b_calibration.SUITE), q4b_calibration.SETTINGS)
     rows = {name: e.resolve_run(suite, q4b_calibration.SUITE, name, nproc=8)
             for name in e.ordered_run_ids(suite)}
-    assert len(rows) == 18
+    assert len(rows) == 3 * len(q4b_calibration.RECIPES)
     assert q4b_calibration.selected_runs(list(q4b_calibration.RECIPES), [42]) == [
         q4b_calibration.RECIPES[name] for name in q4b_calibration.RECIPES
     ]
@@ -370,6 +370,41 @@ def test_qwen3_embedding_4b_lora_calibration_changes_one_factor_at_a_time():
         assert row['per_device_train_batch_size'] == 8
         assert row['gradient_accumulation_steps'] == 2
         assert row['model_revision'] == '5cf2132abc99cad020ac570b19d031efec650f2b'
+
+    for seed in (42, 3407, 2026):
+        suffix = '' if seed == 42 else f'-Seed{seed}'
+        lr200 = rows[f'Q4B-LORA-RELER-Cal-LR200{suffix}']['config']
+        lr200k3 = rows[f'Q4B-LORA-RELER-Cal-LR200-K3{suffix}']['config']
+        differences = {key for key in set(lr200) | set(lr200k3)
+                       if lr200.get(key) != lr200k3.get(key)} - ignored
+        assert differences == {'reward_shortlist_size'}
+        assert lr200k3['reward_shortlist_size'] == 3
+
+        no_pairwise = rows[f'Q4B-LORA-RELER-Cal-LR200-K3-NoPairwise{suffix}']['config']
+        differences = {key for key in set(lr200k3) | set(no_pairwise)
+                       if lr200k3.get(key) != no_pairwise.get(key)} - ignored
+        assert differences == {'reward_shortlist_pairwise_coef'}
+        assert no_pairwise['reward_shortlist_count'] == 1
+        assert no_pairwise['reward_shortlist_size'] == 3
+        assert no_pairwise['reward_shortlist_pairwise_coef'] == 0.0
+        parsed(RLArguments, no_pairwise)
+
+        no_shortlist = rows[f'Q4B-LORA-RELER-Cal-LR200-K3-NoShortlist{suffix}']['config']
+        differences = {key for key in set(no_pairwise) | set(no_shortlist)
+                       if no_pairwise.get(key) != no_shortlist.get(key)} - ignored
+        assert differences == {'reward_shortlist_count'}
+        assert no_shortlist['reward_shortlist_count'] == 0
+        assert no_shortlist['reward_shortlist_size'] == 3
+        assert no_shortlist['reward_shortlist_pairwise_coef'] == 0.0
+        assert no_shortlist['reward_cross_device_negatives'] is True
+        parsed(RLArguments, no_shortlist)
+
+    q4b_calibration.validate_contracts(
+        q4b_calibration.selected_runs(['lr200k3', 'lr200k3_nopairwise'], [42, 3407, 2026]),
+        q4b_calibration.SETTINGS)
+    q4b_calibration.validate_contracts(
+        q4b_calibration.selected_runs(['lr200k3_noshortlist'], [42, 3407, 2026]),
+        q4b_calibration.SETTINGS)
 
 
 def test_r2_strong_auxiliary_config_matches_graded_cp_control(monkeypatch):

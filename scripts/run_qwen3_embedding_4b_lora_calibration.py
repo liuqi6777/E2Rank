@@ -20,7 +20,11 @@ RECIPES = {
     'k15': 'Q4B-LORA-RELER-Cal-K15',
     'align065': 'Q4B-LORA-RELER-Cal-Align065',
     'align080': 'Q4B-LORA-RELER-Cal-Align080',
+    'lr200k3': 'Q4B-LORA-RELER-Cal-LR200-K3',
+    'lr200k3_nopairwise': 'Q4B-LORA-RELER-Cal-LR200-K3-NoPairwise',
+    'lr200k3_noshortlist': 'Q4B-LORA-RELER-Cal-LR200-K3-NoShortlist',
 }
+DEFAULT_RECIPES = ('lr050', 'lr200', 'k3', 'k15', 'align065', 'align080')
 
 
 def selected_runs(recipes: list[str], seeds: list[int]) -> list[str]:
@@ -33,6 +37,8 @@ def validate_contracts(run_ids: list[str], settings: Path) -> None:
     for name in run_ids:
         row = iclr2027.resolve_run(suite, SUITE, name, nproc=8)
         config = row['config']
+        no_shortlist = name.startswith(RECIPES['lr200k3_noshortlist'])
+        no_pairwise = name.startswith(RECIPES['lr200k3_nopairwise'])
         expected = {
             'model_name_or_path': 'Qwen/Qwen3-Embedding-4B',
             'model_revision': '5cf2132abc99cad020ac570b19d031efec650f2b',
@@ -44,7 +50,8 @@ def validate_contracts(run_ids: list[str], settings: Path) -> None:
             'gradient_accumulation_steps': 2,
             'gradient_estimator': 'conditional_projection',
             'group_size': 64,
-            'reward_shortlist_pairwise_coef': 0.5,
+            'reward_shortlist_count': 0 if no_shortlist else 1,
+            'reward_shortlist_pairwise_coef': 0.0 if no_shortlist or no_pairwise else 0.5,
             'frozen_doc_rescale': True,
         }
         mismatch = {key: (config.get(key), value) for key, value in expected.items()
@@ -56,8 +63,8 @@ def validate_contracts(run_ids: list[str], settings: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', nargs='?', default='check', choices=['check', 'train', 'eval'])
-    parser.add_argument('--recipes', nargs='+', choices=list(RECIPES), default=list(RECIPES),
-                        help='Calibration recipes (default: all six)')
+    parser.add_argument('--recipes', nargs='+', choices=list(RECIPES), default=list(DEFAULT_RECIPES),
+                        help='Calibration recipes (default: original six one-factor recipes)')
     parser.add_argument('--seeds', nargs='+', type=int, choices=SEEDS, default=[42],
                         help='Default is the seed-42 pilot; confirm a winner with 3407 2026')
     parser.add_argument('--gpus', type=int, choices=[8], default=8)
