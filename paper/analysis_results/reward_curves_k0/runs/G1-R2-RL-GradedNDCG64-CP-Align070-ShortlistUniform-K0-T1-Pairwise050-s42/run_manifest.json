@@ -1,0 +1,100 @@
+{
+  "run": "G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K0-T1-Pairwise050-s42",
+  "recipe": "RELER",
+  "seed": 42,
+  "pairwise_coef": 0.5,
+  "run_directory": "checkpoints/iclr2027-final-k0/G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K0-T1-Pairwise050-s42",
+  "trainer_state": {
+    "path": "checkpoints/iclr2027-final-k0/G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K0-T1-Pairwise050-s42/checkpoint-113/trainer_state.json",
+    "sha256": "846eaa8cfe3dd408cc9a0621bb981e79a7200875f52eb9b5aae0c07a6a389a63",
+    "log_entries": 113,
+    "steps": [
+      1,
+      113
+    ],
+    "global_step": 113,
+    "missing_steps": []
+  },
+  "exploration_state": {
+    "path": "checkpoints/iclr2027-final-k0/G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K0-T1-Pairwise050-s42/exploration_state.json",
+    "step": 113
+  },
+  "final_weights": {
+    "path": "checkpoints/iclr2027-final-k0/G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K0-T1-Pairwise050-s42/model.safetensors",
+    "bytes": 1191586416,
+    "mtime": "2026-09-24T19:34:39"
+  },
+  "config": {
+    "source": "suite yaml (overrides verbatim)",
+    "provenance": [
+      "configs/experiments/iclr2027/suite_iclr2027_final_k0.yaml",
+      "runs:G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K0-T1-Pairwise050"
+    ],
+    "overrides": {
+      "relevance_scheme": "graded",
+      "reward_type": "ndcg_in_batch",
+      "reward_ndcg_k": 10,
+      "gradient_estimator": "conditional_projection",
+      "rollout_seed": 42,
+      "group_size": 64,
+      "target_alignment": 0.7,
+      "final_alignment": null,
+      "exploration_schedule": "fixed",
+      "ndcg_in_batch_include_negatives": true,
+      "reward_cross_device_negatives": true,
+      "cross_query_document_gradients": false,
+      "document_advantage_baseline": "shared",
+      "reward_combine": "sum",
+      "reward_shortlist_count": 1,
+      "reward_shortlist_size": 0,
+      "reward_shortlist_hard_count": 0,
+      "reward_shortlist_hard_pool_size": 128,
+      "aux_infonce_coef": 0.0,
+      "reward_shortlist_pairwise_coef": 0.5,
+      "reward_shortlist_binary_weight": 0.0
+    }
+  },
+  "field_semantics": {
+    "graded": "reward/mean \u2014 graded nDCG@10 training reward of own candidates (shortlist path, K=0); the runs-CSV W&B key train/reward/mean is the trainer-prefixed name of this field",
+    "pairwise_raw": "reward/pairwise/mean \u2014 unweighted pairwise indicator reward",
+    "pairwise_weighted": "reward/pairwise_weighted \u2014 derived column: coef \u00d7 reward/pairwise/mean",
+    "combined": "reward/combined_mean \u2014 graded + coef \u00d7 pairwise, as logged by training",
+    "definition_sources": {
+      "src/grpo.py": {
+        "sha256": "a957ef45da959ff0ac38084b314def0f68bb98f16809a765665f1ef395d1eb1a"
+      },
+      "src/pairwise_projection.py": {
+        "sha256": "dcab127260d89b054d7abab7fdd976e62f250e1bca7fced54ab8c440019931d3"
+      },
+      "src/shortlists.py": {
+        "sha256": "8d798cf6f7e09b4d7449b557e641391e44ec1557cd1a4c1951911ba32630ab20"
+      }
+    }
+  },
+  "combined_identity": {
+    "checks": 113,
+    "max_abs_violation": 1.000000000139778e-06,
+    "tolerance": 0.001
+  },
+  "bright_final": {
+    "eval_json": "checkpoints/iclr2027-final-k0/G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K0-T1-Pairwise050-s42/mteb_eval/bright/iclr2027-r2__G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K0-T1-Pairwise050-s42__tokens-v2__pool-fp32/no_revision_available/BrightRetrieval.json",
+    "mteb_version": "1.38.32",
+    "average_ndcg_at_10_x100": 23.2686,
+    "subsets": {
+      "aops": 2.263,
+      "biology": 45.011,
+      "earth_science": 36.67,
+      "economics": 28.277,
+      "leetcode": 9.3,
+      "pony": 2.218,
+      "psychology": 34.134,
+      "robotics": 18.349,
+      "stackoverflow": 30.186,
+      "sustainable_living": 25.455,
+      "theoremqa_questions": 19.215,
+      "theoremqa_theorems": 28.145
+    }
+  },
+  "wandb_run_id": null,
+  "wandb_note": "no W&B artifacts were copied with these runs; the local trainer_state.json (hashed above) is the stepwise authority"
+}

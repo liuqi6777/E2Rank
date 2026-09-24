@@ -1,0 +1,7 @@
+recipe,seed,run,bright_avg_ndcg_at_10_x100
+RELER,42,G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K0-T1-Pairwise050-s42,23.2686
+RELER,3407,G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K0-T1-Pairwise050-Seed3407-s3407,23.5686
+RELER,2026,G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K0-T1-Pairwise050-Seed2026-s2026,23.2889
+Listwise,42,G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K0-T1-s42,22.8713
+Listwise,3407,G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K0-T1-Seed3407-s3407,22.5290
+Listwise,2026,G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K0-T1-Seed2026-s2026,22.7710
