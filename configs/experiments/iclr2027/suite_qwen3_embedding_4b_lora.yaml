@@ -112,6 +112,28 @@ runs:
     seed: 2026
     overrides: {<<: *reler_params, rollout_seed: 2026}
 
+  # Paper main-table follow-up: retain all own candidates and add no
+  # cross-query negatives. The learning rate follows the 2e-4 4B
+  # calibration; all other RELER settings, including pairwise feedback,
+  # are inherited from the matching K=7 seed.
+  Q4B-LORA-RELER-K0: &reler_k0
+    <<: *reler
+    control: Q4B-LORA-RELER
+    protocol: {labels: teacher_grades_and_original_binary_positives, learning_rate: 0.0002}
+    overrides: &reler_k0_params
+      <<: *reler_params
+      reward_shortlist_size: 0
+  Q4B-LORA-RELER-K0-Seed3407:
+    <<: *reler_k0
+    seed: 3407
+    control: Q4B-LORA-RELER-Seed3407
+    overrides: {<<: *reler_k0_params, rollout_seed: 3407}
+  Q4B-LORA-RELER-K0-Seed2026:
+    <<: *reler_k0
+    seed: 2026
+    control: Q4B-LORA-RELER-Seed2026
+    overrides: {<<: *reler_k0_params, rollout_seed: 2026}
+
   Q4B-LORA-RELER-NoPairwise-CP: &no_pairwise_cp
     <<: *reler
     control: Q4B-LORA-RELER

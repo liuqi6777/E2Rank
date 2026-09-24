@@ -1,8 +1,21 @@
 # Qwen3-Embedding-4B LoRA 核心实验
 
+## ICLR 2027 主表补实验：`K=0 + pairwise`
+
+论文主表另需一个 4B 配方：保留每个 query 的全部自有候选，不加入跨 query 负例（`K=0`），继续使用 graded nDCG@10 + pairwise `λ=0.5`、RLOO+CMP、`G=64`、`ρ=0.70`、LoRA rank 16 和原有 113-step/三 seed 预算。按本次决定，学习率设为 `2e-4`。相对原 `Q4B-LORA-RELER`，解析后的训练配置只改变 `reward_shortlist_size: 7 → 0` 与学习率 `1e-4 → 2e-4`；两者的结果因此不是只改变 `K` 的单因素比较。新运行使用同一 suite 中独立的 `Q4B-LORA-RELER-K0[-Seed...]` 输出目录；下文的 `--set all` 仍指原有 18 个训练，不会隐式启动这个补实验。
+
+在 8×BF16 GPU 训练机上，先预检再运行三个 seed（训练完成后自动合并 LoRA 并评测 original-query BRIGHT）：
+
+```bash
+python scripts/run_qwen3_embedding_4b_lora.py check --set k0
+python scripts/run_qwen3_embedding_4b_lora.py train --set k0 --seeds 42 3407 2026
+```
+
+输出位于 `checkpoints/iclr2027-qwen3-embedding-4b-lora/Q4B-LORA-RELER-K0-s42/` 等独立目录。已有完整权重但需重做 original-query 评测时使用 `eval --set k0 --seeds ...`。GPT-reasoning-query 评测不在此启动脚本内，仍需另行安排。
+
 ## 目标与范围
 
-这组实验只回答两个问题：G1-R2 的主结果能否迁移到 Qwen3-Embedding-4B 的 LoRA 训练；G1-R2 中最关键的 RL 组成在 4B 上是否仍有贡献。完整矩阵为 6 个训练配方 × 3 seeds，共 18 次训练，另做一次未训练 E0 的 BRIGHT 评测。它不重复 alignment、K/T、hard-negative、reward 类型和 LoRA rank 的大网格。
+原有 4B 矩阵只回答两个问题：G1-R2 的主结果能否迁移到 Qwen3-Embedding-4B 的 LoRA 训练；G1-R2 中最关键的 RL 组成在 4B 上是否仍有贡献。原矩阵为 6 个训练配方 × 3 seeds，共 18 次训练，另做一次未训练 E0 的 BRIGHT 评测。上面的 `K=0` 论文补实验单独增加一个三 seed 配方，不重复 alignment、K/T、hard-negative、reward 类型和 LoRA rank 的大网格。
 
 所有训练使用同一份清洗后的 ReasonRank、113 optimizer steps、global batch 128、8 卡、最终 checkpoint 和 BRIGHT nDCG@10。训练 seed、数据顺序 seed 和 RL rollout seed 均配对为 42、3407、2026。
 
@@ -17,7 +30,7 @@
 | RL 消融 | RELER-NoPairwise-RLOO | 在相同 standalone graded reward 和 shortlist 下，CP 是否优于 RLOO |
 | RL 消融 | RELER-NoRescale | frozen-document rescaling 是否仍是 CP 配方的重要组成 |
 
-RELER 固定使用 graded nDCG@10、CP、G=64、alignment=0.70、跨卡全部候选、Uniform K7/T1、pairwise coefficient 0.5。`NoPairwise-RLOO` 不带 pairwise 项，因为当前 item-local pairwise 实现只支持 CP；因此 CP 的严格对照是 `NoPairwise-CP` 与 `NoPairwise-RLOO`，不是 RELER 与 RLOO。
+原有 RELER 矩阵固定使用 graded nDCG@10、CP、G=64、alignment=0.70、跨卡全部候选、Uniform K7/T1、pairwise coefficient 0.5。`NoPairwise-RLOO` 不带 pairwise 项，因为当前 item-local pairwise 实现只支持 CP；因此 CP 的严格对照是 `NoPairwise-CP` 与 `NoPairwise-RLOO`，不是 RELER 与 RLOO。
 
 ## LoRA 与显存配置
 

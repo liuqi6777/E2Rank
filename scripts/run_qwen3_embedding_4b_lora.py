@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
-"""Run the compact Qwen3-Embedding-4B LoRA main table and RL ablations."""
+"""Run Qwen3-Embedding-4B LoRA baselines, ablations, and the paper K=0 recipe."""
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 from experiments import iclr2027
-
 
 ROOT = iclr2027.ROOT
 SUITE = ROOT / 'configs/experiments/iclr2027/suite_qwen3_embedding_4b_lora.yaml'
@@ -32,6 +31,7 @@ def selected_runs(experiment_set: str, seeds: list[int], action: str) -> list[st
         'main': MAIN_METHODS,
         'ablations': ABLATION_METHODS,
         'all': MAIN_METHODS + ABLATION_METHODS,
+        'k0': ('RELER-K0',),
     }[experiment_set]
     selected_seeds = (42,) if experiment_set == 'pilot' else tuple(dict.fromkeys(seeds))
     runs = [run_id(method, seed) for method in methods for seed in selected_seeds]
@@ -62,15 +62,55 @@ def validate_contracts(run_ids: list[str], settings: Path) -> None:
                         if config.get(key) != value}
             if mismatch:
                 raise ValueError(f'{name}: incompatible 4B LoRA contract: {mismatch}')
-            if config['per_device_train_batch_size'] * config['gradient_accumulation_steps'] * 8 != 128:
+            global_batch = (
+                config['per_device_train_batch_size']
+                * config['gradient_accumulation_steps']
+                * 8
+            )
+            if global_batch != 128:
                 raise ValueError(f'{name}: global batch size is not 128')
+            if name.startswith('Q4B-LORA-RELER-K0'):
+                k0_expected = {
+                    'learning_rate': 0.0002,
+                    'gradient_estimator': 'conditional_projection',
+                    'group_size': 64,
+                    'target_alignment': 0.70,
+                    'reward_shortlist_count': 1,
+                    'reward_shortlist_size': 0,
+                    'reward_shortlist_pairwise_coef': 0.5,
+                }
+                mismatch = {
+                    key: (config.get(key), value)
+                    for key, value in k0_expected.items()
+                    if config.get(key) != value
+                }
+                if mismatch:
+                    raise ValueError(
+                        f'{name}: incompatible K=0 paper recipe: {mismatch}'
+                    )
+                old_name = run_id('RELER', config['seed'])
+                old_config = iclr2027.resolve_run(
+                    suite, SUITE, old_name, nproc=8
+                )['config']
+                changed = {
+                    key for key in set(config) | set(old_config)
+                    if config.get(key) != old_config.get(key)
+                } - {'output_dir', 'run_name'}
+                if changed != {'learning_rate', 'reward_shortlist_size'}:
+                    raise ValueError(
+                        f'{name}: K=0 differs from {old_name} in {sorted(changed)}'
+                    )
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', nargs='?', default='check', choices=['check', 'train', 'eval'])
-    parser.add_argument('--set', dest='experiment_set', choices=['pilot', 'main', 'ablations', 'all', 'e0'],
-                        default='pilot', help='pilot runs all six recipes at seed 42')
+    parser.add_argument(
+        '--set', dest='experiment_set',
+        choices=['pilot', 'main', 'ablations', 'all', 'e0', 'k0'],
+        default='pilot',
+        help='k0 runs the three-seed K=0 + pairwise paper recipe',
+    )
     parser.add_argument('--seeds', nargs='+', type=int, choices=SEEDS, default=list(SEEDS))
     parser.add_argument('--gpus', type=int, choices=[8], default=8)
     parser.add_argument('--config', type=Path, default=SETTINGS)

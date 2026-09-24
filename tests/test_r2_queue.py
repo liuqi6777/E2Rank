@@ -14,6 +14,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / 'scripts'), str(ROOT / 'src')]
 import run_g1_r2 as night
+import run_qwen3_embedding_4b_lora as q4b
 import run_qwen3_embedding_4b_lora_calibration as q4b_calibration
 from config import BaselineArguments, DataArguments, LoraArguments, ModelArguments, RLArguments, TrainingArguments, MTEBEvalArguments
 from embedding_data import SingleSourceBatchSampler
@@ -295,8 +296,8 @@ def test_qwen3_embedding_4b_lora_suite_keeps_controlled_rl_comparisons():
     rows = {name: e.resolve_run(suite, suite_path, name, nproc=8)
             for name in e.ordered_run_ids(suite)}
 
-    assert len(rows) == 19
-    assert sum(row['kind'] == 'train' for row in rows.values()) == 18
+    assert len(rows) == 22
+    assert sum(row['kind'] == 'train' for row in rows.values()) == 21
     for row in rows.values():
         config = row['config']
         assert config['model_name_or_path'] == 'Qwen/Qwen3-Embedding-4B'
@@ -320,6 +321,23 @@ def test_qwen3_embedding_4b_lora_suite_keeps_controlled_rl_comparisons():
     assert differences('Q4B-LORA-RELER', 'Q4B-LORA-RELER-NoRescale') == {
         'frozen_doc_rescale', 'output_dir', 'run_name'
     }
+    assert q4b.selected_runs('k0', [42, 3407, 2026], 'train') == [
+        'Q4B-LORA-RELER-K0',
+        'Q4B-LORA-RELER-K0-Seed3407',
+        'Q4B-LORA-RELER-K0-Seed2026',
+    ]
+    for seed in (42, 3407, 2026):
+        suffix = '' if seed == 42 else f'-Seed{seed}'
+        k0 = f'Q4B-LORA-RELER-K0{suffix}'
+        assert differences(f'Q4B-LORA-RELER{suffix}', k0) == {
+            'learning_rate', 'reward_shortlist_size', 'output_dir', 'run_name'
+        }
+        assert rows[k0]['config']['learning_rate'] == 0.0002
+        assert rows[k0]['config']['reward_shortlist_count'] == 1
+        assert rows[k0]['config']['reward_shortlist_size'] == 0
+        assert rows[k0]['config']['reward_shortlist_pairwise_coef'] == 0.5
+        parsed(RLArguments, rows[k0]['config'])
+    q4b.validate_contracts(q4b.selected_runs('k0', [42, 3407, 2026], 'train'), settings)
 
     post = e.post_train_commands_for(rows['Q4B-LORA-RELER'])
     assert len(post) == 2
