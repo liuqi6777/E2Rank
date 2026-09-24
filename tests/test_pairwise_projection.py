@@ -99,7 +99,8 @@ def test_ties_zero_pairs_and_collinear_directions_are_finite(no_pairs):
 
 
 @pytest.mark.parametrize('coefficient,binary_weight', [(.25,0.), (.5,0.), (.25,.25), (.5,.25)])
-def test_full_shortlist_objective_matches_separate_list_and_pair_oracles(monkeypatch, coefficient, binary_weight):
+@pytest.mark.parametrize('size,count', [(2, 2), (0, 1), (1, 1)])
+def test_full_shortlist_objective_matches_separate_list_and_pair_oracles(monkeypatch, coefficient, binary_weight, size, count):
     torch.manual_seed(43)
     source = torch.randn(3, 4, 13)
     weight = torch.eye(13, requires_grad=True)
@@ -116,7 +117,8 @@ def test_full_shortlist_objective_matches_separate_list_and_pair_oracles(monkeyp
         return result
     monkeypatch.setattr(grpo_module,'sample_shortlists',sample)
     head = GRPO(**options(reward_shortlist_pairwise_coef=coefficient,
-                          reward_shortlist_binary_weight=binary_weight, reward_shortlist_count=2))
+                          reward_shortlist_binary_weight=binary_weight, reward_shortlist_count=count,
+                          reward_shortlist_size=size, reward_shortlist_hard_count=0 if size < 2 else 1))
     loss, stats, _, _ = head._compute_component_loss(labels,None,components(means,q,docs,valid),
         candidate_mask=valid,cross_batch_metadata=metadata(),positive_mask=positives)
     actual = torch.autograd.grad(loss,weight)[0]

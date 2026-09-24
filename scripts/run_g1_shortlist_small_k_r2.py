@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G1-R2 small-K controls: K0/K1/K3, T1, alignment 0.70, pure graded reward."""
+"""G1-R2 small-K controls and K0/K1 + Pairwise050; T1, alignment 0.70."""
 import argparse
 from pathlib import Path
 import subprocess
@@ -9,13 +9,15 @@ from experiments.iclr2027 import ROOT, run_simple_baselines
 
 
 RECIPES = {f'uniform-k{k}-t1': ('070', f'Uniform-K{k}-T1') for k in (0, 1, 3)}
+RECIPES.update({f'k{k}-pairwise050': ('070', f'Uniform-K{k}-T1-Pairwise050') for k in (0, 1)})
+DEFAULT_RECIPES = ['k0-pairwise050', 'k1-pairwise050']
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', nargs='?', default='check', choices=['check', 'train', 'eval'])
-    parser.add_argument('--recipes', nargs='+', choices=list(RECIPES), default=list(RECIPES),
-                        help='Recipes to run (default: all three new small-K controls)')
+    parser.add_argument('--recipes', nargs='+', choices=list(RECIPES), default=DEFAULT_RECIPES,
+                        help='Recipes to run (default: new K0/K1 + Pairwise050 only; select pure graded controls explicitly)')
     parser.add_argument('--seeds', nargs='+', type=int, choices=[42, 3407, 2026], default=[42, 3407, 2026],
                         help='Training/data/rollout seeds (default: 42 3407 2026)')
     parser.add_argument('--config', type=Path, default=ROOT / 'configs/experiments_r2.yaml')
