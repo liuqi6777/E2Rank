@@ -10,6 +10,7 @@ from fixed_corpus.environment import (
     KnownQrelsMRRRewardProvider,
     KnownQrelsNDCGRewardProvider,
 )
+from rag.config import GENERATION_REWARDS
 from rag.generator import FrozenGeneratorClient
 from rag.metrics import exact_match, max_token_f1
 from rag.relevance import RELEVANCE_SCHEMES, build_relevance
@@ -26,7 +27,7 @@ class RAGResultRewardProvider:
         generator_top_k: int = 10,
         relevance_scheme: str = "binary",
     ) -> None:
-        if reward_type not in {"mrr", "ndcg", "answer_f1", "answer_em"}:
+        if reward_type not in {"mrr", "ndcg"} | GENERATION_REWARDS:
             raise ValueError(f"Unsupported reward_type={reward_type}")
         if relevance_scheme not in RELEVANCE_SCHEMES:
             raise ValueError(f"Unsupported relevance_scheme={relevance_scheme}")
@@ -35,14 +36,14 @@ class RAGResultRewardProvider:
             raise ValueError("retrieval_k must be positive")
         if generator_top_k <= 0:
             raise ValueError("generator_top_k must be positive")
-        if reward_type in {"answer_f1", "answer_em"} and generator_top_k > retrieval_k:
+        if reward_type in GENERATION_REWARDS and generator_top_k > retrieval_k:
             raise ValueError("generation rewards require generator_top_k <= retrieval_k")
         self.reward_type = reward_type
         self.generator = generator
         self.generator_top_k = int(generator_top_k)
         if reward_type == "mrr":
             self.retrieval_reward = KnownQrelsMRRRewardProvider(retrieval_k)
-        elif reward_type == "ndcg":
+        elif reward_type in {"ndcg", "ndcg_answer_f1", "ndcg_answer_em"}:
             self.retrieval_reward = KnownQrelsNDCGRewardProvider(retrieval_k)
         else:
             self.retrieval_reward = None
@@ -90,7 +91,9 @@ class RAGResultRewardProvider:
             ]
         )
         scorer = (
-            max_token_f1 if self.reward_type == "answer_f1" else exact_match
+            exact_match
+            if self.reward_type in {"answer_em", "ndcg_answer_em"}
+            else max_token_f1
         )
         return [
             scorer(output, item["answers"])
@@ -167,29 +170,64 @@ class RAGResultRewardProvider:
                 golden_answers,
                 result_ids,
             )
-        if self.reward_type in {"mrr", "ndcg"}:
-            if candidate_passage_ids is None or training_positive_mask is None:
-                raise ValueError(
-                    "Fixed-label RAG rewards require candidate_passage_ids and "
-                    "training_positive_mask as passage-level relevance judgments"
-                )
-            view = build_relevance(
-                scheme=self.relevance_scheme,
-                training_positive_mask=training_positive_mask,
-                answer_positive_mask=(
-                    training_positive_mask if answer_positive_mask is None else answer_positive_mask
-                ),
-                evidence_positive_mask=evidence_positive_mask,
-                candidate_mask=candidate_passage_ids >= 0,
+        if self.reward_type in {"ndcg_answer_f1", "ndcg_answer_em"}:
+            generation = self._distributed_generate(
+                index,
+                query_ids,
+                questions,
+                golden_answers,
+                result_ids,
             )
-            return self.retrieval_reward(
-                result_ids=result_ids,
-                result_scores=result_scores,
-                candidate_ordinals=candidate_passage_ids,
-                relevance_labels=view.labels,
-                candidate_mask=view.scoring_mask,
+            ranking = self._ranking_reward(
+                result_ids,
+                result_scores,
+                candidate_passage_ids,
+                training_positive_mask,
+                answer_positive_mask,
+                evidence_positive_mask,
+            )
+            return 0.5 * ranking + 0.5 * generation
+        if self.reward_type in {"mrr", "ndcg"}:
+            return self._ranking_reward(
+                result_ids,
+                result_scores,
+                candidate_passage_ids,
+                training_positive_mask,
+                answer_positive_mask,
+                evidence_positive_mask,
             )
         raise AssertionError(f"Unhandled reward_type={self.reward_type}")
+
+    def _ranking_reward(
+        self,
+        result_ids,
+        result_scores,
+        candidate_passage_ids,
+        training_positive_mask,
+        answer_positive_mask,
+        evidence_positive_mask,
+    ) -> torch.Tensor:
+        if candidate_passage_ids is None or training_positive_mask is None:
+            raise ValueError(
+                "Fixed-label RAG rewards require candidate_passage_ids and "
+                "training_positive_mask as passage-level relevance judgments"
+            )
+        view = build_relevance(
+            scheme=self.relevance_scheme,
+            training_positive_mask=training_positive_mask,
+            answer_positive_mask=(
+                training_positive_mask if answer_positive_mask is None else answer_positive_mask
+            ),
+            evidence_positive_mask=evidence_positive_mask,
+            candidate_mask=candidate_passage_ids >= 0,
+        )
+        return self.retrieval_reward(
+            result_ids=result_ids,
+            result_scores=result_scores,
+            candidate_ordinals=candidate_passage_ids,
+            relevance_labels=view.labels,
+            candidate_mask=view.scoring_mask,
+        )
 
 
 class RetrievalRewardProvider:

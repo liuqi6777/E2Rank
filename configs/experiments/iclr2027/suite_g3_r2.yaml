@@ -390,6 +390,56 @@ runs:
       rag_generator_endpoint: http://127.0.0.1:8000,http://127.0.0.1:8001
       rag_anchor_coef: 0.5
 
+  # Round 5c: density from nDCG, direction from both. 0.5 * graded nDCG@10 +
+  # 0.5 * answer token-F1. The mix inherits nDCG's low degeneracy (0.116),
+  # so it separates the two hypotheses about answer-F1's failure: if the F1
+  # component adds anything once starvation is removed, generation metrics
+  # should beat GradedNDCG-Anchor050; if not, F1's direction is empty and the
+  # mix is diluted nDCG.
+  G3-R2-RL-MixedNDCGF1-Anchor050:
+    group: G3
+    objective: rl
+    scope: query_only
+    control: G3-R2-RL-GradedNDCG-Anchor050
+    protocol:
+      retrieval_reward: half_graded_ndcg_at_10_half_answer_f1
+      retrieval_relevance: graded_qrel_3_evidence_2_answer_1
+      unjudged_documents: zero_gain
+      target_alignment: 0.80
+      exploration_schedule: fixed
+      generator: qwen2.5_7b_instruct_greedy_cached_x2
+      group_size: 32
+      anchor: e0_cosine_coef_0.5
+    overrides:
+      rag_retrieval_reward: ndcg_answer_f1
+      rag_relevance_scheme: graded
+      rag_group_size: 32
+      rag_generator_endpoint: http://127.0.0.1:8000,http://127.0.0.1:8001
+      rag_anchor_coef: 0.5
+
+  # Round 5d: the same mix with the binary scorer. If partial credit is what
+  # the F1 mix contributes (5c), the EM mix should sit between it and pure EM.
+  G3-R2-RL-MixedNDCGEM-Anchor050:
+    group: G3
+    objective: rl
+    scope: query_only
+    control: G3-R2-RL-GradedNDCG-Anchor050
+    protocol:
+      retrieval_reward: half_graded_ndcg_at_10_half_answer_em
+      retrieval_relevance: graded_qrel_3_evidence_2_answer_1
+      unjudged_documents: zero_gain
+      target_alignment: 0.80
+      exploration_schedule: fixed
+      generator: qwen2.5_7b_instruct_greedy_cached_x2
+      group_size: 32
+      anchor: e0_cosine_coef_0.5
+    overrides:
+      rag_retrieval_reward: ndcg_answer_em
+      rag_relevance_scheme: graded
+      rag_group_size: 32
+      rag_generator_endpoint: http://127.0.0.1:8000,http://127.0.0.1:8001
+      rag_anchor_coef: 0.5
+
   # --- Round 3: static-slate RL -------------------------------------------
   # Rank a fixed slate instead of searching the corpus per rollout. Removes
   # 4,096 ANN searches per step and, more importantly, makes the reward a

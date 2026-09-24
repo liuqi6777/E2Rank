@@ -5,7 +5,7 @@ index. Round 1 (before this document) trained every arm for 200 steps and lost
 to its own initialization; rounds 2–4 here diagnose that, repair what is
 repairable, and establish what actually moves the number.
 
-**Status as of 2026-09-22 (evening).** Best result: `G3-R2-RL-GradedNDCG-Anchor050`
+**Status as of 2026-09-25.** Best result: `G3-R2-RL-GradedNDCG-Anchor050`
 (dynamic full-corpus RL, graded nDCG@10, E0-anchor coef 0.5, full LR) at
 training-domain +0.0203, held-out **+0.0002**, **macro +0.0059** `answer_mrr@10`
 — 3× the previous best (LRHalf +0.0018) with the in-domain gain intact. The
@@ -23,7 +23,13 @@ negative macro delta (−0.0047), 6× less in-domain gain, and the family's
 worst held-out — the smooth graded-nDCG proxy beats the sparse true objective
 on every scope. The anchored answer-F1 arm confirms the anchor's held-out
 rescue is reward-independent (−0.0080 → −0.0007) but cannot rescue the
-reward itself (macro +0.0015 vs anchored graded nDCG's +0.0059). Single-seed
+reward itself (macro +0.0015 vs anchored graded nDCG's +0.0059). Round 5c
+(§6.5) completes the axis: the 0.5·graded nDCG + 0.5·answer F1 mix restores
+rollout density exactly as predicted (degenerate 0.076 vs pure F1's 0.484),
+but the answer half adds nothing that survives decomposition — its nominal
+macro-EM lead (+0.0044 vs +0.0017) is one 125-query dataset flipping three
+answers, and on the stable mrr column the mix pays −0.0014 for carrying the
+F1 half. Reward shape, not proximity to the end metric, decides. Single-seed
 caveat: the anchor
 arms ran on seed 42 only; the round-3 seed noise band is ±0.0012 per column,
 and +0.0059 is ~5× that band.
@@ -703,6 +709,7 @@ held-out = the other five datasets; all arms group 32, seed 42):
 | RL-GradedNDCG-Anchor050 (round 4) | graded nDCG@10 | 0.5 | +0.0203 | **+0.0002** | **+0.0059** | +0.0017 | +0.0019 |
 | RL-AnswerF1 (round 5) | answer token-F1 | 0 | +0.0037 | −0.0080 | −0.0047 | −0.0038 | −0.0012 |
 | RL-AnswerF1-Anchor050 (round 5) | answer token-F1 | 0.5 | +0.0069 | **−0.0007** | +0.0015 | −0.0011 | −0.0003 |
+| RL-MixedNDCGF1-Anchor050 (round 5c) | 0.5·graded nDCG + 0.5·answer F1 | 0.5 | +0.0149 | +0.0003 | +0.0045 | +0.0044 | +0.0027 |
 
 Five readings:
 
@@ -756,13 +763,46 @@ anchored graded nDCG (+0.0059), exactly as the CL+anchor ablation found
 anchoring cannot repair an objective mismatch. Drift is what the anchor
 fixes; reward shape is not.
 
-This closes the reward-family axis for candidate winners. The sparsity axis
-has one more point in flight — `G3-R2-RL-AnswerEM-Anchor050` (launched
-2026-09-23), binary exact-match on top of the piecewise-constant F1 — as a
-mechanism probe: if sparsity is what kills the direct reward, EM should
-degrade further (degenerate fraction above F1's 0.48), and if the anchor
-still holds held-out at ~zero there too, the zero-cost property is confirmed
-reward-independent twice over.
+**Round 5c: density restored, direction empty — the mix is diluted nDCG.**
+`G3-R2-RL-MixedNDCGF1-Anchor050` (2026-09-24→25, local, one epoch, 806 steps
+at ~110 s) scores each rollout as 0.5·graded nDCG@10 + 0.5·answer F1 over the
+same top-10, at the same anchor and group size as both round-5 arms. The
+mechanism prediction held exactly: mean `degenerate_frac` 0.076 (0.066 → 0.084
+over the epoch), inside the 0.06–0.12 band implied by "a mix tie needs both
+components tied", against 0.484 for pure F1 — the nDCG half supplies the
+density. The pre-registered discriminator — mix EM/F1 macro above anchored
+nDCG's +0.0017/+0.0019 — fired nominally (+0.0044/+0.0027), but the advantage
+does not survive decomposition. The entire macro-EM margin is one dataset:
+bamboogle, 125 queries, +0.0240 — three exact-match flips; excluding it the
+nDCG arm leads macro EM (+0.0020 vs +0.0011) and the mix's held-out EM falls
+from +0.0024 to −0.0030. Every margin involved sits inside the same-arm seed
+spread (EM 0.0073, F1 0.0075 across seeds 42/3407 of RL-GradedNDCG), and per
+dataset the mix beats the nDCG arm 3/7 on mrr, 3/7 on EM, 3/7 on F1. On the
+one column whose noise band (±0.0012) can resolve the comparison, the mix
+pays a real cost for carrying the F1 half: macro +0.0045 vs +0.0059, in-domain
++0.0149 vs +0.0203; training reward barely moved (0.492 → 0.502). So the
+answer half's net contribution at matched anchor is negative on the ranking
+metric and unverifiable on the generation metrics — the round-5 failure is
+fully explained by reward shape: the answer signal starves alone and dilutes
+when carried. The §6.5 thesis takes its final form: what matters is that the
+reward be smooth and dense in the policy's outputs; proximity to the end
+metric adds nothing detectable even at half weight under the anchor.
+(Engineering: the mix pays the same generation cost as the pure-F1 arms —
+the generator runs for every rollout regardless of the nDCG half — so the
+epoch costs ~25 h on the local 8×L20Y, identical to round 5.)
+
+This closes the reward-family axis. The shape that wins is dense and smooth;
+the true-objective signal neither survives alone (starved, round 5) nor adds
+value when carried (diluted, round 5c). Two configured arms remain unrun:
+`G3-R2-RL-AnswerEM-Anchor050` — with 5c's verdict a pure sparsity extreme,
+expected below pure F1 — and `G3-R2-RL-MixedNDCGEM-Anchor050`, the 5c mix
+with the binary scorer, which can only re-test the same null with less
+partial credit. Their 2026-09-23 cluster launch died before the first
+optimizer step: the generator-construction gate in `train_rag.py` checked
+`reward == "answer_f1"` instead of the generation-reward set, so rank 0
+raised while the other ranks waited out the NCCL timeout. The gate now reads
+`GENERATION_REWARDS` (`rag/config.py`), shared by trainer and reward
+provider; both arms are deferred pending a cluster window, not cancelled.
 
 ## 7. Instrumentation notes
 
@@ -811,13 +851,13 @@ Ordered by expected value against the current best (Anchor050, macro +0.0059):
 2. **Seed 2026 at coef 0.5** completes the winner's seed replication. The
    +0.0059 macro is ~5× the round-3 seed noise band (±0.0012 per column), so
    this is confirmation, not exploration.
-3. **Answer-F1 RL under the anchor** — done (§6.5). The plain answer-F1 arm
-   lost on every scope at matched group 32, and the anchored version
-   confirmed the anchor's held-out rescue is reward-independent
-   (−0.0080 → −0.0007) while leaving the reward-family ranking intact.
-   Remaining: the sparsity extreme `G3-R2-RL-AnswerEM-Anchor050` (binary EM
-   reward, in flight since 2026-09-23) — a mechanism probe for whether
-   sparsity is what kills the direct reward, not a candidate winner.
+3. **Answer-shaped rewards** — closed by rounds 5 and 5c (§6.5). Pure
+   answer-F1 starves (degenerate 0.484, macro −0.0047); the
+   0.5·nDCG + 0.5·F1 mix restores density (0.076) but the answer half's net
+   contribution is −0.0014 macro mrr with no generation gain that survives
+   decomposition — reward density, not proximity to the end metric, is the
+   whole story. The two configured EM arms (pure and mixed) are decomposition
+   probes only; no further answer-shaped candidate is warranted.
 4. **Refresh the candidate pool during training (ANCE-style).** Round 2's
    mechanism suggests its own fix: the pool is mined once with E0, so every
    negative a query ever sees is already an E0 near-neighbour, and the model

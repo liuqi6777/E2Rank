@@ -16,6 +16,7 @@ from transformers.trainer_utils import get_last_checkpoint
 from config import LoraArguments, ModelArguments, TrainingArguments
 from grpo_trainer import EmbeddingTrainerMixin
 from rag.config import (
+    GENERATION_REWARDS,
     RAGDatasetArguments,
     RAGGeneratorArguments,
     RAGIndexArguments,
@@ -246,7 +247,7 @@ def main() -> None:
 
     generator = None
     rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
-    if reward_args.rag_retrieval_reward == "answer_f1" and rank == 0:
+    if reward_args.rag_retrieval_reward in GENERATION_REWARDS and rank == 0:
         generator = FrozenGeneratorClient(
             endpoint=generator_args.rag_generator_endpoint or "",
             model=generator_args.rag_generator_model,

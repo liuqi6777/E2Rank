@@ -13,6 +13,13 @@ SUPPORTED_RAG_REWARDS = (
     "ndcg",
     "answer_f1",
     "answer_em",
+    "ndcg_answer_f1",
+    "ndcg_answer_em",
+)
+# Rewards that score generated answers and therefore need a generator client
+# on rank 0 (train_rag.py gates the client's construction on this set).
+GENERATION_REWARDS = frozenset(
+    {"answer_f1", "answer_em", "ndcg_answer_f1", "ndcg_answer_em"}
 )
 
 
