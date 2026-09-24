@@ -1,5 +1,7 @@
 # Paper workspace
 
+2026-09-24：当前实验表以[结果整理文档](ICLR2027_RESULTS_REORGANIZATION.md)为准；梯度、训练 reward 与检索行为的论文图以[分析图计划](ANALYSIS_PLAN.md)为准。[独立 suite](../docs/iclr2027_final_k0_suite.md)把 36 次新训练与 28 个已完成结果导入项汇入新输出根目录。代表 checkpoint 配置及 reward 曲线清单已改为拟定的 0.6B `K=0 + pairwise` 主配方，相关新训练和日志导出仍待完成。下方较早日期的 `K=7` 决策均为历史记录。
+
 2026-09-20 写作与排版优化：摘要和引言从 embedding model 在语义检索中的地位切入，聚焦针对 BRIGHT 的优化及相同训练数据下的比较；ReasonRank 细节留在实验设置。方法正文精简，辅助推导移至附录，保留 CP 的直觉、核心公式与保证。表格保持 `\scriptsize`，恢复默认行列间距，仅三张超宽领域表局部缩小列间距；主表的子集列居中、Avg. 左对齐，两层表头加粗。Algorithm 1 改为展示奖励矩阵、逐 pair LOO/CP 和参数更新的数学伪代码。当前 [PDF](iclr2027/build/main.pdf) 为 24 页，正文、复现与伦理说明在前 8 页内；已完成编译及版面检查。
 
 2026-09-20：补充分析的[计划](ANALYSIS_PLAN.md)、[代表 checkpoint 配置](analysis/bright_representatives.json)和[结果目录](analysis_results/README.md)统一放在 `paper/` 下，避开 `iclr2027/` 的 Git ignore 规则。配置的输出路径为 `paper/analysis_results/iclr2027_representatives_s3407/`；分析尚未运行，RAG 仍是后续必须完成的实验。

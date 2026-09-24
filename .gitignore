@@ -233,6 +233,7 @@ paper/**/main.pdf
 
 # Local manuscript sources and figure-generation scripts (Markdown stays tracked).
 /paper/iclr2027/
+/paper/iclr2027_table_drafts/
 /paper/scripts/
 
 # Generated audit artifacts stay local; Markdown reports remain tracked.

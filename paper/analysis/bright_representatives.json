@@ -1,7 +1,7 @@
 {
-  "output_dir": "paper/analysis_results/iclr2027_representatives_s3407",
+  "output_dir": "paper/analysis_results/iclr2027_representatives_k0_s3407",
   "reference": "E0",
-  "seed": 42,
+  "seed": 3407,
   "data": {
     "kind": "bright",
     "query_set": "original",
@@ -20,19 +20,19 @@
       "revision": "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3"
     },
     "InfoNCE": {
-      "path": "checkpoints/iclr2027-r2/G1-R2-CL-Strong-Seed3407-s3407",
+      "path": "checkpoints/iclr2027-final-k0/G1-R2-CL-Strong-Seed3407-s3407",
       "model_config": "configs/model/qwen3_embedding_0.6b.yaml"
     },
     "LambdaLoss": {
-      "path": "checkpoints/iclr2027-r2/G1-R2-LL-Graded-Seed3407-s3407",
+      "path": "checkpoints/iclr2027-final-k0/G1-R2-LL-Graded-Seed3407-s3407",
       "model_config": "configs/model/qwen3_embedding_0.6b.yaml"
     },
     "RELER": {
-      "path": "checkpoints/iclr2027-r2/G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K7-T1-Pairwise050-Seed3407-s3407",
+      "path": "checkpoints/iclr2027-final-k0/G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K0-T1-Pairwise050-Seed3407-s3407",
       "model_config": "configs/model/qwen3_embedding_0.6b.yaml"
     },
     "Listwise": {
-      "path": "checkpoints/iclr2027-r2/G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K7-T1-Seed3407-s3407",
+      "path": "checkpoints/iclr2027-final-k0/G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K0-T1-Seed3407-s3407",
       "model_config": "configs/model/qwen3_embedding_0.6b.yaml"
     }
   },

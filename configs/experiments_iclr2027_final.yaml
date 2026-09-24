@@ -1,0 +1,10 @@
+# Dedicated 0.6B ICLR 2027 K=0 paper suite; keep the R2 settings unchanged.
+output_dir: checkpoints/iclr2027-final-k0
+G1:
+  data: data/processed/reasonrank_multi
+  model: Qwen/Qwen3-Embedding-0.6B
+  learning_rate: 5.0e-06
+  steps: 113
+  checkpoint_every: 25
+  batch_size: 128
+  micro_batch_size: 16

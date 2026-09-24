@@ -1,7 +1,7 @@
 recipe,seed,run,wandb_graded_reward_key,pairwise_coef,expected_optimizer_steps
-RELER,42,G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K7-T1-Pairwise050-s42,train/reward/mean,0.50,113
-RELER,3407,G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K7-T1-Pairwise050-Seed3407-s3407,train/reward/mean,0.50,113
-RELER,2026,G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K7-T1-Pairwise050-Seed2026-s2026,train/reward/mean,0.50,113
-Listwise,42,G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K7-T1-s42,train/reward/mean,0,113
-Listwise,3407,G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K7-T1-Seed3407-s3407,train/reward/mean,0,113
-Listwise,2026,G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K7-T1-Seed2026-s2026,train/reward/mean,0,113
+RELER,42,G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K0-T1-Pairwise050-s42,train/reward/mean,0.50,113
+RELER,3407,G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K0-T1-Pairwise050-Seed3407-s3407,train/reward/mean,0.50,113
+RELER,2026,G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K0-T1-Pairwise050-Seed2026-s2026,train/reward/mean,0.50,113
+Listwise,42,G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K0-T1-s42,train/reward/mean,0,113
+Listwise,3407,G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K0-T1-Seed3407-s3407,train/reward/mean,0,113
+Listwise,2026,G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K0-T1-Seed2026-s2026,train/reward/mean,0,113
