@@ -11,7 +11,7 @@ python scripts/run_qwen3_embedding_4b_lora.py check --set k0
 python scripts/run_qwen3_embedding_4b_lora.py train --set k0 --seeds 42 3407 2026
 ```
 
-输出位于 `checkpoints/iclr2027-qwen3-embedding-4b-lora/Q4B-LORA-RELER-K0-s42/` 等独立目录。已有完整权重但需重做 original-query 评测时使用 `eval --set k0 --seeds ...`。GPT-reasoning-query 评测不在此启动脚本内，仍需另行安排。
+输出位于 `checkpoints/iclr2027-qwen3-embedding-4b-lora/Q4B-LORA-RELER-K0-s42/` 等独立目录。已有完整权重但需重做 original-query 评测时使用 `eval --set k0 --seeds ...`。GPT-reasoning-query 使用[单独的主表评测脚本](iclr2027_bright_gpt_reasoning_eval.md)。
 
 ## 目标与范围
 

@@ -28,6 +28,7 @@ BRIGHT，`summary` 汇总三 seed 的均值/标准差/最差成绩。无时间�
 | `experiment.py` | G1/G2/G3 的 prepare、encode、list、show、check、train |
 | `experiments/iclr2027.py` | 实验定义解析、预算与依赖检查、实际启动；由公共入口调用 |
 | `run_qwen3_embedding_4b_lora.py` | 8 卡 Qwen3-Embedding-4B LoRA：原 Table 1 矩阵、三个核心 RL 消融、单独的 `--set k0` 主表补实验、E0、adapter 合并和最终 BRIGHT；见 [实验说明](../docs/qwen3_embedding_4b_lora.md) |
+| `eval_iclr2027_gpt_reasoning_06b.py` / `eval_iclr2027_gpt_reasoning_4b.py` | 论文主表两种 backbone 的 BRIGHT GPT-reasoning query 评测；各复用 E0 和三种方法的 checkpoint，共 10 次只评测；见[说明](../docs/iclr2027_bright_gpt_reasoning_eval.md) |
 | `run_g1_mrr_seed_repeats.sh` | 预检并顺序运行最终 G1 MRR 配方的 seed 3407、2026；每次训练后自动评测 BRIGHT |
 | `run_g1_cl_seed_repeats.sh` | 预检并顺序运行 G1 joint InfoNCE 的 seed 3407、2026；复用已有 seed 42 |
 | `diagnose_rollout_gradients.py` | 固定 checkpoint 和训练 batch，仅改变 rollout，统计完整参数梯度的噪声与方向一致性 |

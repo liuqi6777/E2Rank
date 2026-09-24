@@ -31,7 +31,7 @@ python scripts/run_iclr2027_final_k0.py train --recipes main --seeds 3407 2026
 python scripts/run_iclr2027_final_k0.py train --recipes lambda1 binary_ndcg binary_mrr
 ```
 
-`import` 对每个旧运行先检查旧/新配置匹配、最终权重、embedding protocol 和 12 个 BRIGHT 子集；将完整运行目录复制到新根目录的临时目录并复核，然后原子改名。已有完整且有复制回执的目标会跳过；已有不完整或无回执的目标会报错，不覆盖。旧来源缺失会报告 `missing_source`，正式导入命令以非零状态退出，不会在新根目录伪造结果。完成后 `.imports/` 写入每条复制回执。`train` 只调度新训练，已完成目标自动跳过；存在不完整输出时保留现场并报错，需人工确认后再处理。`eval --recipes ...` 可对已有新权重重跑原 query BRIGHT 评测。新 suite 不自动执行 GPT-reasoning query 评测或梯度/曲线分析，这些按论文图和主表计划另行运行。
+`import` 对每个旧运行先检查旧/新配置匹配、最终权重、embedding protocol 和 12 个 BRIGHT 子集；将完整运行目录复制到新根目录的临时目录并复核，然后原子改名。已有完整且有复制回执的目标会跳过；已有不完整或无回执的目标会报错，不覆盖。旧来源缺失会报告 `missing_source`，正式导入命令以非零状态退出，不会在新根目录伪造结果。完成后 `.imports/` 写入每条复制回执。`train` 只调度新训练，已完成目标自动跳过；存在不完整输出时保留现场并报错，需人工确认后再处理。`eval --recipes ...` 可对已有新权重重跑原 query BRIGHT 评测。GPT-reasoning query 使用[单独的主表评测脚本](iclr2027_bright_gpt_reasoning_eval.md)；梯度/曲线分析仍按论文图计划另行运行。
 
 ## 运行前必须核对的两个 reward 路径
 
