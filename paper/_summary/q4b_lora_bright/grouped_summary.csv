@@ -1,0 +1,9 @@
+method,n_seeds_orig,orig_n12_mean,orig_n12_sd,orig_long7_mean,n_seeds_gpt,gpt_n12_mean,gpt_n12_sd,gpt_long7_mean,delta_n12
+Q4B-LORA-E0,1,18.70,0.00,19.58,1,30.78,0.00,33.37,12.08
+Q4B-LORA-InfoNCE,3,30.08,0.16,38.16,3,39.91,0.56,50.33,9.83
+Q4B-LORA-LambdaLoss,3,25.01,0.37,29.86,3,35.03,0.75,42.19,10.02
+Q4B-LORA-RELER,3,29.00,0.15,36.20,0,,,,
+Q4B-LORA-RELER-K0,3,30.46,0.55,38.45,3,40.00,0.37,50.81,9.54
+Q4B-LORA-RELER-NoPairwise-CP,3,27.99,0.24,34.60,0,,,,
+Q4B-LORA-RELER-NoPairwise-RLOO,3,24.14,0.24,28.45,0,,,,
+Q4B-LORA-RELER-NoRescale,3,27.89,0.44,34.74,0,,,,
