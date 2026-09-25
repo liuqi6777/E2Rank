@@ -1,0 +1,42 @@
+{
+  "panel": "gradient_probe_k0_pairwise panel (a)",
+  "state": "e0",
+  "microbatch": 100,
+  "draws": 64,
+  "projection": {
+    "seed": 20260925,
+    "directions": 8,
+    "parameter_numel": 595776512,
+    "axes": "fixed seed-keyed Rademacher +-1 sign vectors over all trainable coordinates"
+  },
+  "plane": {
+    "signal_axis": 2,
+    "noise_axis": 7,
+    "sign": -1.0,
+    "projected_signal_scale": 33.61263570189476,
+    "selection": "signal axis = largest |CMP mean coordinate|, noise axis = smallest; x = sign * signal_axis_dot / projected_signal_scale orients the CMP cluster at +1"
+  },
+  "cmp_mean": [
+    1.0,
+    -0.09025359724404539
+  ],
+  "rloo_mean": [
+    1.1487681504930902,
+    0.16700318663409314
+  ],
+  "cmp_sd": 0.07671505547142979,
+  "inset_half_span": 0.46029033282857873,
+  "inset_view_zoom": 13.246479986884095,
+  "axis_variance_check": {
+    "conditional_projection": {
+      "expected": 5.580344418635731,
+      "realized_over_expected_max": 1.1915309827952714
+    },
+    "score_function_rloo": {
+      "expected": 3065.4933100152307,
+      "realized_over_expected_max": 1.2775492654148883
+    }
+  },
+  "pairing": "same draw index = same rollout seed; per-draw hashes verified identical across estimators and against the formal probe",
+  "source": "pairwise050_seed3407_e0_micro0-100-200_proj.json"
+}
