@@ -1,0 +1,6 @@
+run,Classification,Clustering,PairClassification,Reranking,Retrieval,STS,Summarization,mean_task_score,mean_type_score
+G2-R2-D-RL-Align070-ShortlistUniform-K7-T1-Pairwise050-s42,73.45,46.27,80.26,44.71,49.78,76.86,27.78,61.1,57.01
+G2-R2-D-RL-Align070-ShortlistUniform-K0-T1-Pairwise050-s42,73.41,45.81,79.76,45.13,50.04,76.81,26.61,61.01,56.8
+G2-R2-D-RL-s42,73.34,46.46,80.27,44.65,49.26,76.97,27.26,61.0,56.89
+G2-R2-D-CL-Strong-s42,72.84,44.19,82.11,44.8,51.52,75.94,29.49,60.99,57.27
+G2-R2-D-CL-s42,72.5,43.59,82.05,44.61,51.47,75.29,29.77,60.64,57.04
