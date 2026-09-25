@@ -20,4 +20,5 @@ G1-R2-RL-GradedNDCG64-CP-Align090-ShortlistUniform-K0-T1-Pairwise050,3,23.17,0.1
 G1-R2-RL-GradedNDCG64-SF-Align070-OwnCandidates-DocOnly,3,18.45,1.56,22.10,,,,
 G1-R2-RL-GradedNDCG64-SF-Align070-OwnCandidates-Paired,3,18.71,0.53,22.55,,,,
 G1-R2-RL-GradedNDCG64-SF-Align070-OwnCandidates-QueryOnly,3,15.85,0.26,17.92,,,,
+G1-R2-RL-GradedNDCG64-SF-Align070-ShortlistUniform-K0-T1-Pairwise050,3,21.91,0.70,28.09,,,,
 G1-R2-RL-GradedNDCG64-SF-Align070-ShortlistUniform-K0-T1,3,20.85,0.68,26.22,,,,
