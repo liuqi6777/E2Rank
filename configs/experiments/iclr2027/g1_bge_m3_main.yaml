@@ -1,0 +1,10 @@
+_base_:
+  - g1_r2.yaml
+  - ../../model/bge_m3.yaml
+
+# Keep the G1 main-table optimizer/checkpoint protocol while swapping the
+# checkpoint-native encoder protocol. Pin the BGE-M3 Hub commit independently
+# of the Qwen revision in g1_r2.yaml.
+model_revision: 5617a9f61b028005a4858fdac845db406aefb181
+deepspeed: ./scripts/zero3_no_clip.json
+index_cache_dir: .cache/dataset_index/g1-bge-m3-main

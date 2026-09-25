@@ -27,7 +27,7 @@ class EvalSpec:
     suite: Path
     settings: Path
     model: str
-    revision: str
+    revision: str | None
     lora: bool
     run_stems: dict[str, str]
     reler_contract: dict[str, object]

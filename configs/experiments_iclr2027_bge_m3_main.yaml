@@ -1,0 +1,10 @@
+# BGE-M3 extension of the ReasonRank/BRIGHT paper main table.
+output_dir: checkpoints/iclr2027-bge-m3-main
+G1:
+  data: data/processed/reasonrank_multi
+  model: BAAI/bge-m3
+  learning_rate: 0.000005
+  steps: 113
+  checkpoint_every: 25
+  batch_size: 128
+  micro_batch_size: 16
