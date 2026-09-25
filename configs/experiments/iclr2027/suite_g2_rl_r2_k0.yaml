@@ -1,0 +1,72 @@
+version: 1
+plan: docs/g2_r2_k0_direct_rl.md
+seed: 42
+output_root: checkpoints/iclr2027-g2-cl-r2
+pending: {}
+
+profiles:
+  G2:
+    config: g2_rl_r2_k0.yaml
+    dataset: e2rank
+    dataset_manifest: data/manifest.json
+    selection: fixed_budget_final_checkpoint
+    final_evaluation: [mteb_eng_v2]
+    requirements: []
+    protocol:
+      labels: teacher_grades_and_original_binary_positives
+      sampling: per_source_epoch_shuffle_retained_tail_v1
+      tokenization_version: 2
+      pooling_compute_dtype: float32
+      training_budget: fixed_steps
+      max_steps: 1200
+      learning_rate: 0.000005
+      eval_steps: 200
+      global_batch_size: 128
+      micro_batch_size: 16
+
+execution_stages:
+  - name: Existing E2Rank D-CL comparison (not trained here)
+    runs: [G2-R2-D-CL]
+  - name: Direct Qwen3-0.6B RL with the G1 K0 main recipe
+    runs: [G2-R2-D-RL-Align070-ShortlistUniform-K0-T1-Pairwise050]
+
+runs:
+  G2-R2-D-CL: {group: G2, kind: reuse, scope: reference}
+  G2-R2-D-RL-Align070-ShortlistUniform-K0-T1-Pairwise050:
+    group: G2
+    objective: rl
+    scope: joint
+    control: G2-R2-D-CL
+    overrides:
+      relevance_scheme: graded
+      reward_type: ndcg_in_batch
+      reward_ndcg_k: 10
+      ndcg_in_batch_include_negatives: true
+      reward_cross_device_negatives: true
+      cross_query_document_gradients: false
+      reward_shortlist_pool_source: cross_device_all
+      reward_shortlist_count: 1
+      reward_shortlist_size: 0
+      reward_shortlist_hard_count: 0
+      reward_shortlist_hard_pool_size: 128
+      reward_shortlist_binary_weight: 0.0
+      reward_shortlist_pairwise_coef: 0.5
+      action_components: [[query], [positive, negative]]
+      sampling_law: vmf
+      rollout: product
+      rollout_seed: 42
+      gradient_estimator: conditional_projection
+      group_size: 64
+      target_alignment: 0.70
+      final_alignment: null
+      exploration_schedule: fixed
+      sigma_learnable: false
+      advantage_baseline: leave_one_out
+      advantage_norm: none
+      document_advantage_baseline: shared
+      document_log_prob_reduction: sum
+      frozen_doc_rescale: true
+      in_batch_use_sampled_documents: false
+      reward_combine: sum
+      kl_coef: 0.0
+      aux_infonce_coef: 0.0
