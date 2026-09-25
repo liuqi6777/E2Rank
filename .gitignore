@@ -247,3 +247,9 @@ paper/**/main.pdf
 
 # Local verification suite; kept outside version control by project choice.
 /scripts/tests/
+
+# embedding 分析：只保留结论文档与聚合报告，原始阶段缓存不入库
+/paper/analysis_results/iclr2027_representatives_k0_s3407/**/retrieval/
+/paper/analysis_results/iclr2027_representatives_k0_s3407/**/geometry/
+/paper/analysis_results/iclr2027_representatives_k0_s3407/**/perturb/
+/paper/analysis_results/iclr2027_representatives_k0_s3407/**/embeddings/
