@@ -16,7 +16,7 @@ from rollout_rng import RolloutRNG
 from shortlists import (sample_shortlists, shortlist_statistics, shortlist_rewards,
                         validate_shortlist_objectives)
 from conditional_projection import conditional_projection_loss
-from pairwise_projection import pairwise_shortlist_loss
+from pairwise_projection import pairwise_shortlist_loss, rloo_pairwise_shortlist_loss
 from contrastive import auxiliary_infonce_loss, validate_aux_infonce, cross_query_document_pool
 from cross_query_policy import sampled_document_pool, sampled_pool_rewards, sampled_pool_loss
 
@@ -1227,7 +1227,10 @@ class GRPO(nn.Module):
                     ).masked_fill(~valid[:, None, :, None], 0).sum((-1, -2))
                     loss = -(aq * qlog).mean() - (ad * dlog).mean()
             if self.reward_shortlist_pairwise_coef:
-                pairwise_loss, pairwise_stats = pairwise_shortlist_loss(
+                pairwise_fn = (pairwise_shortlist_loss
+                               if self.gradient_estimator == "conditional_projection"
+                               else rloo_pairwise_shortlist_loss)
+                pairwise_loss, pairwise_stats = pairwise_fn(
                     query.policy_embeddings, document.policy_embeddings, q, docs,
                     positive_mask, valid, fixed, mask, query.kappa,
                     frozen_scale=1. if scale is None else scale, own_scores=own_scores, cross_scores=cross,

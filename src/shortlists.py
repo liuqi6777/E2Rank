@@ -31,8 +31,9 @@ def validate_shortlist_objectives(count, reward_terms, binary_weight, pairwise_c
                          "binary_ndcg is reserved for the original-positive reward")
     if not math.isfinite(pairwise_coef) or pairwise_coef < 0:
         raise ValueError("reward_shortlist_pairwise_coef must be finite and non-negative")
-    if pairwise_coef and (not count or gradient_estimator != "conditional_projection"):
-        raise ValueError("Pairwise shortlist rewards require shortlists and conditional_projection")
+    if pairwise_coef and (not count or gradient_estimator not in
+                          {"conditional_projection", "score_function"}):
+        raise ValueError("Pairwise shortlist rewards require shortlists and a supported gradient estimator")
 
 
 def shortlist_positive_mask(positive_mask, valid):
@@ -85,7 +86,9 @@ def shortlist_contract(head):
         contract["pairwise_reward"] = dict(
             coefficient=head.reward_shortlist_pairwise_coef, labels="positive_mask", version=1,
             pairs="all_own_positives_x_own_and_selected_negatives", reduction="per_query_mean",
-            estimator="per_pair_conditional_projection", ties=0.5,
+            estimator=("per_pair_conditional_projection"
+                       if head.gradient_estimator == "conditional_projection"
+                       else "per_pair_score_function"), ties=0.5,
         )
     return contract
 

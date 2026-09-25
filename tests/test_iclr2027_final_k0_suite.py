@@ -20,7 +20,7 @@ def test_all_new_recipes_parse_and_legacy_configs_match():
     suite = final_suite.resolved_suite(final_suite.SETTINGS)
     fields = {field.name for field in dataclasses.fields(RLArguments)}
     new_runs = set(suite['runs']) - set(suite['imports'])
-    assert len(new_runs) == 36
+    assert len(new_runs) == 39
     for name in new_runs:
         row = experiments.resolve_run(suite, final_suite.SUITE, name, nproc=8)
         RLArguments(**{key: value for key, value in row['config'].items() if key in fields})
@@ -28,6 +28,21 @@ def test_all_new_recipes_parse_and_legacy_configs_match():
         new = experiments.resolve_run(suite, final_suite.SUITE, name, nproc=8)
         old = final_suite.old_row(entry, final_suite.SOURCE_SETTINGS, None)
         final_suite.ensure_same_training_config(new, old)
+
+
+@pytest.mark.parametrize('seed', final_suite.SEEDS)
+def test_no_cmp_matches_main_except_estimator_and_output(seed):
+    suite = final_suite.resolved_suite(final_suite.SETTINGS)
+    configs = []
+    for recipe in ('main', 'no_cmp'):
+        name = final_suite.run_name(final_suite.RECIPES[recipe], seed)
+        row = experiments.resolve_run(suite, final_suite.SUITE, name, nproc=8)
+        configs.append(row['config'])
+    main, no_cmp = configs
+    assert main['output_dir'] != no_cmp['output_dir']
+    differences = {key: (main.get(key), no_cmp.get(key)) for key in main.keys() | no_cmp.keys()
+                   if main.get(key) != no_cmp.get(key) and key not in {'output_dir', 'run_name'}}
+    assert differences == {'gradient_estimator': ('conditional_projection', 'score_function')}
 
 
 def test_import_copies_only_complete_results_and_preserves_existing_target(tmp_path):

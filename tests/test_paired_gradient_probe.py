@@ -86,6 +86,49 @@ def test_corrected_signal_does_not_turn_monte_carlo_noise_into_signal():
     assert summary["noise_to_signal_ratio_corrected"] is None
 
 
+def test_combined_reward_probe_uses_training_estimators_and_preserves_pairing():
+    from test_shortlists import options, metadata
+
+    previous_threads = torch.get_num_threads()
+    torch.set_num_threads(2)
+    try:
+        torch.manual_seed(23)
+        backbone = Qwen3Model(Qwen3Config(
+            vocab_size=32, hidden_size=16, intermediate_size=32, num_hidden_layers=1,
+            num_attention_heads=2, num_key_value_heads=2, head_dim=8,
+            max_position_embeddings=32, attention_dropout=0., use_cache=False,
+        ))
+        model = GRPOModel(backbone, RLArguments(**options(
+            gradient_estimator='score_function', reward_shortlist_count=1,
+            reward_shortlist_size=0, reward_shortlist_hard_count=0,
+            reward_shortlist_pairwise_coef=.5)))
+        model.eval()
+        def tokens(rows):
+            ids = torch.randint(1, 32, (rows, 5))
+            return dict(input_ids=ids, attention_mask=torch.ones_like(ids))
+        batch = dict(query=tokens(2), positive_document=tokens(2), negative_document=tokens(4),
+                     relevance_labels=torch.tensor([[3., 1., 0.], [3., 0., 0.]]),
+                     candidate_mask=torch.ones(2, 3, dtype=torch.bool),
+                     positive_mask=torch.tensor([[True, False, True], [True, False, False]]),
+                     cross_batch_metadata=metadata()[:2])
+        initial = {name: p.detach().clone() for name, p in model.named_parameters()}
+        result = probe.probe_paired_shortlist_gradients(
+            model, [batch], [17, 18], torch.device('cpu'), torch.float32)
+        assert result['pairwise_reward_agreement_max_gap'] == 0
+        for pair in result['draws']:
+            cp, sf = pair['conditional_projection'], pair['score_function_rloo']
+            for key in ('action_sha256', 'shortlist_sha256', 'graded_reward_sha256',
+                        'pairwise_input_sha256'):
+                assert cp[key] == sf[key]
+            assert cp['gradient_norm'] > 0 and sf['gradient_norm'] > 0
+        assert model.grpo.gradient_estimator == 'score_function'
+        for name, p in model.named_parameters():
+            torch.testing.assert_close(p, initial[name], rtol=0, atol=0)
+            assert p.grad is None
+    finally:
+        torch.set_num_threads(previous_threads)
+
+
 def test_pairing_mismatch_fails_and_restores_estimator(monkeypatch):
     model = GRPOModel(Qwen3Model(Qwen3Config(vocab_size=16, hidden_size=8, intermediate_size=16,
                      num_hidden_layers=1, num_attention_heads=2, num_key_value_heads=2, head_dim=4)),

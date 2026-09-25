@@ -25,6 +25,7 @@ SEEDS = (42, 3407, 2026)
 BASE = 'G1-R2-RL-GradedNDCG64-CP-Align070-ShortlistUniform-K0-T1'
 RECIPES = {
     'main': BASE + '-Pairwise050',
+    'no_cmp': BASE.replace('-CP-', '-SF-') + '-Pairwise050',
     'lambda1': BASE + '-Pairwise100',
     'binary_ndcg': BASE + '-BinaryNDCG',
     'binary_mrr': BASE + '-BinaryMRR',
@@ -45,11 +46,11 @@ def run_name(stem: str, seed: int) -> str:
 
 def resolved_suite(settings: Path):
     suite = experiments.apply_settings(experiments.load_suite(SUITE), settings)
-    if len(suite['runs']) != 64 or len(suite['imports']) != 28:
-        raise ValueError('Final suite must contain 28 imports and 36 new trainings')
+    if len(suite['runs']) != 67 or len(suite['imports']) != 28:
+        raise ValueError('Final suite must contain 28 imports and 39 new trainings')
     expected_new = {run_name(stem, seed) for stem in RECIPES.values() for seed in SEEDS}
     if set(suite['runs']) - set(suite['imports']) != expected_new:
-        raise ValueError('Final suite recipes differ from the approved 12 x 3 plan')
+        raise ValueError('Final suite recipes differ from the 13 x 3 plan')
     return suite
 
 

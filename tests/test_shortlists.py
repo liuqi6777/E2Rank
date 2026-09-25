@@ -256,7 +256,7 @@ def _distributed_worker(rank, rendezvous, estimator, pool_source, binary_weight=
             from test_pairwise_projection import explicit_pair_loss
             pool = ref[:,1:].detach().reshape(-1,12)
             pair_loss = sum(explicit_pair_loss(ref,q,docs,positives,valid,pool[idx[:,t]],mask[:,t],
-                                               9.,mean_alignment(12,9.)) for t in range(idx.size(1))) / idx.size(1)
+                                               9.,mean_alignment(12,9.),estimator) for t in range(idx.size(1))) / idx.size(1)
             expected = expected + pairwise_coef * pair_loss
         expected.backward()
         torch.testing.assert_close(actual, reference_weight.grad, atol=4e-6, rtol=4e-5)
@@ -289,12 +289,13 @@ def test_invalid_policy_and_sampler_rejected_by_both_entrypoints(changes):
 
 @pytest.mark.parametrize('source', ['cross_device_all', 'local_all', 'cross_device_representatives'])
 @pytest.mark.parametrize('binary_weight,pairwise_coef', [(0.,0.), (.25,0.), (0.,.25)])
-def test_trainer_updates_saves_and_reuses_encoder_and_actions(tmp_path, monkeypatch, source, binary_weight, pairwise_coef):
+@pytest.mark.parametrize('estimator', ['conditional_projection', 'score_function'])
+def test_trainer_updates_saves_and_reuses_encoder_and_actions(tmp_path, monkeypatch, source, binary_weight, pairwise_coef, estimator):
     from transformers import BertConfig, BertModel, TrainingArguments
     torch.manual_seed(7)
     backbone = BertModel(BertConfig(vocab_size=16, hidden_size=8, num_hidden_layers=1,
         num_attention_heads=2, intermediate_size=16, hidden_dropout_prob=0, attention_probs_dropout_prob=0))
-    wrapper = GRPOModel(backbone, RLArguments(**options(reward_shortlist_pool_source=source,
+    wrapper = GRPOModel(backbone, RLArguments(**options(gradient_estimator=estimator, reward_shortlist_pool_source=source,
         reward_cross_device_negatives=source != 'local_all', reward_shortlist_binary_weight=binary_weight,
         reward_shortlist_pairwise_coef=pairwise_coef)))
     calls = dict(encoder=0, actions=0, pool=0)
@@ -325,6 +326,11 @@ def test_trainer_updates_saves_and_reuses_encoder_and_actions(tmp_path, monkeypa
     payload = json.loads((checkpoint / 'exploration_state.json').read_text())
     assert payload['reward_shortlists'] == shortlist_contract(wrapper.grpo)
     restore_exploration_state(wrapper, checkpoint)
+    wrapper.grpo.gradient_estimator = ('score_function' if estimator == 'conditional_projection'
+                                       else 'conditional_projection')
+    with pytest.raises(ValueError):
+        restore_exploration_state(wrapper, checkpoint)
+    wrapper.grpo.gradient_estimator = estimator
     wrapper.grpo.reward_shortlist_binary_weight = .5
     with pytest.raises(ValueError):
         restore_exploration_state(wrapper, checkpoint)

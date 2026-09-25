@@ -31,8 +31,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts")]
 
 from rollout_rng import validate_rollout_seed
-from score_precision import fp32_scores
-from shortlists import shortlist_positive_mask
+from pairwise_projection import rloo_pairwise_shortlist_loss
 
 
 class GradientMoments:
@@ -396,96 +395,6 @@ def probe_paired_gradients(model, batches, seeds, device, dtype):
         model.zero_grad(set_to_none=True)
 
 
-def rloo_pairwise_shortlist_loss(query_mean, document_means, query_actions, document_actions,
-                                 positive_mask, candidate_mask, frozen_documents, frozen_mask,
-                                 kappa, *, frozen_scale=1., own_scores=None, cross_scores=None,
-                                 chunk_size=32):
-    """Unprojected RLOO control for the pairwise shortlist reward (diagnostic only).
-
-    Mirrors pairwise_shortlist_loss exactly -- same signature, pair set (every valid
-    annotated positive against every valid own negative and every selected frozen
-    negative), 0/0.5/1 rewards with ties at 0.5, per-axis leave-one-out advantages,
-    per-query pair mean, queries without pairs kept in the batch denominator, and
-    kappa/(Gq*Gd) scaling -- and swaps only the gradient carrier: the live vMF
-    log-prob score function replaces the conditional projection. Document credit is
-    endpoint-local (positive endpoint, plus the own-negative endpoint), matching the
-    CP version's endpoint locality; per-candidate samples are drawn independently,
-    so the endpoint-restricted score function stays unbiased. Training configs forbid
-    this estimator (validate_shortlist_objectives requires conditional_projection
-    whenever a pairwise coefficient is set); it exists for the paired fixed-state
-    probe only.
-    """
-    batch, gq, dim = query_actions.shape
-    gd, count = document_actions.shape[1:3]
-    if (min(gq, gd) < 2 or query_mean.shape != (batch, dim)
-            or document_means.shape != (batch, count, dim)
-            or document_actions.shape != (batch, gd, count, dim)
-            or candidate_mask.shape != (batch, count) or candidate_mask.dtype != torch.bool
-            or frozen_documents.ndim != 3 or frozen_documents.shape[0] != batch
-            or frozen_documents.shape[-1] != dim or frozen_mask.shape != frozen_documents.shape[:2]
-            or frozen_mask.dtype != torch.bool or isinstance(chunk_size, bool)
-            or not isinstance(chunk_size, int) or chunk_size < 1):
-        raise ValueError("RLOO pairwise control requires joint product actions, "
-                         "valid candidate masks and a positive chunk size")
-    positives = shortlist_positive_mask(positive_mask, candidate_mask)
-    with fp32_scores(query_mean.device):
-        with torch.no_grad():
-            q, docs = query_actions.detach().float(), document_actions.detach().float()
-            fixed = frozen_documents.detach().float() * frozen_scale
-            scores = (torch.einsum('bid,bjmd->bijm', q, docs) if own_scores is None
-                      else own_scores.detach().float())
-            cross = (torch.einsum('bid,bkd->bik', q, fixed) if cross_scores is None
-                     else cross_scores.detach().float())
-            if scores.shape != (batch, gq, gd, count) or cross.shape != (batch, gq, fixed.size(1)):
-                raise ValueError("Pairwise scores must match the shared shortlist action grid")
-            qc = torch.zeros_like(query_mean, dtype=torch.float32)
-            dc = torch.zeros_like(document_means, dtype=torch.float32)
-            means, counts, active = q.new_zeros(batch), q.new_zeros(batch), q.new_zeros(batch)
-            for b in range(batch):
-                pos = positives[b].nonzero(as_tuple=True)[0]
-                neg = (candidate_mask[b] & ~positives[b]).nonzero(as_tuple=True)[0]
-                cross_neg = frozen_mask[b].nonzero(as_tuple=True)[0] + count
-                neg = torch.cat((neg, cross_neg))
-                pairs = pos.numel() * neg.numel()
-                counts[b] = pairs
-                if not pairs:
-                    continue
-                a, n = pos.repeat_interleave(neg.numel()), neg.repeat(pos.numel())
-                # Same concatenated pool as the CP implementation, so the per-pair
-                # reward tables are bit-identical for the pairing verification.
-                pool_scores = torch.cat((scores[b], cross[b, :, None].expand(-1, gd, -1)), dim=-1)
-                for start in range(0, pairs, chunk_size):
-                    pa, pn = a[start:start+chunk_size], n[start:start+chunk_size]
-                    difference = pool_scores[..., pa] - pool_scores[..., pn]
-                    reward = (difference > 0).float() + .5 * (difference == 0).float()
-                    aq = (reward - reward.mean(0, keepdim=True)) * (gq / (gq - 1))
-                    ad = (reward - reward.mean(1, keepdim=True)) * (gd / (gd - 1))
-                    means[b] += reward.mean((0, 1)).sum() / pairs
-                    flat = reward.flatten(0, 1)
-                    active[b] += (flat.max(0).values != flat.min(0).values).float().sum() / pairs
-                    # Query score function: kappa * <mu_q, q_i> weighted by per-cell LOO.
-                    qc[b] += torch.einsum('ijc,id->d', aq, q[b]) / pairs
-                    # Document score function, endpoint-local: candidate m accumulates
-                    # sum_i ad over every pair in which it is an endpoint, then contracts
-                    # with its own sampled draws d_jm.
-                    weights = torch.zeros(gd, count, device=q.device, dtype=torch.float32)
-                    weights.index_add_(1, pa, ad.sum(0))
-                    own = pn < count
-                    if own.any():
-                        weights.index_add_(1, pn[own], ad[..., own].sum(0))
-                    dc[b] += torch.einsum('gm,gmd->md', weights, docs[b]) / pairs
-            scale = torch.as_tensor(kappa, device=q.device).detach().float() / (gq * gd)
-            stats = {
-                "reward/pairwise/mean": means.mean(),
-                "reward/pairwise/pairs_mean": counts.mean(),
-                "reward/pairwise/active_pair_fraction": active.mean(),
-                "reward/pairwise/no_pairs_frac": (counts == 0).float().mean(),
-            }
-        loss = -scale * ((query_mean.float() * qc).sum(-1)
-                         + (document_means.float() * dc).sum((1, 2))).mean()
-    return loss, stats
-
-
 def run_self_check(draws=4000, fd_samples=150000, seed=20260924):
     """Synthetic CPU verification of the RLOO pairwise control against the CP original.
 
@@ -758,7 +667,8 @@ def timed_shortlist_gradient_draw(model, batches, seed, device, dtype, pairwise_
     with patch.object(model.grpo, "_draw_actions", capture_actions), \
             patch.object(grpo_module, "sample_shortlists", capture_shortlists), \
             patch.object(grpo_module, "shortlist_rewards", capture_rewards), \
-            patch.object(grpo_module, "pairwise_shortlist_loss", capture_pairwise):
+            patch.object(grpo_module, "pairwise_shortlist_loss", capture_pairwise), \
+            patch.object(grpo_module, "rloo_pairwise_shortlist_loss", capture_pairwise):
         for batch in inputs:
             context = torch.autocast(device_type=device.type, dtype=dtype) if dtype != torch.float32 else nullcontext()
             with context:
@@ -871,9 +781,9 @@ def probe_paired_shortlist_gradients(model, batches, seeds, device, dtype,
     every conditional projection from the combined graded + coef*pairwise
     objective while rewards, actions and shortlist identities stay identical.
     Each rollout seed is replayed for both variants (the action RNG is reset and
-    every stream is seed-keyed), and per-draw hashes verify the pairing. Note
-    that flipping only head.gradient_estimator would leave the pairwise
-    projection in place, which is why the pairwise swap is required.
+    every stream is seed-keyed), and per-draw hashes verify the pairing.
+    Both estimators use the production
+    training implementations; wrappers capture their shared inputs and rewards.
     With projection_directions > 0, every draw also records its full gradient's
     coordinates on fixed seed-keyed Rademacher axes (GradientProjection), for
     the per-draw gradient-cloud figure panel.
@@ -1142,13 +1052,10 @@ def main():
                     else "single_estimator"),
         rloo_control=(dict(
             graded_term="training score_function branch of _compute_shortlist_loss (unchanged src code)",
-            pairwise_term="rloo_pairwise_shortlist_loss in this script: per-pair score-function "
+            pairwise_term="src.pairwise_projection.rloo_pairwise_shortlist_loss: per-pair score-function "
                           "estimator with the CP version's rewards, LOO advantages and "
                           "normalization; document credit is endpoint-local",
-            validation_bypass="validate_shortlist_objectives forbids score_function with a "
-                              "pairwise coefficient at construction; the probe constructs the "
-                              "training recipe (conditional_projection) and flips the estimator "
-                              "at runtime for this paired comparison only",
+            validation_bypass=False,
             self_check="python scripts/diagnose_rollout_gradients.py --self-check",
         ) if paired_shortlist else None),
         component_passes=(not args.no_component_passes) if paired_shortlist else None,

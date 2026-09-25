@@ -1,6 +1,8 @@
 # ICLR 2027：0.6B K=0 论文实验 suite
 
-本 suite 对应[最终表格草稿](../paper/ICLR2027_RESULTS_REORGANIZATION.md)和[分析图计划](../paper/ANALYSIS_PLAN.md)。[suite 配置](../configs/experiments/iclr2027/suite_iclr2027_final_k0.yaml)列出 **36 个新训练（12 配方 × 3 seed）**和 **28 个已完成结果导入项**；[独立 settings](../configs/experiments_iclr2027_final.yaml)将全部输出放到 `checkpoints/iclr2027-final-k0/`，不改旧 `checkpoints/iclr2027-r2/`。入口为 [`scripts/run_iclr2027_final_k0.py`](../scripts/run_iclr2027_final_k0.py)。RAG 和 4B 不在此 suite。
+本 suite 对应[最终表格草稿](../paper/ICLR2027_RESULTS_REORGANIZATION.md)和[分析图计划](../paper/ANALYSIS_PLAN.md)。[suite 配置](../configs/experiments/iclr2027/suite_iclr2027_final_k0.yaml)现列出 **39 个训练（13 配方 × 3 seed）**和 **28 个已完成结果导入项**；其中新增的 `no_cmp` 三 seed 尚未训练。[独立 settings](../configs/experiments_iclr2027_final.yaml)将全部输出放到 `checkpoints/iclr2027-final-k0/`，不改旧 `checkpoints/iclr2027-r2/`。入口为 [`scripts/run_iclr2027_final_k0.py`](../scripts/run_iclr2027_final_k0.py)。RAG 和 4B 不在此 suite。
+
+`no_cmp` 与 `main` 的解析训练配置仅梯度估计器、运行名及输出目录不同：保留 graded nDCG + pairwise（λ=0.5）、product rollout、G=64、ρ=0.70、113 steps 及相同的 training/data/rollout seeds。`gradient_estimator: score_function` 同时关闭 listwise 与 pairwise 的 CMP；pairwise 仍使用逐对 LOO 和端点局部 document credit。训练和固定状态梯度探针共享 `src/pairwise_projection.py` 中的无 CMP 实现。
 
 新训练包括：`K=0 + pairwise λ=0.5` 主配方、`λ=1.0`、binary nDCG/MRR、纯 graded 的 RLOO product/paired/query-only/doc-only、`K=1 + pairwise`、以及 `ρ=0.60/0.80/0.90` 的 `K=0 + pairwise`。每项 42/3407/2026 三 seed；旧 K0 纯 graded CMP、K sweep、K7/15 pairwise，以及 E0/InfoNCE/LambdaLoss 从原输出导入。导入项与旧 suite 的解析训练配置逐字段相同，仅输出目录不同；导入不是重训。Binary MRR 使用原始 binary 标签和自有候选 `reward_type=mrr`；`mrr_in_batch` 即使关闭负例全集，也可能增加跨 query 代表正例，不符合这里的 K0 条件。
 
@@ -27,7 +29,11 @@ python scripts/run_iclr2027_final_k0.py status
 python scripts/run_iclr2027_final_k0.py train --recipes main --seeds 42
 python scripts/run_iclr2027_final_k0.py train --recipes main --seeds 3407 2026
 
-# 选择其余配方；不选时 train 默认执行全部 12 配方 × 3 seed
+# 完整 RELER 配方的 CMP 消融；默认三个 seed，训练后自动评测 BRIGHT
+python scripts/run_iclr2027_final_k0.py check --recipes no_cmp
+python scripts/run_iclr2027_final_k0.py train --recipes no_cmp
+
+# 选择其余配方；不选时 train 默认执行全部 13 配方 × 3 seed
 python scripts/run_iclr2027_final_k0.py train --recipes lambda1 binary_ndcg binary_mrr
 ```
 

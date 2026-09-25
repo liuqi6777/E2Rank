@@ -1,4 +1,4 @@
-"""Item-local CP for binary pair rewards on a fixed small shortlist.
+"""Endpoint-local CMP and unprojected RLOO for binary pair rewards.
 
 Each positive/negative pair has its own LOO and projector. Query CP observes only
 the score difference; document CP credits only the sampled endpoints. Cross-query
@@ -118,6 +118,86 @@ def pairwise_shortlist_loss(query_mean, document_means, query_actions, document_
                 "reward/pairwise/active_pair_fraction": active.mean(),
                 "reward/pairwise/no_pairs_frac": (counts == 0).float().mean(),
                 "projection/pairwise_query_span_rank_max": rank_max,
+            }
+        loss = -scale * ((query_mean.float() * qc).sum(-1)
+                         + (document_means.float() * dc).sum((1, 2))).mean()
+    return loss, stats
+
+
+def rloo_pairwise_shortlist_loss(query_mean, document_means, query_actions, document_actions,
+                                 positive_mask, candidate_mask, frozen_documents, frozen_mask,
+                                 kappa, *, frozen_scale=1., own_scores=None, cross_scores=None,
+                                 chunk_size=32):
+    """Unprojected RLOO for the same pair rewards and per-axis LOO as CMP.
+
+    Document credit is endpoint-local. Pair means, masks, ties, and normalization
+    match pairwise_shortlist_loss; only the gradient carrier changes.
+    """
+    batch, gq, dim = query_actions.shape
+    gd, count = document_actions.shape[1:3]
+    if (min(gq, gd) < 2 or query_mean.shape != (batch, dim)
+            or document_means.shape != (batch, count, dim)
+            or document_actions.shape != (batch, gd, count, dim)
+            or candidate_mask.shape != (batch, count) or candidate_mask.dtype != torch.bool
+            or frozen_documents.ndim != 3 or frozen_documents.shape[0] != batch
+            or frozen_documents.shape[-1] != dim or frozen_mask.shape != frozen_documents.shape[:2]
+            or frozen_mask.dtype != torch.bool or isinstance(chunk_size, bool)
+            or not isinstance(chunk_size, int) or chunk_size < 1):
+        raise ValueError("RLOO pairwise control requires joint product actions, "
+                         "valid candidate masks and a positive chunk size")
+    positives = shortlist_positive_mask(positive_mask, candidate_mask)
+    with fp32_scores(query_mean.device):
+        with torch.no_grad():
+            q, docs = query_actions.detach().float(), document_actions.detach().float()
+            fixed = frozen_documents.detach().float() * frozen_scale
+            scores = (torch.einsum('bid,bjmd->bijm', q, docs) if own_scores is None
+                      else own_scores.detach().float())
+            cross = (torch.einsum('bid,bkd->bik', q, fixed) if cross_scores is None
+                     else cross_scores.detach().float())
+            if scores.shape != (batch, gq, gd, count) or cross.shape != (batch, gq, fixed.size(1)):
+                raise ValueError("Pairwise scores must match the shared shortlist action grid")
+            qc = torch.zeros_like(query_mean, dtype=torch.float32)
+            dc = torch.zeros_like(document_means, dtype=torch.float32)
+            means, counts, active = q.new_zeros(batch), q.new_zeros(batch), q.new_zeros(batch)
+            for b in range(batch):
+                pos = positives[b].nonzero(as_tuple=True)[0]
+                neg = (candidate_mask[b] & ~positives[b]).nonzero(as_tuple=True)[0]
+                cross_neg = frozen_mask[b].nonzero(as_tuple=True)[0] + count
+                neg = torch.cat((neg, cross_neg))
+                pairs = pos.numel() * neg.numel()
+                counts[b] = pairs
+                if not pairs:
+                    continue
+                a, n = pos.repeat_interleave(neg.numel()), neg.repeat(pos.numel())
+                # Same concatenated pool as the CP implementation, so the per-pair
+                # reward tables are bit-identical for the pairing verification.
+                pool_scores = torch.cat((scores[b], cross[b, :, None].expand(-1, gd, -1)), dim=-1)
+                for start in range(0, pairs, chunk_size):
+                    pa, pn = a[start:start+chunk_size], n[start:start+chunk_size]
+                    difference = pool_scores[..., pa] - pool_scores[..., pn]
+                    reward = (difference > 0).float() + .5 * (difference == 0).float()
+                    aq = (reward - reward.mean(0, keepdim=True)) * (gq / (gq - 1))
+                    ad = (reward - reward.mean(1, keepdim=True)) * (gd / (gd - 1))
+                    means[b] += reward.mean((0, 1)).sum() / pairs
+                    flat = reward.flatten(0, 1)
+                    active[b] += (flat.max(0).values != flat.min(0).values).float().sum() / pairs
+                    # Query score function: kappa * <mu_q, q_i> weighted by per-cell LOO.
+                    qc[b] += torch.einsum('ijc,id->d', aq, q[b]) / pairs
+                    # Document score function, endpoint-local: candidate m accumulates
+                    # sum_i ad over every pair in which it is an endpoint, then contracts
+                    # with its own sampled draws d_jm.
+                    weights = torch.zeros(gd, count, device=q.device, dtype=torch.float32)
+                    weights.index_add_(1, pa, ad.sum(0))
+                    own = pn < count
+                    if own.any():
+                        weights.index_add_(1, pn[own], ad[..., own].sum(0))
+                    dc[b] += torch.einsum('gm,gmd->md', weights, docs[b]) / pairs
+            scale = torch.as_tensor(kappa, device=q.device).detach().float() / (gq * gd)
+            stats = {
+                "reward/pairwise/mean": means.mean(),
+                "reward/pairwise/pairs_mean": counts.mean(),
+                "reward/pairwise/active_pair_fraction": active.mean(),
+                "reward/pairwise/no_pairs_frac": (counts == 0).float().mean(),
             }
         loss = -scale * ((query_mean.float() * qc).sum(-1)
                          + (document_means.float() * dc).sum((1, 2))).mean()

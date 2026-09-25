@@ -1,4 +1,4 @@
-# 0.6B paper-ready K=0 suite: 28 completed imports + 36 new training runs.
+# 0.6B paper-ready K=0 suite: 28 completed imports + 39 new training runs.
 version: 1
 seed: 42
 pending: {}
@@ -1730,4 +1730,88 @@ runs:
       reward_shortlist_hard_pool_size: 128
       aux_infonce_coef: 0.0
       reward_shortlist_pairwise_coef: 0.5
+    analysis_group: iclr2027_final_k0
+  G1-R2-RL-GradedNDCG64-SF-Align070-ShortlistUniform-K0-T1-Pairwise050:
+    group: G1
+    scope: joint
+    objective: rl
+    seed: 42
+    overrides:
+      relevance_scheme: graded
+      reward_type: ndcg_in_batch
+      reward_ndcg_k: 10
+      gradient_estimator: score_function
+      rollout_seed: 42
+      group_size: 64
+      target_alignment: 0.7
+      final_alignment: null
+      exploration_schedule: fixed
+      ndcg_in_batch_include_negatives: true
+      reward_cross_device_negatives: true
+      cross_query_document_gradients: false
+      document_advantage_baseline: shared
+      reward_combine: sum
+      reward_shortlist_count: 1
+      reward_shortlist_size: 0
+      reward_shortlist_hard_count: 0
+      reward_shortlist_hard_pool_size: 128
+      aux_infonce_coef: 0.0
+      reward_shortlist_pairwise_coef: 0.5
+      reward_shortlist_binary_weight: 0.0
+    analysis_group: iclr2027_final_k0
+  G1-R2-RL-GradedNDCG64-SF-Align070-ShortlistUniform-K0-T1-Pairwise050-Seed3407:
+    group: G1
+    scope: joint
+    objective: rl
+    seed: 3407
+    overrides:
+      relevance_scheme: graded
+      reward_type: ndcg_in_batch
+      reward_ndcg_k: 10
+      gradient_estimator: score_function
+      rollout_seed: 3407
+      group_size: 64
+      target_alignment: 0.7
+      final_alignment: null
+      exploration_schedule: fixed
+      ndcg_in_batch_include_negatives: true
+      reward_cross_device_negatives: true
+      cross_query_document_gradients: false
+      document_advantage_baseline: shared
+      reward_combine: sum
+      reward_shortlist_count: 1
+      reward_shortlist_size: 0
+      reward_shortlist_hard_count: 0
+      reward_shortlist_hard_pool_size: 128
+      aux_infonce_coef: 0.0
+      reward_shortlist_pairwise_coef: 0.5
+      reward_shortlist_binary_weight: 0.0
+    analysis_group: iclr2027_final_k0
+  G1-R2-RL-GradedNDCG64-SF-Align070-ShortlistUniform-K0-T1-Pairwise050-Seed2026:
+    group: G1
+    scope: joint
+    objective: rl
+    seed: 2026
+    overrides:
+      relevance_scheme: graded
+      reward_type: ndcg_in_batch
+      reward_ndcg_k: 10
+      gradient_estimator: score_function
+      rollout_seed: 2026
+      group_size: 64
+      target_alignment: 0.7
+      final_alignment: null
+      exploration_schedule: fixed
+      ndcg_in_batch_include_negatives: true
+      reward_cross_device_negatives: true
+      cross_query_document_gradients: false
+      document_advantage_baseline: shared
+      reward_combine: sum
+      reward_shortlist_count: 1
+      reward_shortlist_size: 0
+      reward_shortlist_hard_count: 0
+      reward_shortlist_hard_pool_size: 128
+      aux_infonce_coef: 0.0
+      reward_shortlist_pairwise_coef: 0.5
+      reward_shortlist_binary_weight: 0.0
     analysis_group: iclr2027_final_k0

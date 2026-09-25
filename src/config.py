@@ -714,7 +714,7 @@ class RLArguments:
     )
     reward_shortlist_pairwise_coef: float = field(
         default=0.0,
-        metadata={"help": "Add original-positive pair rewards with separate per-pair LOO/CP on each shortlist"},
+        metadata={"help": "Add original-positive pair rewards with per-pair LOO using gradient_estimator on each shortlist"},
     )
     cross_query_document_gradients: bool = field(
         default=False,
