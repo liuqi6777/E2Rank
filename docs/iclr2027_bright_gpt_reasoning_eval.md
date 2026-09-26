@@ -65,3 +65,33 @@ python scripts/launch_bright_repair.py check --slot 0
 ```
 
 如需指定解释器，设置 PYTHON_BIN=/path/to/python。脚本不会训练或合并模型，4B 的 merged checkpoint 需已存在；启动前会检查该节点的全部 checkpoint。评测完成后需从新 reasoning 目录重新导出论文表格。
+
+## 汇总结果
+
+在能访问全部 30 个结果的机器上执行；若节点不共享存储，先把各节点结果按原 run 目录结构收集到同一处。只需要结果 JSON，不需要模型权重或 GPU。汇总脚本使用与启动脚本相同的三个 settings，支持相同的 `--config-06b`、`--config-4b`、`--config-bge-m3` 参数。
+
+```bash
+# 运行中也可查看进度；默认输出到 paper/_summary/bright_gpt4_reasoning/
+python scripts/summarize_bright_repair.py
+
+# 最终收齐检查：不足 30 个完整结果时仍写出报告，但退出码为 1
+python scripts/summarize_bright_repair.py --require-complete
+
+# 自定义汇总目录和从节点收集的日志目录
+python scripts/summarize_bright_repair.py \
+  --output-dir paper/_summary/bright_gpt4_reasoning \
+  --log-dir logs/bright-repair
+```
+
+输出文件：
+
+- `summary.md`：12 行模型/方法汇总和未完成任务列表。
+- `per_run_summary.csv`：30 个 run 的状态、12 个子集分数和总均值。
+- `subset_summary.csv`：逐 run、逐子集结果及源文件路径；收齐后共 360 行。`ndcg_at_10` 为 0–1，`score` 为 0–100。
+- `grouped_summary.csv`：模型/方法的总体均值、样本 SD，以及各子集的均值/SD。
+- `pending.csv`：缺失、部分完成、无效或有失败记录的 run。
+- `summary.json`：完整汇总、状态计数和来源信息，便于后续生成论文表格。
+
+除逐子集 CSV 中显式标注的 `ndcg_at_10` 列外，分数均为 nDCG@10 × 100；每个 run 等权平均 12 子集，训练方法在三个完整 seed 上计算均值与样本 SD（ddof=1），E0 只报告单次分数、SD 留空。缺子集的 run 不算总均值，缺 seed 的组不算组均值或 SD。仅读取新 `query-gpt4-reasoning/` 目录，旧 reasoning 和 original 结果不会进入此汇总。
+
+脚本可读取各 `slot-XX/failures.json` 补充失败原因；完整新结果会覆盖旧失败状态。重复结果文件、重复子集、非有限/越界分数和损坏 JSON 会单独标记为无效，不阻断其他 run 的汇总。输出到新的汇总目录，不自动覆盖现有论文 CSV 或 LaTeX 表格。
