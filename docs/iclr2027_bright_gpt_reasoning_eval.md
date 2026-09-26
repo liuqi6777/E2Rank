@@ -95,3 +95,7 @@ python scripts/summarize_bright_repair.py \
 除逐子集 CSV 中显式标注的 `ndcg_at_10` 列外，分数均为 nDCG@10 × 100；每个 run 等权平均 12 子集，训练方法在三个完整 seed 上计算均值与样本 SD（ddof=1），E0 只报告单次分数、SD 留空。缺子集的 run 不算总均值，缺 seed 的组不算组均值或 SD。仅读取新 `query-gpt4-reasoning/` 目录，旧 reasoning 和 original 结果不会进入此汇总。
 
 脚本可读取各 `slot-XX/failures.json` 补充失败原因；完整新结果会覆盖旧失败状态。重复结果文件、重复子集、非有限/越界分数和损坏 JSON 会单独标记为无效，不阻断其他 run 的汇总。输出到新的汇总目录，不自动覆盖现有论文 CSV 或 LaTeX 表格。
+
+## 2026-09-26 论文接入完成
+
+30/30 重评结果已收齐并核验。论文生成器 `paper/iclr2027/build_k0_results.py` 仅读取新目录提供 GPT-4 reasoning 分数，原 query 仍读取各模型的既有汇总；旧 reasoning 导出只作历史归档。执行 `python paper/iclr2027/build_results.py` 可校验并重建主表及逐 seed 表；`make -C paper/iclr2027 all` 完整编译。新主表、正文比较及附录 query 输入定义已同步，详见 [重评核验记录](../paper/BRIGHT_GPT4_REEVAL_REVIEW_2026-09-26.md)。

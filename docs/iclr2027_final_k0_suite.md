@@ -1,6 +1,8 @@
 # ICLR 2027：0.6B K=0 论文实验 suite
 
-本 suite 对应[最终表格草稿](../paper/ICLR2027_RESULTS_REORGANIZATION.md)和[分析图计划](../paper/ANALYSIS_PLAN.md)。[suite 配置](../configs/experiments/iclr2027/suite_iclr2027_final_k0.yaml)现列出 **39 个训练（13 配方 × 3 seed）**和 **28 个已完成结果导入项**；其中新增的 `no_cmp` 三 seed 尚未训练。[独立 settings](../configs/experiments_iclr2027_final.yaml)将全部输出放到 `checkpoints/iclr2027-final-k0/`，不改旧 `checkpoints/iclr2027-r2/`。入口为 [`scripts/run_iclr2027_final_k0.py`](../scripts/run_iclr2027_final_k0.py)。RAG 和 4B 不在此 suite。
+2026-09-25 状态：本地 [`k0_bright`](../paper/_summary/k0_bright/) 已汇入全部 64 个 original-query 结果（36 个新训练、28 个导入项）、10 个主表 GPT-reasoning-query 结果及 888 个子集分数。论文的 0.6B 主表和本轮消融已填齐；结果解读与剩余分析工作见[结果文档](../paper/ICLR2027_RESULTS_REORGANIZATION.md)。以下保留 suite 的执行与复现说明。
+
+本 suite 对应[最终表格草稿](../paper/ICLR2027_RESULTS_REORGANIZATION.md)和[分析图计划](../paper/ANALYSIS_PLAN.md)。[suite 配置](../configs/experiments/iclr2027/suite_iclr2027_final_k0.yaml)现列出 **39 个训练（13 配方 × 3 seed）**和 **28 个已完成结果导入项**；新增的 `no_cmp` 三 seed 原始查询 BRIGHT 结果已汇总至 [`paper/_summary/k0_bright/`](../paper/_summary/k0_bright/)，Avg. 为 **21.91±0.70**（完整 RELER 为 **23.38±0.17**）。[独立 settings](../configs/experiments_iclr2027_final.yaml)将全部输出放到 `checkpoints/iclr2027-final-k0/`，不改旧 `checkpoints/iclr2027-r2/`。入口为 [`scripts/run_iclr2027_final_k0.py`](../scripts/run_iclr2027_final_k0.py)。RAG 和 4B 不在此 suite。
 
 `no_cmp` 与 `main` 的解析训练配置仅梯度估计器、运行名及输出目录不同：保留 graded nDCG + pairwise（λ=0.5）、product rollout、G=64、ρ=0.70、113 steps 及相同的 training/data/rollout seeds。`gradient_estimator: score_function` 同时关闭 listwise 与 pairwise 的 CMP；pairwise 仍使用逐对 LOO 和端点局部 document credit。训练和固定状态梯度探针共享 `src/pairwise_projection.py` 中的无 CMP 实现。
 

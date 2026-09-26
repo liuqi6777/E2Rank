@@ -46,7 +46,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PROBE_ROOT = ROOT / "outputs/f1_k0_probe"
 OUTPUT_DIR = ROOT / "paper/analysis_results/gradient_probe_k0_pairwise"
-STATES = (("e0", "E0"), ("step50", "step 50"), ("step113", "step 113"))
+STATES = (("e0", "Before fine-tuning"), ("step50", "step 50"), ("step113", "step 113"))
 RUN_STEM = "pairwise050_seed3407_{state}_micro0-100-200.json"
 PROJ_STEM = "pairwise050_seed3407_{state}_micro0-100-200_proj.json"
 PAIR_KEYS = ("action_sha256", "shortlist_sha256", "graded_reward_sha256",
@@ -213,7 +213,8 @@ def panel(axes, rows, key_cp, key_rloo, title, ylabel, reference=None, show_lege
                       linewidth=1.2, solid_capstyle="round", zorder=4)
     if reference is not None:
         axes.axhline(reference, color=MUTED, linewidth=0.8, zorder=2)
-        axes.annotate("signal = noise", (-0.05, reference), xytext=(0, 3),
+        axes.annotate("signal = noise", (0.98, reference), xytext=(0, 3),
+                      xycoords=("axes fraction", "data"),
                       textcoords="offset points", fontsize=7, color=MUTED,
                       ha="right", va="bottom", annotation_clip=False)
     if show_legend:
@@ -221,7 +222,7 @@ def panel(axes, rows, key_cp, key_rloo, title, ylabel, reference=None, show_lege
                    ((BLUE, "RLOO + CMP (ours)"), (AQUA, "RLOO (no CMP)"))]
         axes.legend(handles=handles, loc="upper left", handlelength=1.2, borderaxespad=0.2)
     axes.set_yscale("log")
-    axes.set_xticks(range(len(STATES)), [label for _, label in STATES])
+    axes.set_xticks(range(len(STATES)), [label.replace("Before fine-tuning", "Before\nfine-tuning") for _, label in STATES])
     axes.set_xlim(-0.55, len(STATES) - 0.35)
     axes.set_title(title, loc="left")
     axes.set_ylabel(ylabel)
@@ -302,8 +303,8 @@ def cloud_panel(axes, geometry, title):
     axes.set_ylim(-limit, limit)
     axes.set_aspect("equal")
     axes.set_title(title, loc="left")
-    axes.set_xlabel("signal-axis component / projected signal")
-    axes.set_ylabel("noise-axis component / projected signal")
+    axes.set_xlabel("signal-axis component\n/ projected signal")
+    axes.set_ylabel("noise-axis component\n/ projected signal")
     axes.legend(loc="upper left", handlelength=1.2, borderaxespad=0.2)
 
     # The CMP cluster is ~20x smaller than the RLOO cloud and collapses to a
@@ -404,8 +405,8 @@ def write_figure(rows, path, projection, geometry):
     else:
         state_label = dict(STATES)[projection["state"]]
         fig, (ax_a, ax_b) = plt.subplots(
-            1, 2, figsize=(5.4, 2.75), gridspec_kw=dict(width_ratios=(1.08, 1.0)))
-        cloud_panel(ax_a, geometry, f"(a) {len(projection['seeds'])} rollout gradients, {state_label}")
+            1, 2, figsize=(5.4, 2.45), gridspec_kw=dict(width_ratios=(1.08, 1.0)))
+        cloud_panel(ax_a, geometry, f"(a) {state_label}")
         panel(ax_b, rows, "snr_cp", "snr_rloo",
               "(b) Signal-to-noise per step", "Signal-to-noise ratio", reference=1.0,
               show_legend=False)
@@ -414,6 +415,16 @@ def write_figure(rows, path, projection, geometry):
     for suffix in ("pdf", "png"):
         fig.savefig(path.with_suffix(f".{suffix}"))
     plt.close(fig)
+    if projection is not None:
+        # Main text: one compact visual; the full two-panel diagnostic is supplementary.
+        fig, axes = plt.subplots(figsize=(2.35, 2.15))
+        cloud_panel(axes, geometry, "")
+        axes.set_xlabel("Gradient projection 1")
+        axes.set_ylabel("Gradient projection 2")
+        fig.subplots_adjust(left=0.22, right=0.98, bottom=0.21, top=0.98)
+        for suffix in ("pdf", "png"):
+            fig.savefig(path.with_name("gradient_cloud_main").with_suffix(f".{suffix}"))
+        plt.close(fig)
 
 
 def write_readme(rows, path, git, projection):
@@ -431,9 +442,15 @@ def write_readme(rows, path, git, projection):
         signal_rloo = statistics.mean(row["signal_squared_rloo"] for row in state_rows)
         state_lines.append(
             f"| {label} | {ratio:.4f} | {vt:.4f} | {1/ratio:.0f}× | {signal_cp:.1f} / {signal_rloo:.1f} |")
-    time_note = ("耗时与比值不单独成面板：CMP 每趟前后向仅慢 ~13%，`V_CMP/V_RLOO` 0.002–0.003"
-                 "（降噪 300–600 倍，等效于把 ~300–600 个独立 rollout 梯度平均才追上 CMP 单步），"
-                 "`V×t` 比值 0.002–0.004，见 `probes.csv` 的 `variance_ratio`/`variance_time_ratio` 列。")
+    vr = [row["variance_ratio"] for row in rows]
+    vt = [row["variance_time_ratio"] for row in rows]
+    snr_cp = [row["snr_cp"] for row in rows]
+    snr_rloo = [row["snr_rloo"] for row in rows]
+    time_note = (f"耗时与比值不单独成面板：CMP 每趟前后向平均慢约 13%，"
+                 f"`V_CMP/V_RLOO` {min(vr):.4f}–{max(vr):.4f}"
+                 f"（降噪约 {1/max(vr):.0f}–{1/min(vr):.0f} 倍），"
+                 f"`V×t` 比值 {min(vt):.4f}–{max(vt):.4f}，"
+                 "见 `probes.csv` 的 `variance_ratio`/`variance_time_ratio` 列。")
     if projection is not None:
         check = projection["axis_variance_check"]
         axis_check = " / ".join(
@@ -441,14 +458,16 @@ def write_readme(rows, path, git, projection):
             for variant, label in (("conditional_projection", "CMP"),
                                    ("score_function_rloo", "RLOO")))
         figure_lines = (
-            f"- `gradient_probe_k0_pairwise.pdf` / `.png` — 正文 F1。面板 A：**单 draw 梯度云**"
+            "- `gradient_cloud_main.pdf` / `.png` — 正文紧凑单面板梯度云，坐标与完整图相同。\n"
+            f"- `gradient_probe_k0_pairwise.pdf` / `.png` — 附录 E.3 完整诊断。面板 A：**单 draw 梯度云**"
             f"（{dict(STATES)[projection['state']]}、microbatch 位置 {projection['microbatch']} 的同一批 "
             f"{len(projection['seeds'])} 次 rollout：完整参数梯度在 {projection['directions']} 条固定随机 ±1 轴"
             "上的坐标；横轴取 CMP 均值分量最大的轴、纵轴取分量最小者，均按投影信号归一；灰线连接同一 draw "
             "的两个估计器）。RLOO 的云把原点罩在里面（单步方向被噪声淹没），CMP 收拢成与原点分离的小团；"
-            "右上插图按 CMP 自身尺度放大该团（64 个 draw 加两估计器均值，RLOO 均值落在 CMP 团簇内部——"
-            "无偏的视觉版）。面板 B：**单步信噪比**（`√signal²/noise_rms`，对数轴，"
-            "\"signal = noise\" 参考线）：CMP 4–6.5，RLOO 0.23–0.32。" + time_note)
+            "插图按 CMP 自身尺度放大该团，并标出两估计器的样本均值。"
+            "面板 B：**单步信噪比**（`√signal²/noise_rms`，对数轴，"
+            f"\"signal = noise\" 参考线）：CMP {min(snr_cp):.2f}–{max(snr_cp):.2f}，"
+            f"RLOO {min(snr_rloo):.2f}–{max(snr_rloo):.2f}。" + time_note)
         protocol_extra = (
             f"\n\n梯度云面板的数据来自同协议的投影补采（`{PROJ_STEM.format(state=projection['state'])}`，"
             f"不入库）：同种子、同 microbatch、关分项 pass，逐 draw 记录完整梯度在 "
@@ -460,7 +479,7 @@ def write_readme(rows, path, git, projection):
             "`probes.csv` 为准。")
     else:
         figure_lines = (
-            "- `gradient_probe_k0_pairwise.pdf` / `.png` — 正文 F1。面板 A：**每步梯度噪声**"
+            "- `gradient_probe_k0_pairwise.pdf` / `.png` — 附录 E.3 完整诊断。面板 A：**每步梯度噪声**"
             "（同一固定批次 64 次 rollout 的完整参数梯度围绕均值的标准差，RMS，对数轴）；"
             "点 = 单个 probe（一个固定训练 microbatch），短横线 = 三 microbatch 几何均值。"
             "面板 B：**单步信噪比**（`√signal²/noise_rms`，对数轴，\"signal = noise\" 参考线）："
@@ -487,7 +506,7 @@ def write_readme(rows, path, git, projection):
 |---|---:|---:|---:|---:|
 {chr(10).join(state_lines)}
 
-- **CMP 把完整 encoder 梯度的 rollout 方差降低约 300–600 倍**，三个固定状态、九个 probe 一致；扣除前后向耗时后（CMP 慢 ~13%）仍低约两个半数量级。
+- **CMP 把完整 encoder 梯度的 rollout 方差降低约 {1/max(vr):.0f}–{1/min(vr):.0f} 倍**，三个固定状态、九个 probe 一致；扣除前后向耗时后（CMP 慢 ~13%）仍低约两个半数量级。
 - 无偏性：{unresolved}/9 个 probe 的两估计器均值梯度差**未分辨**（无偏平方差 ≤ 0）；其余分辨出的偏差 ≤ signal² 的 {worst_bias:.0%}。两估计器的 signal² 估计逐 probe 相符。
 - 配对完整性：所有 probe 的 pairwise reward 逐对差 = {sorted(g for g in reward_gaps if g is not None)}（bit 级一致）；动作/shortlist/graded reward hash 逐 draw 相等（探针内强制校验）。
 - 分项（附录素材，见 `probes.csv`）：graded 与 pairwise 梯度范数、夹角随状态变化（夹角从 E0 的 ~0.6 收缩到 step 113 的 ≈0）；分解残差 `‖g_total−(g_graded+0.5·g_pairwise)‖/‖g_total‖` 最大 {worst_resid:.1%}。
@@ -499,7 +518,7 @@ def write_readme(rows, path, git, projection):
 ## 文件
 
 - `probes.csv` — 每个 probe 一行：方差比、V×t、两估计器的 V/noise_rms/mean norm/signal²/耗时、均值差分辨标记与偏差占比、分项统计、来源与 hash。
-{cloud_files}- 原始 JSON 不入库（`outputs/` 被忽略）；`probes.csv` 的 `git_commit` 与 `diagnostic_sha256` 可定位生成版本。
+{cloud_files}- 原始 JSON 不入库（`outputs/` 被忽略）；`probes.csv` 的 `git_commit` 与 `diagnostic_sha256` 可定位生成版本。仅用本目录 CSV/JSON 重画论文图：`python scripts/analyze_f1_probe.py --plot-only`。
 
 ## 边界（图注须带上）
 
@@ -518,11 +537,49 @@ def parse_args():
                         help="Which probe microbatch position feeds the gradient cloud")
     parser.add_argument("--proj-report", type=Path, default=None,
                         help="Projection-readout JSON; defaults to the cloud-state report")
+    parser.add_argument("--plot-only", action="store_true",
+                        help="Redraw the figure from exported CSV/JSON without raw probe reports")
     return parser.parse_args()
+
+
+def plot_from_export(output_dir, cloud_state, cloud_microbatch):
+    """Redraw the paper figure from the compact, checked-in figure data."""
+    with (output_dir / "probes.csv").open(newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    for row in rows:
+        row["microbatch"] = int(row["microbatch"])
+        for key in ("snr_cp", "snr_rloo"):
+            row[key] = float(row[key])
+    stem = f"gradient_cloud_{cloud_state}_micro{cloud_microbatch}"
+    with (output_dir / f"{stem}.csv").open(newline="") as handle:
+        cloud = list(csv.DictReader(handle))
+    meta = json.loads((output_dir / f"{stem}_meta.json").read_text())
+    coordinates = {variant: sorted((r for r in cloud if r["estimator"] == variant),
+                                   key=lambda r: int(r["draw"]))
+                   for variant in ("cmp", "rloo")}
+    if len(coordinates["cmp"]) != meta["draws"] or len(coordinates["rloo"]) != meta["draws"]:
+        raise SystemExit("Exported cloud draw count differs from metadata")
+    geometry = dict(
+        x_cp=[float(r["x_signal_axis"]) for r in coordinates["cmp"]],
+        y_cp=[float(r["y_noise_axis"]) for r in coordinates["cmp"]],
+        x_rloo=[float(r["x_signal_axis"]) for r in coordinates["rloo"]],
+        y_rloo=[float(r["y_noise_axis"]) for r in coordinates["rloo"]],
+        cp_mean=meta["cmp_mean"], rloo_mean=meta["rloo_mean"],
+        half_span=meta["inset_half_span"], zoom=meta["inset_view_zoom"],
+    )
+    geometry["limit"] = 1.08 * max(abs(value) for key in
+                                     ("x_cp", "y_cp", "x_rloo", "y_rloo")
+                                     for value in geometry[key])
+    projection = dict(state=cloud_state, seeds=range(meta["draws"]))
+    write_figure(rows, output_dir / "gradient_probe_k0_pairwise", projection, geometry)
 
 
 def main():
     args = parse_args()
+    if args.plot_only:
+        plot_from_export(args.output_dir, args.cloud_state, args.cloud_microbatch)
+        print(f"Redrew figure from exported data in {args.output_dir}")
+        return
     global PROBE_ROOT
     PROBE_ROOT = args.probe_root
     args.output_dir.mkdir(parents=True, exist_ok=True)

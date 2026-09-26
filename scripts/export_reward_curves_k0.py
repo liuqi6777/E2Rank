@@ -407,7 +407,7 @@ def panel_series(panel_rows, panel, name):
 
 def plot_main(panel_rows, output_dir):
     plt = configure_matplotlib()
-    fig, (ax_a, ax_b) = plt.subplots(1, 2, figsize=(6.75, 2.55))
+    fig, (ax_a, ax_b) = plt.subplots(1, 2, figsize=(6.75, 2.30))
 
     # Panel A: same-definition graded reward, both groups.
     series_a = []
@@ -419,7 +419,6 @@ def plot_main(panel_rows, output_dir):
         series_a.append((display, dict(steps=steps, mean=mean, color=PANEL_A_COLORS[recipe])))
     style_axis(ax_a)
     nice_ylim(ax_a)
-    direct_end_labels(ax_a, series_a)
     ax_a.set_xlabel("Optimizer step")
     ax_a.set_ylabel("Graded nDCG@10 reward")
     ax_a.set_title("(a) Graded training reward", loc="left")
@@ -431,15 +430,17 @@ def plot_main(panel_rows, output_dir):
         steps, mean, sd = panel_series(panel_rows, "B", display)
         if not steps:
             continue
-        add_series(ax_b, steps, mean, sd, PANEL_B_COLORS[key], display)
+        legend_label = {"graded": "Graded", "pairwise": "0.5×pairwise", "combined": "Sum"}[key]
+        add_series(ax_b, steps, mean, sd, PANEL_B_COLORS[key], legend_label)
         series_b.append((display, dict(steps=steps, mean=mean, color=PANEL_B_COLORS[key])))
     style_axis(ax_b)
     nice_ylim(ax_b)
-    direct_end_labels(ax_b, series_b)
     ax_b.set_xlabel("Optimizer step")
     ax_b.set_ylabel("Training reward (RELER)")
     ax_b.set_title("(b) RELER reward components", loc="left")
-    ax_b.legend(loc="upper left", bbox_to_anchor=(0.0, 1.0), handlelength=1.6)
+    ax_b.legend(loc="upper left", bbox_to_anchor=(0.0, 1.0), ncol=3,
+                fontsize=6.5, columnspacing=0.7, handlelength=1.0,
+                borderaxespad=0.3)
 
     fig.subplots_adjust(left=0.09, right=0.985, bottom=0.15, top=0.88, wspace=0.28)
     for suffix in ("pdf", "png"):
@@ -449,9 +450,9 @@ def plot_main(panel_rows, output_dir):
 
 def plot_per_seed(per_seed_rows, output_dir):
     plt = configure_matplotlib()
-    fig = plt.figure(figsize=(6.75, 4.7))
-    grid = fig.add_gridspec(2, 3, height_ratios=(1.25, 1.0), hspace=0.55, wspace=0.32,
-                            left=0.075, right=0.985, top=0.92, bottom=0.09)
+    fig = plt.figure(figsize=(6.75, 4.0))
+    grid = fig.add_gridspec(2, 3, height_ratios=(1.25, 1.0), hspace=0.45, wspace=0.32,
+                            left=0.075, right=0.985, top=0.91, bottom=0.10)
 
     ax_a = fig.add_subplot(grid[0, :])
     grouped = {}
@@ -477,7 +478,13 @@ def plot_per_seed(per_seed_rows, output_dir):
     for series, ends in group_end_means.items():
         end_series.append((series, dict(steps=[113], mean=[statistics.mean(ends)],
                                         color=PANEL_A_COLORS[recipe_of[series]])))
-    direct_end_labels(ax_a, end_series)
+    if not direct_end_labels(ax_a, end_series):
+        group_handles = [plt.Line2D([], [], color=PANEL_A_COLORS[recipe],
+                                    linewidth=1.6, label=display)
+                         for recipe, display in PANEL_A.items()]
+        group_legend = ax_a.legend(handles=group_handles, loc="upper left",
+                                   frameon=False, fontsize=7, handlelength=1.6)
+        ax_a.add_artist(group_legend)
     # Seed identity rides on markers; the marker key sits in the empty lower right.
     handles = [plt.Line2D([], [], color=MUTED, linestyle="none", marker=marker,
                           markersize=3.5, markeredgecolor=SURFACE, markeredgewidth=0.6,
@@ -495,7 +502,10 @@ def plot_per_seed(per_seed_rows, output_dir):
             if row["panel"] == "B" and row["series"] == display:
                 grouped.setdefault(int(row["seed"]), []).append(
                     (int(row["step"]), float(row["value"])))
-        for seed, points in sorted(grouped.items()):
+        for seed in SEED_MARKERS:
+            points = grouped.get(seed)
+            if not points:
+                continue
             points.sort()
             ax.plot([p[0] for p in points], [p[1] for p in points],
                     color=PANEL_B_COLORS[key], linewidth=1.0,
@@ -534,8 +544,8 @@ def write_readme(exports, output_dir, git):
 
 ## 图
 
-- `reward_curves_k0_main.pdf` / `.png` — 正文 F2。面板 A：RELER（`K=0` + pairwise `λ=0.5`）与纯 graded 对照各三 seed 的**同定义** graded nDCG@10 训练 reward（optimizer step 1–{steps[-1]}）；面板 B：RELER 的 graded 项、`0.5×pairwise` 项（加权后数值）与 combined reward。带为逐 step 三 seed 样本 SD（**不是** rollout 内 `reward/std`）。
-- `reward_curves_k0_per_seed.pdf` / `.png` — 附录单 seed 原线；颜色 = 组/分项（与主图一致，线端直接标组名），seed 身份由 marker 编码（○ s42、□ s3407、△ s2026）。
+- `reward_curves_k0_main.pdf` / `.png` — 附录 F2 聚合图（2026-09-25 展示重排；文件名保留）。面板 A：RELER（`K=0` + pairwise `λ=0.5`）与纯 graded 对照各三 seed 的**同定义** graded nDCG@10 训练 reward（optimizer step 1–{steps[-1]}）；面板 B：RELER 的 graded 项、`0.5×pairwise` 项与 combined reward。带为逐 step 三 seed 样本 SD（**不是** rollout 内 `reward/std`）。
+- `reward_curves_k0_per_seed.pdf` / `.png` — 附录单 seed 原线；颜色 = 组/分项（与主图一致，组名由图例标注），seed 身份由 marker 编码（○ s42、□ s3407、△ s2026）。
 
 ## 拟用图注要点
 

@@ -1,5 +1,7 @@
 # G2-R2：E2Rank / MTEB English v2 结果与呈现建议
 
+> 2026-09-25 更新：当前 [总分 CSV](_summary/g2_r2_mteb_v2/run_summary.csv) 已包含五条 D 分支运行，不再是下文 2026-09-18 记录的 E/D/W 九条汇总。论文附录现在只展示从通用后训练 `Qwen/Qwen3-0.6B` 直接出发的两条 seed 42 结果：CL-Strong 的 Retrieval / 全任务 / 类型均值为 **51.52 / 60.99 / 57.27**；`RL-Align070-ShortlistUniform-K0-T1-Pairwise050` 为 **50.04 / 61.01 / 56.80**。RL 的 Retrieval 低 **1.48** 分，另外两项分别高 **0.02**、低 **0.47** 分。两条运行均在汇总中报告 41 个任务、7 个类型、0 个缺失和错误。新 RL 使用 graded nDCG@10 + pairwise 0.5、K=0、G=64、alignment 0.70；下文旧 RL 的 0.80 配方及 E/W 表格保留为历史记录，不代表当前论文选用结果。
+
 更新日期：2026-09-18。用户已完成实验并同步[总分 CSV](_summary/g2_r2_mteb_v2/run_summary.csv)。本次只记录结果和论文呈现建议；脚本、suite 和训练配置恢复为本轮讨论前的版本，保留 D/E/W、W0 依赖及 Strong CL。没有启动或重跑训练，也没有改写输入结果。
 
 ## 结论

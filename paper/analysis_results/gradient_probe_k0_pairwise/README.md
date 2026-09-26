@@ -4,7 +4,8 @@
 
 ## 图
 
-- `gradient_probe_k0_pairwise.pdf` / `.png` — 正文 F1。面板 A：**单 draw 梯度云**（E0、microbatch 位置 100 的同一批 64 次 rollout：完整参数梯度在 8 条固定随机 ±1 轴上的坐标；横轴取 CMP 均值分量最大的轴、纵轴取分量最小者，均按投影信号归一；灰线连接同一 draw 的两个估计器）。RLOO 的云把原点罩在里面（单步方向被噪声淹没），CMP 收拢成与原点分离的小团；右上插图按 CMP 自身尺度放大该团（64 个 draw 加两估计器均值，RLOO 均值落在 CMP 团簇内部——无偏的视觉版）。面板 B：**单步信噪比**（`√signal²/noise_rms`，对数轴，"signal = noise" 参考线）：CMP 4–6.5，RLOO 0.23–0.32。耗时与比值不单独成面板：CMP 每趟前后向仅慢 ~13%，`V_CMP/V_RLOO` 0.002–0.003（降噪 300–600 倍，等效于把 ~300–600 个独立 rollout 梯度平均才追上 CMP 单步），`V×t` 比值 0.002–0.004，见 `probes.csv` 的 `variance_ratio`/`variance_time_ratio` 列。
+- `gradient_cloud_main.pdf` / `.png` — 正文紧凑单面板，只呈现同一 probe 的配对梯度云；图注给出完整梯度定量结果，轴编号沿用完整图的归一化坐标。
+- `gradient_probe_k0_pairwise.pdf` / `.png` — 附录 E.3 完整诊断。面板 A：**单 draw 梯度云**（E0、microbatch 位置 100 的同一批 64 次 rollout：完整参数梯度在 8 条固定随机 ±1 轴上的坐标；横轴取 CMP 均值分量最大的轴、纵轴取分量最小者，均按投影信号归一；灰线连接同一 draw 的两个估计器）。RLOO 的云覆盖原点，CMP 收拢成与原点分离的小团；插图按 CMP 自身尺度放大该团，并标出两估计器均值。面板 B：**单步信噪比**（`√signal²/noise_rms`，对数轴，"signal = noise" 参考线）：CMP 3.30–6.00，RLOO 0.19–0.27。耗时与比值不单独成面板：CMP 每趟前后向仅慢 ~13%，`V_CMP/V_RLOO` 0.0017–0.0034（降噪约 290–590 倍），`V×t` 比值 0.0019–0.0039，见 `probes.csv` 的 `variance_ratio`/`variance_time_ratio` 列。
 
 ## 结果
 
@@ -14,8 +15,8 @@
 | step 50 | 0.0030 | 0.0033 | 339× | 46.7 / 47.2 |
 | step 113 | 0.0031 | 0.0035 | 323× | 27.4 / 27.6 |
 
-- **CMP 把完整 encoder 梯度的 rollout 方差降低约 300–600 倍**，三个固定状态、九个 probe 一致；扣除前后向耗时后（CMP 慢 ~13%）仍低约两个半数量级。
-- 无偏性：5/9 个 probe 的两估计器均值梯度差**未分辨**（无偏平方差 ≤ 0）；其余分辨出的偏差 ≤ signal² 的 3%。两估计器的 signal² 估计逐 probe 相符。
+- **CMP 把完整 encoder 梯度的 rollout 方差降低约 290–590 倍**，三个固定状态、九个 probe 一致；扣除前后向耗时后（CMP 慢 ~13%）仍低约两个半数量级。
+- 均值相容性：5/9 个 probe 的两估计器均值梯度差**未分辨**（扣除采样噪声后的平方差估计 ≤ 0）；其余分辨出的平方差 ≤ signal² 的 3%。两估计器的 signal² 估计逐 probe 相符；有限 draw 不构成严格无偏性证明。
 - 配对完整性：所有 probe 的 pairwise reward 逐对差 = [0.0]（bit 级一致）；动作/shortlist/graded reward hash 逐 draw 相等（探针内强制校验）。
 - 分项（附录素材，见 `probes.csv`）：graded 与 pairwise 梯度范数、夹角随状态变化（夹角从 E0 的 ~0.6 收缩到 step 113 的 ≈0）；分解残差 `‖g_total−(g_graded+0.5·g_pairwise)‖/‖g_total‖` 最大 1.4%。
 
@@ -30,7 +31,7 @@
 - `probes.csv` — 每个 probe 一行：方差比、V×t、两估计器的 V/noise_rms/mean norm/signal²/耗时、均值差分辨标记与偏差占比、分项统计、来源与 hash。
 - `gradient_cloud_e0_micro100.csv` + `_meta.json` — 面板 A 的逐 draw 数据：64 draw × 两估计器的归一化坐标与所选两轴的原始点积；meta 记录轴选择/定向、投影信号尺度、两估计器均值、CMP σ、插图窗口与缩放、轴方差校验、配对与 hash 校验说明（同 draw 序号 = 同一 rollout）。
 - `snr_probes.csv` — 面板 B 的 9 个点（state / microbatch / snr_cp / snr_rloo）。
-- 原始 JSON 不入库（`outputs/` 被忽略）；`probes.csv` 的 `git_commit` 与 `diagnostic_sha256` 可定位生成版本。
+- 原始 JSON 不入库（`outputs/` 被忽略）；`probes.csv` 的 `git_commit` 与 `diagnostic_sha256` 可定位生成版本。仅用本目录的 CSV/JSON 重画论文图：`python scripts/analyze_f1_probe.py --plot-only`。
 
 ## 边界（图注须带上）
 

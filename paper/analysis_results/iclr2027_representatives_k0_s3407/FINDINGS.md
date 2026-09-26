@@ -1,6 +1,6 @@
 # 代表 checkpoint embedding 分析结论（F3/F5 数据基础）
 
-更新：2026-09-25。seed 3407 案例分析，`paper/analysis/bright_representatives.json`（E0、InfoNCE、LambdaLoss、Listwise=`K=0` 纯 graded、RELER=`K=0`+pairwise λ=0.5）× 4 个 BRIGHT 领域（biology、earth_science、robotics、theoremqa_theorems，original query）。产物由 `scripts/analyze_embeddings.py` 生成，报告快照 `reports/0cbf2c8d82934128/`。本文件只汇总已实测数字；所有值可从 `retrieval/queries.csv`、`paired_queries.csv`、`rank_bins.csv`、`perturb.csv`、`geometry.csv` 复算。
+更新：2026-09-25。seed 3407 案例分析，`paper/analysis/bright_representatives.json`（E0、InfoNCE、LambdaLoss、Listwise=`K=0` 纯 graded、RELER=`K=0`+pairwise λ=0.5）× 4 个 BRIGHT 领域（biology、earth_science、robotics、theoremqa_theorems，original query）。产物由 `scripts/analyze_embeddings.py` 生成，报告快照 `reports/0cbf2c8d82934128/`。本文件只汇总已实测数字；下述聚合量可从快照中的 `retrieval.csv`、`paired_queries.csv`、`rank_bins.csv`、`perturb.csv`、`geometry.csv` 复算。
 
 ## 协议复现验证
 
@@ -35,13 +35,13 @@
 逐领域差值（分析值）：
 
 - RELER−InfoNCE：biology **+0.131**、earth_science +0.053、robotics **−0.026**、theoremqa_theorems **−0.035**。
-- RELER−Listwise（同协议仅差 λ）：biology **+0.066**，其余三领域均 +0.002——**pairwise 的宏平均增益几乎全部来自 biology**。
+- RELER−Listwise（同协议仅差 λ）：biology **+0.066**，其余三领域均 +0.002——在这四个领域的等权均值中，pairwise 增量几乎都来自 biology；完整 12 子集三 seed 的受益领域还包括 Stack Overflow 和 Sustainable Living，可从 [主表逐 seed 来源](../../_summary/k0_bright/subset_summary.csv) 核对。
 
 F3 若进正文，robotics/theoremqa 的负值必须在图中可见，不得只展示优势领域。
 
-## 结论 3：query 扰动下 RELER 最稳健
+## 结论 3：固定候选重排的 query 扰动
 
-`perturb.csv`（scope=candidates，每强度 64 samples，逐 query 固定种子；干净基线为隐式 alignment=1.0）。nDCG 相对自身干净基线的相对下降（4 领域均值，%）：
+`perturb.csv`（scope=candidates，每强度 64 samples，逐 query 固定种子；干净基线为隐式 alignment=1.0）。nDCG 相对自身干净基线的绝对变化（4 领域等权平均，×100；单位为 nDCG 百分点，不是相对降幅）：
 
 | alignment | 1.00 | 0.99 | 0.95 | 0.90 | 0.80 | 0.70 |
 |---|---|---|---|---|---|---|
@@ -51,28 +51,28 @@ F3 若进正文，robotics/theoremqa 的负值必须在图中可见，不得只�
 | Listwise | 0 | +0.06 | 0.00 | −0.14 | −0.48 | −1.05 |
 | RELER | 0 | −0.06 | −0.03 | −0.12 | −0.39 | **−0.82** |
 
-- 最强档（0.70）RELER 下降最小；严格正确 pair 翻转率（0.90 档）同为 RELER 最低：5.2%（Listwise 6.1%、InfoNCE 8.2%、E0 8.7%、LambdaLoss 10.4%）。
-- 0.95/0.99 弱档差异在采样噪声量级（逐 query `ndcg_mc_se` ≈ 0.003，见各模型 `perturb/queries.csv`），**不作为信号**；聚合表 `perturb.csv` 未含 SE 列，画图需自算。
+- 最强档（0.70）RELER 在这四个领域的平均绝对下降最小；严格正确 pair 翻转率（0.90 档）同为 RELER 最低：5.2%（Listwise 6.1%、InfoNCE 8.2%、E0 8.7%、LambdaLoss 10.4%）。
+- 0.95/0.99 弱档的平均变化接近零，且聚合表 `perturb.csv` 未含 Monte Carlo 标准误，**不据此判断模型间的微小差异**。
 
-## 结论 4：检索改进不依赖表示几何重塑
+## 结论 4：表示几何的描述性统计
 
-`geometry.csv`（4 领域均值）：
+`geometry.csv`（`role=query`，4 领域等权均值）：
 
 | 模型 | effective rank（query） | uniformity | ‖均值向量‖ | 邻域保留率（相对 E0） |
 |---|---|---|---|---|
-| E0 | 168.7 | −2.83 | 0.519 | 1.000 |
-| InfoNCE | 129.7 | −1.88 | 0.717 | 0.660 |
-| LambdaLoss | **76.0** | **−0.94** | 0.870 | 0.624 |
-| Listwise | 155.3 | −3.21 | 0.396 | 0.679 |
-| RELER | 152.6 | −3.12 | 0.421 | 0.638 |
+| E0 | 63.6 | −2.79 | 0.531 | 1.000 |
+| InfoNCE | 46.4 | −1.70 | 0.749 | 0.688 |
+| LambdaLoss | **46.2** | **−1.23** | 0.828 | 0.690 |
+| Listwise | 56.1 | −2.99 | 0.463 | 0.721 |
+| RELER | 53.9 | −2.87 | 0.494 | 0.676 |
 
-- LambdaLoss 出现典型各向同性坍缩（effective rank 76、向量范数 0.87）；**RELER/Listwise 的几何与 E0 基本持平**——CMP 训练的增益不是靠重塑表示空间。
-- `paired_queries.csv`：RELER 在 E0 选定的固定文档对上 margin 提升最大（Δfixed margin **+0.156**，Listwise +0.102、InfoNCE +0.125），与最稳健的扰动表现一致。
-- 代价：所有微调模型只保留 E0 query–query 邻域的 63–72%（RELER 0.668），排序重组是实质性的，不是微调微扰。
+- LambdaLoss 的 query effective rank 较低、均值向量范数较高；RELER/Listwise 的 effective rank 更接近 E0，但邻域保留率约为 0.68/0.72。不能从这些描述性统计推断 CMP 或 pairwise 项的因果机制。
+- `paired_queries.csv`：RELER 在 E0 选定的固定文档对上 margin 提升最大（Δfixed margin **+0.156**，Listwise +0.102、InfoNCE +0.125），该 margin 与扰动结果只是相关的描述性观察。
+- 所有微调模型在这四个领域的 query–query 邻域保留率约为 0.68–0.72（等领域权重）；若按全部 396 个 query 加权，RELER 为 0.668。微调后邻域结构有明显变化。
 
 ## 一句话结论
 
-RELER（`K=0` graded + 0.5×pairwise，RLOO+CMP）的收益主要来自把 E0 排名 11–100 的边缘查询推进前 10（biology 域贡献大头），并在 query 侧 vMF 扰动下最稳健、表示几何不坍缩；代价是 E0 已解决查询的小幅回退、robotics/theoremqa 略降。
+在 seed 3407 的四领域案例中，RELER 相对 E0 的最大平均 query-level nDCG 增量位于初始最佳正例 rank 11–100 桶；相对纯 graded 的增量主要来自 biology。Robotics/TheoremQA 相对 InfoNCE 较弱，固定候选的强 query 扰动下平均绝对 nDCG 降幅较小。不能据此推断所有新增收益都来自将正例推进前 10，或归因于表示几何。
 
 ## 局限与图注要求
 

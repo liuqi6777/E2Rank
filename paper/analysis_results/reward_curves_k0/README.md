@@ -5,8 +5,8 @@
 
 ## 图
 
-- `reward_curves_k0_main.pdf` / `.png` — 正文 F2。面板 A：RELER（`K=0` + pairwise `λ=0.5`）与纯 graded 对照各三 seed 的**同定义** graded nDCG@10 训练 reward（optimizer step 1–113）；面板 B：RELER 的 graded 项、`0.5×pairwise` 项（加权后数值）与 combined reward。带为逐 step 三 seed 样本 SD（**不是** rollout 内 `reward/std`）。
-- `reward_curves_k0_per_seed.pdf` / `.png` — 附录单 seed 原线；颜色 = 组/分项（与主图一致，线端直接标组名），seed 身份由 marker 编码（○ s42、□ s3407、△ s2026）。
+- `reward_curves_k0_main.pdf` / `.png` — 附录 F2 聚合图（2026-09-25 展示重排；文件名保留）。面板 A：RELER（`K=0` + pairwise `λ=0.5`）与纯 graded 对照各三 seed 的**同定义** graded nDCG@10 训练 reward（optimizer step 1–113）；面板 B：RELER 的 graded 项、`0.5×pairwise` 项（加权后数值）与 combined reward。带为逐 step 三 seed 样本 SD（**不是** rollout 内 `reward/std`）。
+- `reward_curves_k0_per_seed.pdf` / `.png` — 附录单 seed 原线；颜色 = 组/分项（与主图一致，组名由图例标注），seed 身份由 marker 编码（○ s42、□ s3407、△ s2026）。
 
 ## 拟用图注要点
 

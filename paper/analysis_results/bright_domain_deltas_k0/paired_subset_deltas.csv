@@ -1,0 +1,49 @@
+subset,label,seed,delta_ndcg_points
+biology,Biology,42,11.330000000000002
+biology,Biology,3407,13.139999999999997
+biology,Biology,2026,10.48
+biology,Biology,mean,11.65
+earth_science,Earth science,42,2.8500000000000023
+earth_science,Earth science,3407,5.049999999999999
+earth_science,Earth science,2026,1.689999999999997
+earth_science,Earth science,mean,3.1966666666666663
+economics,Economics,42,2.179999999999999
+economics,Economics,3407,2.539999999999998
+economics,Economics,2026,2.309999999999995
+economics,Economics,mean,2.3433333333333306
+psychology,Psychology,42,0.7900000000000018
+psychology,Psychology,3407,1.36
+psychology,Psychology,2026,-0.31999999999999806
+psychology,Psychology,mean,0.6100000000000013
+robotics,Robotics,42,-2.7799999999999994
+robotics,Robotics,3407,-2.890000000000001
+robotics,Robotics,2026,-2.3300000000000014
+robotics,Robotics,mean,-2.6666666666666674
+stackoverflow,Stack Overflow,42,1.1199999999999988
+stackoverflow,Stack Overflow,3407,0.5400000000000016
+stackoverflow,Stack Overflow,2026,-0.13000000000000234
+stackoverflow,Stack Overflow,mean,0.5099999999999993
+sustainable_living,Sustainable living,42,-1.689999999999997
+sustainable_living,Sustainable living,3407,-2.2500000000000018
+sustainable_living,Sustainable living,2026,-2.5600000000000014
+sustainable_living,Sustainable living,mean,-2.166666666666667
+leetcode,LeetCode,42,-0.8900000000000006
+leetcode,LeetCode,3407,-0.689999999999999
+leetcode,LeetCode,2026,-0.7300000000000001
+leetcode,LeetCode,mean,-0.7699999999999999
+pony,Pony,42,1.0
+pony,Pony,3407,1.08
+pony,Pony,2026,0.8999999999999999
+pony,Pony,mean,0.9933333333333333
+aops,AoPS,42,-0.7000000000000003
+aops,AoPS,3407,-1.25
+aops,AoPS,2026,-0.5000000000000001
+aops,AoPS,mean,-0.8166666666666668
+theoremqa_questions,TheoremQA questions,42,-0.2600000000000019
+theoremqa_questions,TheoremQA questions,3407,-0.9200000000000014
+theoremqa_questions,TheoremQA questions,2026,-0.789999999999999
+theoremqa_questions,TheoremQA questions,mean,-0.6566666666666674
+theoremqa_theorems,TheoremQA theorems,42,-3.6900000000000044
+theoremqa_theorems,TheoremQA theorems,3407,-3.610000000000002
+theoremqa_theorems,TheoremQA theorems,2026,-2.9299999999999993
+theoremqa_theorems,TheoremQA theorems,mean,-3.410000000000002

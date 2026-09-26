@@ -1,5 +1,7 @@
 # Qwen3-Embedding-4B LoRA 核心实验
 
+2026-09-25 状态：[`q4b_lora_bright`](../paper/_summary/q4b_lora_bright/) 已汇入本 suite 全部 22 个 original-query 结果（21 个训练、E0 一次）、主表 10 个 GPT-reasoning-query 结果和 384 个子集分数。论文主表采用 `Q4B-LORA-RELER-K0`：original **30.46 ± 0.55**，GPT-reasoning **40.00 ± 0.37**。旧 `Q4B-LORA-RELER` 及三项 K7 消融保留在附录；下文为配置与复现说明。
+
 ## ICLR 2027 主表补实验：`K=0 + pairwise`
 
 论文主表另需一个 4B 配方：保留每个 query 的全部自有候选，不加入跨 query 负例（`K=0`），继续使用 graded nDCG@10 + pairwise `λ=0.5`、RLOO+CMP、`G=64`、`ρ=0.70`、LoRA rank 16 和原有 113-step/三 seed 预算。按本次决定，学习率设为 `2e-4`。相对原 `Q4B-LORA-RELER`，解析后的训练配置只改变 `reward_shortlist_size: 7 → 0` 与学习率 `1e-4 → 2e-4`；两者的结果因此不是只改变 `K` 的单因素比较。新运行使用同一 suite 中独立的 `Q4B-LORA-RELER-K0[-Seed...]` 输出目录；下文的 `--set all` 仍指原有 18 个训练，不会隐式启动这个补实验。
@@ -36,7 +38,7 @@ python scripts/run_qwen3_embedding_4b_lora.py train --set k0 --seeds 42 3407 202
 
 - base model 固定为 `Qwen/Qwen3-Embedding-4B` revision `5cf2132abc99cad020ac570b19d031efec650f2b`。
 - LoRA 使用 rank 16、alpha 32、dropout 0，覆盖 attention 和 MLP 的七类 projection。
-- 学习率固定为 `1e-4`，不做 LR sweep；这是本轮唯一的 4B LoRA 训练配方。
+- 原有六配方矩阵使用学习率 `1e-4`；后来增加的 K0 主配方使用 `2e-4`，见上文。
 - 每卡 microbatch 8、gradient accumulation 2，在 8 卡上保持 global batch 128。
 - 使用 BF16、gradient checkpointing 和 ZeRO-3。训练结束后自动把 adapter 合并到固定 revision 的 base model，再按统一 embedding protocol 运行 BRIGHT。
 
