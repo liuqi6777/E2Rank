@@ -36,8 +36,8 @@ BRIGHT_SPLIT = "standard"
 BRIGHT_DATASET_PATH = BRIGHT_DATASET
 BRIGHT_DATASET_CONFIG = BRIGHT_CONFIG
 BRIGHT_DATASET_REVISION = BRIGHT_REVISION
-BRIGHT_QUERY_SETS = ("original", "gpt-reasoning")
-BRIGHT_EMPTY_REASONING = {"", "empty", "n/a"}
+BRIGHT_QUERY_SETS = ("original", "gpt4-reasoning", "gpt-reasoning")
+BRIGHT_GPT4_QUERY_CONFIG = "gpt4_reason"
 BRIGHT_INSTRUCTIONS = {
     "biology": "Given a biology post, retrieve relevant passages that help answer the post.",
     "earth_science": "Given an earth science post, retrieve relevant passages that help answer the post.",
@@ -142,7 +142,8 @@ class EvalArguments:
         metadata={
             "help": (
                 "BRIGHT query representation: 'original' uses the source query; "
-                "'gpt-reasoning' appends the dataset's GPT reasoning when available"
+                "'gpt4-reasoning' uses official gpt4_reason.query verbatim. "
+                "'gpt-reasoning' is an alias for the corrected protocol"
             )
         },
     )
@@ -164,6 +165,7 @@ class EvalArguments:
                 f"Unknown BRIGHT query set {self.bright_query_set!r}; "
                 f"expected one of {list(BRIGHT_QUERY_SETS)}"
             )
+        self.bright_query_set = _canonical_bright_query_set(self.bright_query_set)
 
 
 def get_tasks(
@@ -263,57 +265,56 @@ def _bright_result_subsets(result) -> set[str]:
     }
 
 
-def _bright_query_text(example: dict, query_set: str) -> tuple[str, bool]:
-    query = example["query"]
-    if query_set == "original":
-        return query, False
-    if query_set != "gpt-reasoning":
+def _canonical_bright_query_set(query_set: str) -> str:
+    # Keep old CLI invocations working, but never reuse their contaminated results.
+    if query_set == "gpt-reasoning":
+        return "gpt4-reasoning"
+    if query_set not in BRIGHT_QUERY_SETS:
         raise ValueError(f"Unsupported BRIGHT query set: {query_set!r}")
-
-    reasoning = example.get("reasoning")
-    if reasoning is None or reasoning.strip().lower() in BRIGHT_EMPTY_REASONING:
-        return query, True
-    return f"{query}\n\n{reasoning.strip()}", False
+    return query_set
 
 
 def _load_bright_reasoning_queries(
     subsets: list[str],
     args: EvalArguments,
 ) -> dict[str, dict[str, str]]:
+    """Load official GPT-4 retrieval inputs, never the gold reasoning annotations."""
     queries = {}
     for subset in subsets:
         examples = datasets.load_dataset(
             BRIGHT_DATASET_PATH,
-            "examples",
+            BRIGHT_GPT4_QUERY_CONFIG,
             split=subset,
             cache_dir=args.bright_cache_dir,
             revision=args.bright_dataset_revision,
         )
         subset_queries = {}
-        fallback_count = 0
         for example in examples:
-            text, used_fallback = _bright_query_text(example, args.bright_query_set)
-            subset_queries[example["id"]] = text
-            fallback_count += used_fallback
-        if fallback_count:
-            logger.info(
-                "BRIGHT subset %s has %d/%d unavailable GPT reasonings; using the "
-                "original query for those examples",
-                subset,
-                fallback_count,
-                len(subset_queries),
-            )
+            qid, text = example["id"], example.get("query")
+            if qid in subset_queries:
+                raise ValueError(f"Duplicate BRIGHT GPT-4 query ID: {subset}/{qid}")
+            if not isinstance(text, str) or text.strip().lower() in {"", "empty", "n/a"}:
+                raise ValueError(f"Missing official BRIGHT GPT-4 query: {subset}/{qid}")
+            # This is already the complete retrieval input; do not append gold annotations.
+            subset_queries[qid] = text
+        logger.info(
+            "Loaded %d official %s queries for BRIGHT %s",
+            len(subset_queries), BRIGHT_GPT4_QUERY_CONFIG, subset,
+        )
         queries[subset] = subset_queries
     return queries
 
 
 def load_official_bright(task, subsets: list[str], args: EvalArguments) -> None:
     """Bypass MTEB's older pin and explicitly load BRIGHT's official documents config."""
+    query_set = _canonical_bright_query_set(args.bright_query_set)
     identity = {
         "path": BRIGHT_DATASET_PATH,
         "config": BRIGHT_DATASET_CONFIG,
         "revision": args.bright_dataset_revision,
-        "query_set": args.bright_query_set,
+        "query_set": query_set,
+        "query_config": BRIGHT_GPT4_QUERY_CONFIG if query_set == "gpt4-reasoning" else "examples",
+        "query_field": "query",
         "subsets": sorted(subsets),
     }
     if getattr(task, "_e2rank_bright_identity", None) == identity:
@@ -325,7 +326,7 @@ def load_official_bright(task, subsets: list[str], args: EvalArguments) -> None:
         cache_dir=args.bright_cache_dir,
         revision=args.bright_dataset_revision,
     )
-    if args.bright_query_set == "gpt-reasoning":
+    if query_set == "gpt4-reasoning":
         reasoning_queries = _load_bright_reasoning_queries(subsets, args)
         for subset, subset_queries in reasoning_queries.items():
             original_ids = set(queries[subset][BRIGHT_SPLIT])
@@ -393,11 +394,12 @@ def run_bright(task, model, args, **kwargs):
         )
 
     output_folder = args.output_dir
-    if args.bright_query_set != "original":
-        output_folder = str(Path(output_folder) / f"query-{args.bright_query_set}")
+    query_set = _canonical_bright_query_set(args.bright_query_set)
+    if query_set != "original":
+        output_folder = str(Path(output_folder) / f"query-{query_set}")
     logger.info(
         "Using BRIGHT query set %s; results will be written under %s",
-        args.bright_query_set,
+        query_set,
         output_folder,
     )
 

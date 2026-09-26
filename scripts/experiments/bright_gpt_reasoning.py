@@ -19,7 +19,8 @@ from run_g1_stability import SUBSETS
 SEEDS = (42, 3407, 2026)
 METHODS = ("e0", "infonce", "lambdaloss", "reler")
 RESULT_NAME = "bright_gpt_reasoning"
-QUERY_SET = "gpt-reasoning"
+# Separate namespace: legacy query-gpt-reasoning results used gold annotations.
+QUERY_SET = "gpt4-reasoning"
 
 
 @dataclass(frozen=True)

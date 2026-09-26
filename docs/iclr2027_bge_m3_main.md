@@ -26,6 +26,6 @@ python scripts/run_iclr2027_bge_m3_main.py eval
 python scripts/run_iclr2027_bge_m3_main.py status
 ```
 
-`train` 遇到已有完整最终权重时跳过训练并补评估；已有不完整训练目录会报错，不自动覆盖或续训。`eval` 不需要 ReasonRank 训练文件，只需模型权重及 BRIGHT 评估依赖。原始 query 结果写在各 run 的 `mteb_eval/bright/`，reasoning 结果写在 `mteb_eval/bright_gpt_reasoning/query-gpt-reasoning/`。更换机器上的数据路径或输出根目录时，复制 settings 文件并通过 `--config` 指定。
+`train` 遇到已有完整最终权重时跳过训练并补评估；已有不完整训练目录会报错，不自动覆盖或续训。`eval` 不需要 ReasonRank 训练文件，只需模型权重及 BRIGHT 评估依赖。原始 query 结果写在各 run 的 `mteb_eval/bright/`，reasoning 结果写在 `mteb_eval/bright_gpt_reasoning/query-gpt4-reasoning/`。更换机器上的数据路径或输出根目录时，复制 settings 文件并通过 `--config` 指定。
 
 本配置仅准备实验，未启动 9 次 GPU 训练。公开结果与论文主表需要训练和两套评估完成后再汇总。
