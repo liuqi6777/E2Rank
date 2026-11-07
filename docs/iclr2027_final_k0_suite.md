@@ -1,5 +1,23 @@
 # ICLR 2027：0.6B K=0 论文实验 suite
 
+## Rebuttal：Group size 消融（2026-11-07）
+
+入口：[`run_iclr2027_group_size.py`](../scripts/run_iclr2027_group_size.py)。根据本轮决定，E3 新增 G=16/32/128，各用 42/3407/2026 三个 seed，共 9 次训练；G=64 从原 final suite 读取，不重复训练。新 suite 独立输出到 `checkpoints/iclr2027-rebuttal-group-size/`。每条配置与同 seed 主配方逐字段比较，只允许 `group_size`、运行名和输出目录不同：Q3E-0.6B、K=0、CMP、graded nDCG + pairwise 0.5、rho 0.70、113 steps、global batch 128、8 卡均保持一致。
+
+```bash
+python scripts/run_iclr2027_group_size.py check
+python scripts/run_iclr2027_group_size.py train
+# 也可以分批执行；每次训练完成后自动评测 original-query BRIGHT
+python scripts/run_iclr2027_group_size.py train --groups 16 32 128 --seeds 42
+# 训练成功但评测中断时，单独补评测
+python scripts/run_iclr2027_group_size.py eval --groups 128 --seeds 42
+python scripts/run_iclr2027_group_size.py summary
+```
+
+`check` 在 CPU 上检查配置和训练数据路径，不加载模型。`train` 跳过已有完整训练及评测；不覆盖非空的未完成输出，也不自动续训。修改数据/模型位置使用 `--config`；对应的 G64 settings 用 `--control-config` 指定，两边除 G 外的配置必须一致。运行矩阵见 [`suite_iclr2027_group_size.yaml`](../configs/experiments/iclr2027/suite_iclr2027_group_size.yaml)。
+
+`summary` 始终汇总完整的四档 × 三 seed 矩阵，输出到 `outputs/iclr2027_group_size/`（可用 `--summary-dir` 修改），包含逐 seed/12 子集 CSV、三 seed 均值与样本 SD CSV、带来源的 JSON。分数单位为 nDCG@10 ×100，缺失结果留空，只有三个 seed 全部完成才计算聚合；格式损坏或不完整的评测文件会报错。G64 需要原 final suite 输出目录中的原始评测文件，不使用旧 G32 配方结果。本脚本先提供质量消融；E3 的细分耗时与显存 profiling、同机 InfoNCE 成本对照仍需另行采集，不能用 G² 代替实测成本。
+
 2026-09-25 状态：本地 [`k0_bright`](../paper/_summary/k0_bright/) 已汇入全部 64 个 original-query 结果（36 个新训练、28 个导入项）、10 个主表 GPT-reasoning-query 结果及 888 个子集分数。论文的 0.6B 主表和本轮消融已填齐；结果解读与剩余分析工作见[结果文档](../paper/ICLR2027_RESULTS_REORGANIZATION.md)。以下保留 suite 的执行与复现说明。
 
 本 suite 对应[最终表格草稿](../paper/ICLR2027_RESULTS_REORGANIZATION.md)和[分析图计划](../paper/ANALYSIS_PLAN.md)。[suite 配置](../configs/experiments/iclr2027/suite_iclr2027_final_k0.yaml)现列出 **39 个训练（13 配方 × 3 seed）**和 **28 个已完成结果导入项**；新增的 `no_cmp` 三 seed 原始查询 BRIGHT 结果已汇总至 [`paper/_summary/k0_bright/`](../paper/_summary/k0_bright/)，Avg. 为 **21.91±0.70**（完整 RELER 为 **23.38±0.17**）。[独立 settings](../configs/experiments_iclr2027_final.yaml)将全部输出放到 `checkpoints/iclr2027-final-k0/`，不改旧 `checkpoints/iclr2027-r2/`。入口为 [`scripts/run_iclr2027_final_k0.py`](../scripts/run_iclr2027_final_k0.py)。RAG 和 4B 不在此 suite。
