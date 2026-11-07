@@ -29,15 +29,17 @@ execution_stages:
     runs: [G2-R2-D-CL]
   - name: Direct Qwen3-0.6B RL with the G1 K0 main recipe
     runs: [G2-R2-D-RL-Align070-ShortlistUniform-K0-T1-Pairwise050]
+  - name: Rebuttal Table 12 direct K0 RL seed repeats
+    runs: [G2-R2-D-RL-Align070-ShortlistUniform-K0-T1-Pairwise050-Seed3407, G2-R2-D-RL-Align070-ShortlistUniform-K0-T1-Pairwise050-Seed2026]
 
 runs:
   G2-R2-D-CL: {group: G2, kind: reuse, scope: reference}
-  G2-R2-D-RL-Align070-ShortlistUniform-K0-T1-Pairwise050:
+  G2-R2-D-RL-Align070-ShortlistUniform-K0-T1-Pairwise050: &direct_k0_rl
     group: G2
     objective: rl
     scope: joint
     control: G2-R2-D-CL
-    overrides:
+    overrides: &direct_k0_recipe
       relevance_scheme: graded
       reward_type: ndcg_in_batch
       reward_ndcg_k: 10
@@ -70,3 +72,16 @@ runs:
       reward_combine: sum
       kl_coef: 0.0
       aux_infonce_coef: 0.0
+  # Repeat the complete training randomness, including the independent rollout RNG.
+  G2-R2-D-RL-Align070-ShortlistUniform-K0-T1-Pairwise050-Seed3407:
+    <<: *direct_k0_rl
+    seed: 3407
+    overrides:
+      <<: *direct_k0_recipe
+      rollout_seed: 3407
+  G2-R2-D-RL-Align070-ShortlistUniform-K0-T1-Pairwise050-Seed2026:
+    <<: *direct_k0_rl
+    seed: 2026
+    overrides:
+      <<: *direct_k0_recipe
+      rollout_seed: 2026

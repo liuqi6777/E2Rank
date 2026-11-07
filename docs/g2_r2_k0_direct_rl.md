@@ -1,5 +1,8 @@
 # G2-R2：从 Qwen3-0.6B 直接使用当前 K=0 配方训练 RL
 
+2026-11-07：Table 12 的 InfoNCE（D-CL-Strong）与本配方补齐三 seed，默认新增
+3407/2026，见[统一入口与汇总说明](g2_table12_seeds.md)。本文下述单行入口继续只跑原 seed42。
+
 新增一条 E2Rank 训练：`G2-R2-D-RL-Align070-ShortlistUniform-K0-T1-Pairwise050`，seed 42。从 `Qwen/Qwen3-0.6B` 初始化，不加载 CL 或其他 RL checkpoint。该模型是通用后训练 LLM；本实验不使用纯预训练的 `Qwen/Qwen3-0.6B-Base`。
 
 旧 `G2-R2-D-RL` 使用纯 graded nDCG、G64、CP、alignment 0.80 和跨 query 候选。新行迁移当前 [G1 论文主配方](../paper/ICLR2027_RESULTS_REORGANIZATION.md)：graded nDCG@10 + 原始正例 pairwise `λ=0.5`、K=0（仅自有候选）、RLOO+CMP、双侧 vMF product、G64、固定 alignment 0.70、frozen-document rescaling。新旧两行共同使用 E2Rank 数据、模型初始化、表示协议、LR `5e-6`、global batch 128、1200 optimizer steps 和最终 MTEB English v2 评测。由于一次改变了 reward、候选和探索强度，结果比较衡量整套配方，不能归因于单一组件。G1 的 113 步预算不转移到此实验。

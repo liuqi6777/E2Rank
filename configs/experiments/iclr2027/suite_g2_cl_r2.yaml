@@ -43,9 +43,11 @@ execution_stages:
     runs: [G2-R2-BGE-D-CL, G2-R2-BGE-E-CL, G2-R2-BGE-W-CL]
   - name: Additional E2Rank Strong CL at matched initializations
     runs: [G2-R2-D-CL-Strong, G2-R2-E-CL-Strong, G2-R2-W-CL-Strong]
+  - name: Rebuttal Table 12 direct Strong CL seed repeats
+    runs: [G2-R2-D-CL-Strong-Seed3407, G2-R2-D-CL-Strong-Seed2026]
 
 runs:
-  G2-R2-D-CL-Strong:
+  G2-R2-D-CL-Strong: &direct_strong_cl
     group: G2
     objective: infonce
     scope: joint
@@ -54,6 +56,12 @@ runs:
       baseline_in_batch_include_negatives: true
       baseline_cross_device_negatives: true
       baseline_detach_in_batch_documents: false
+  G2-R2-D-CL-Strong-Seed3407:
+    <<: *direct_strong_cl
+    seed: 3407
+  G2-R2-D-CL-Strong-Seed2026:
+    <<: *direct_strong_cl
+    seed: 2026
   G2-R2-E-CL-Strong:
     group: G2
     objective: infonce

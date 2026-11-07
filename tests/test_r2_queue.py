@@ -235,7 +235,9 @@ def test_strong_cl_suite_preserves_training_budget_and_shared_initializations():
                                ('suite_g2_cl_r2.yaml', ROOT / 'configs/experiments_g2_cl_r2.yaml')]:
         suite_path = ROOT / 'configs/experiments/iclr2027' / filename
         suite = e.apply_settings(e.load_suite(suite_path), settings)
-        strong_names = [name for name in e.ordered_run_ids(suite) if '-CL-Strong' in name]
+        strong_names = [name for name in e.ordered_run_ids(suite)
+                        if '-CL-Strong' in name
+                        and (filename != 'suite_g2_cl_r2.yaml' or e.run_seed(suite, name) == 42)]
         assert len(strong_names) == 3
         for name in strong_names:
             strong = e.resolve_run(suite, suite_path, name, nproc=8)
