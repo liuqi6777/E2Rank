@@ -488,3 +488,150 @@ runs:
       rag_cross_device_negatives: true
       rag_group_size: 32
       rag_target_alignment: 0.70
+
+  # Rebuttal E1: repeat the four paper recipes; reuse their original seed 42.
+  # Only training/data seed and run identity change; tuning split stays fixed.
+  G3-R2-CL-AnswerMasked-Anchor050-Seed3407:
+    group: G3
+    objective: infonce
+    scope: query_only
+    control: G3-R2-CL-AnswerMasked-Anchor050
+    protocol:
+      training_relevance: qrel_positives_answer_bearing_unjudged
+      anchor: e0_cosine_coef_0.5
+    overrides:
+      rag_relevance_scheme: answer_masked
+      rag_anchor_coef: 0.5
+    seed: 3407
+  G3-R2-RL-GradedNDCG-Anchor050-Seed3407:
+    group: G3
+    objective: rl
+    scope: query_only
+    control: G3-R2-RL-GradedNDCG-Anchor050
+    protocol:
+      retrieval_reward: graded_ndcg_at_10
+      retrieval_relevance: graded_qrel_3_evidence_2_answer_1
+      unjudged_documents: zero_gain
+      target_alignment: 0.8
+      exploration_schedule: fixed
+      anchor: e0_cosine_coef_0.5
+    overrides:
+      rag_retrieval_reward: ndcg
+      rag_relevance_scheme: graded
+      rag_group_size: 32
+      rag_anchor_coef: 0.5
+    seed: 3407
+  G3-R2-RL-AnswerF1-Anchor050-Seed3407:
+    group: G3
+    objective: rl
+    scope: query_only
+    control: G3-R2-RL-AnswerF1-Anchor050
+    protocol:
+      retrieval_reward: answer_f1_generator_top_10
+      retrieval_relevance: graded_qrel_3_evidence_2_answer_1
+      unjudged_documents: zero_gain
+      target_alignment: 0.8
+      exploration_schedule: fixed
+      generator: qwen2.5_7b_instruct_greedy_cached_x2
+      group_size: 32
+      anchor: e0_cosine_coef_0.5
+    overrides:
+      rag_retrieval_reward: answer_f1
+      rag_relevance_scheme: graded
+      rag_group_size: 32
+      rag_generator_endpoint: http://127.0.0.1:8000,http://127.0.0.1:8001
+      rag_anchor_coef: 0.5
+    seed: 3407
+  G3-R2-RL-MixedNDCGF1-Anchor050-Seed3407:
+    group: G3
+    objective: rl
+    scope: query_only
+    control: G3-R2-RL-MixedNDCGF1-Anchor050
+    protocol:
+      retrieval_reward: half_graded_ndcg_at_10_half_answer_f1
+      retrieval_relevance: graded_qrel_3_evidence_2_answer_1
+      unjudged_documents: zero_gain
+      target_alignment: 0.8
+      exploration_schedule: fixed
+      generator: qwen2.5_7b_instruct_greedy_cached_x2
+      group_size: 32
+      anchor: e0_cosine_coef_0.5
+    overrides:
+      rag_retrieval_reward: ndcg_answer_f1
+      rag_relevance_scheme: graded
+      rag_group_size: 32
+      rag_generator_endpoint: http://127.0.0.1:8000,http://127.0.0.1:8001
+      rag_anchor_coef: 0.5
+    seed: 3407
+  G3-R2-CL-AnswerMasked-Anchor050-Seed2026:
+    group: G3
+    objective: infonce
+    scope: query_only
+    control: G3-R2-CL-AnswerMasked-Anchor050
+    protocol:
+      training_relevance: qrel_positives_answer_bearing_unjudged
+      anchor: e0_cosine_coef_0.5
+    overrides:
+      rag_relevance_scheme: answer_masked
+      rag_anchor_coef: 0.5
+    seed: 2026
+  G3-R2-RL-GradedNDCG-Anchor050-Seed2026:
+    group: G3
+    objective: rl
+    scope: query_only
+    control: G3-R2-RL-GradedNDCG-Anchor050
+    protocol:
+      retrieval_reward: graded_ndcg_at_10
+      retrieval_relevance: graded_qrel_3_evidence_2_answer_1
+      unjudged_documents: zero_gain
+      target_alignment: 0.8
+      exploration_schedule: fixed
+      anchor: e0_cosine_coef_0.5
+    overrides:
+      rag_retrieval_reward: ndcg
+      rag_relevance_scheme: graded
+      rag_group_size: 32
+      rag_anchor_coef: 0.5
+    seed: 2026
+  G3-R2-RL-AnswerF1-Anchor050-Seed2026:
+    group: G3
+    objective: rl
+    scope: query_only
+    control: G3-R2-RL-AnswerF1-Anchor050
+    protocol:
+      retrieval_reward: answer_f1_generator_top_10
+      retrieval_relevance: graded_qrel_3_evidence_2_answer_1
+      unjudged_documents: zero_gain
+      target_alignment: 0.8
+      exploration_schedule: fixed
+      generator: qwen2.5_7b_instruct_greedy_cached_x2
+      group_size: 32
+      anchor: e0_cosine_coef_0.5
+    overrides:
+      rag_retrieval_reward: answer_f1
+      rag_relevance_scheme: graded
+      rag_group_size: 32
+      rag_generator_endpoint: http://127.0.0.1:8000,http://127.0.0.1:8001
+      rag_anchor_coef: 0.5
+    seed: 2026
+  G3-R2-RL-MixedNDCGF1-Anchor050-Seed2026:
+    group: G3
+    objective: rl
+    scope: query_only
+    control: G3-R2-RL-MixedNDCGF1-Anchor050
+    protocol:
+      retrieval_reward: half_graded_ndcg_at_10_half_answer_f1
+      retrieval_relevance: graded_qrel_3_evidence_2_answer_1
+      unjudged_documents: zero_gain
+      target_alignment: 0.8
+      exploration_schedule: fixed
+      generator: qwen2.5_7b_instruct_greedy_cached_x2
+      group_size: 32
+      anchor: e0_cosine_coef_0.5
+    overrides:
+      rag_retrieval_reward: ndcg_answer_f1
+      rag_relevance_scheme: graded
+      rag_group_size: 32
+      rag_generator_endpoint: http://127.0.0.1:8000,http://127.0.0.1:8001
+      rag_anchor_coef: 0.5
+    seed: 2026

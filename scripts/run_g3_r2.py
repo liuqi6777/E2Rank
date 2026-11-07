@@ -9,6 +9,10 @@ uses the full-preflight path instead: resolve -> blockers -> launch.
     python scripts/run_g3_r2.py check
     python scripts/run_g3_r2.py train --runs G3-R2-CL-AnswerMasked
     python scripts/run_g3_r2.py eval  --runs G3-R2-CL-AnswerMasked --retrieval-only
+    # Rebuttal E1: four paper recipes, two new seeds (eight runs).
+    python scripts/run_g3_r2.py check --seeds 3407 2026
+    python scripts/run_g3_r2.py train --seeds 3407
+    python scripts/run_g3_r2.py eval --seeds 3407 2026
 """
 
 import argparse
@@ -24,7 +28,7 @@ from experiments import iclr2027 as experiments  # noqa: E402
 
 SUITE = experiments.ROOT / "configs/experiments/iclr2027/suite_g3_r2.yaml"
 SETTINGS = experiments.ROOT / "configs/experiments_g3_r2.yaml"
-ALL_RUNS = [
+LEGACY_RUNS = [
     "G3-R2-CL-Binary",
     "G3-R2-CL-AnswerMasked",
     "G3-R2-CL-Graded",
@@ -47,6 +51,33 @@ ALL_RUNS = [
     "G3-R2-RL-MixedNDCGF1-Anchor050",
     "G3-R2-RL-MixedNDCGEM-Anchor050",
 ]
+SEEDS = (42, 3407, 2026)
+PAPER_RUNS = [
+    "G3-R2-CL-AnswerMasked-Anchor050",
+    "G3-R2-RL-GradedNDCG-Anchor050",
+    "G3-R2-RL-AnswerF1-Anchor050",
+    "G3-R2-RL-MixedNDCGF1-Anchor050",
+]
+ALL_RUNS = LEGACY_RUNS + [
+    f"{name}-Seed{seed}" for seed in SEEDS[1:] for name in PAPER_RUNS
+]
+
+
+def select_runs(runs=None, seeds=None):
+    """Preserve legacy selection; --seeds defaults to the four E1 recipes."""
+    if seeds is None:
+        return list(dict.fromkeys(LEGACY_RUNS if runs is None else runs))
+    selected = []
+    for seed in dict.fromkeys(seeds):
+        for name in PAPER_RUNS if runs is None else runs:
+            # Accept either the base recipe or an explicit repeat as input.
+            base = name.rsplit("-Seed", 1)[0] if "-Seed" in name else name
+            candidate = base if seed == 42 else f"{base}-Seed{seed}"
+            if candidate not in ALL_RUNS:
+                raise ValueError(f"No registered seed {seed} for {base}")
+            if candidate not in selected:
+                selected.append(candidate)
+    return selected
 
 
 def _resolve(args, name):
@@ -124,7 +155,11 @@ def main():
     parser.add_argument(
         "action", nargs="?", default="check", choices=["check", "smoke", "train", "eval"]
     )
-    parser.add_argument("--runs", nargs="+", default=ALL_RUNS, choices=ALL_RUNS)
+    parser.add_argument("--runs", nargs="+", choices=ALL_RUNS)
+    parser.add_argument(
+        "--seeds", "--seed", nargs="+", type=int, choices=SEEDS,
+        help="Select paired training/data seeds; defaults to the four paper recipes when --runs is omitted",
+    )
     parser.add_argument("--config", type=Path, default=SETTINGS)
     parser.add_argument("--gpus", type=int, default=8)
     parser.add_argument("--retrieval-k", type=int, default=20)
@@ -133,6 +168,7 @@ def main():
     parser.add_argument("--generator-endpoint", default="http://127.0.0.1:8000")
     parser.add_argument("--generator-tensor-parallel", type=int, default=4)
     args = parser.parse_args()
+    runs = select_runs(args.runs, args.seeds)
 
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
     if args.action in {"train", "smoke"}:
@@ -142,11 +178,12 @@ def main():
             raise ValueError(f"Expose exactly {args.gpus} CUDA GPUs (CUDA_VISIBLE_DEVICES)")
 
     blocked = 0
-    for name in args.runs:
+    for name in runs:
         suite, resolved = _resolve(args, name)
         config = resolved["config"]
         print(
             f"{name}: output={config['output_dir']} "
+            f"seed={config['seed']} data_seed={config['data_seed']} "
             f"budget={resolved['protocol']['training_budget']} "
             f"epochs={config.get('num_train_epochs')} "
             f"micro={config['per_device_train_batch_size']} "

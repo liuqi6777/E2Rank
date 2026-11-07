@@ -837,6 +837,34 @@ because the Alibaba training clusters only offer a whole-node 8-GPU pack; the
 is not reachable from a training pod. `eval_rag.py` releases the index GPUs
 between its retrieval and generation phases, so the two do not contend.
 
+## Rebuttal E1: original recipes at three seeds (2026-11-07)
+
+按 [rebuttal 计划 E1](../paper/iclr2027/rebuttal/plan_2026-11-06.md)，仅补原论文四个
+Anchor050 配方：InfoNCE、graded nDCG、answer-F1、nDCG + F1。每个配方复用可核验的
+seed 42，新增 3407、2026，共 8 次训练。旧的不带 anchor 的 seed 重复不计入 E1。
+
+`run_g3_r2.py` 新增 `--seeds`（别名 `--seed`），同时设置训练 `seed` 与 `data_seed`；
+固定 `rag_tuning_seed: 20260909`，保留原数据划分、候选、标签、1 epoch、LR 5e-6、
+global batch 128、anchor 0.5，动态 RLOO 保留 G32 / alignment 0.80。
+新 run ID 在原配方后追加 `-Seed3407` / `-Seed2026`，输出目录仍由 suite 按 run ID
+和 seed 隔离。原 seed 42 的名称和路径保留。
+
+```bash
+# 先与训练机上的原 resolved config 核对；预检两个新 seed 的全部四个配方。
+python scripts/run_g3_r2.py check --seeds 3407 2026
+# 可按 seed 分机执行；每个 run 仍用原来的 8 卡和 global batch。
+python scripts/run_g3_r2.py train --seeds 3407
+python scripts/run_g3_r2.py train --seeds 2026
+# 最终七数据集完整 QA 评估（需原协议的 generator 服务）。
+python scripts/run_g3_r2.py eval --seeds 3407 2026
+# 只选某一配方；seed 42 也可用于预检和补评估。
+python scripts/run_g3_r2.py check --runs G3-R2-RL-GradedNDCG-Anchor050 --seeds 42 3407 2026
+```
+
+传 `--seeds` 而不传 `--runs` 时只选择上述四个论文配方；两者均不传时保留历史任务列表。
+`check` / `smoke` / `train` / `eval` 使用同一 seed 选择规则；训练与最终评估仍为独立命令。
+这些配置不代表 seed 42 产物已核验或新增训练已启动；完整三 seed 的统计按 E1 要求汇总。
+
 ## 8. Further work
 
 Ordered by expected value against the current best (Anchor050, macro +0.0059):
