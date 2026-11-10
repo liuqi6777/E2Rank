@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT))
 
 from eval_mteb import summary as mteb_summary
 import run_g2_cl_to_reler as driver
+from experiments import g2_mteb_summary as shared_summary
 
 
 def test_continuation_pairs_checkpoints_and_preserves_the_direct_recipe():
@@ -146,18 +147,20 @@ def test_summary_merges_all_views_and_computes_unrounded_paired_statistics(tmp_p
     previous = {view: read_csv(destination / f'{view}_summary.csv') for view in old_views}
 
     driver.summarize(matrix, destination, catalog, staged)
-    payload = json.loads((destination / 'cl_to_reler_results.json').read_text())
-    assert all(run['complete'] for run in payload['runs'])
+    payload = json.loads((destination / 'seeds/results.json').read_text())
+    assert all(run['tasks_found'] == 41 for run in payload['runs'])
     for run in payload['runs']:
-        task_mean, type_mean = expected[run['method'], run['seed']]
-        assert run['metrics']['mean_task_score'] == pytest.approx(task_mean)
-        assert run['metrics']['mean_type_score'] == pytest.approx(type_mean)
+        method = 'cl' if run['recipe'] == 'infonce' else run['recipe']
+        task_mean, type_mean = expected[method, run['seed']]
+        assert run['mean_task_score'] == pytest.approx(task_mean)
+        assert run['mean_type_score'] == pytest.approx(type_mean)
         assert task_mean != pytest.approx(type_mean)
     aggregate = next(r for r in payload['groups']
-                     if r['method'] == 'cl_reler' and r['metric'] == 'mean_task_score')
+                     if r['recipe'] == 'cl_reler' and r['metric'] == 'mean_task_score')
     assert aggregate['sample_sd'] == pytest.approx(
         statistics.stdev(expected['cl_reler', seed][0] for seed in driver.SEEDS))
-    paired = next(r for r in payload['paired'] if r['seed'] == 'all' and r['metric'] == 'mean_task_score')
+    paired = next(r for r in payload['paired'] if r['seed'] == 'all'
+                  and r['comparison'] == 'cl_reler_minus_infonce' and r['metric'] == 'mean_task_score')
     assert paired['mean'] == pytest.approx(0.428)
     assert paired['sample_sd'] == pytest.approx(0.214)
     for view in old_views:
@@ -165,21 +168,69 @@ def test_summary_merges_all_views_and_computes_unrounded_paired_statistics(tmp_p
         assert [r for r in rows if r['run'] == old.run_id] == previous[view]
         assert len(rows) == (7 * 41 if view == 'task' else 7)
 
-    # An incomplete rerun retains the already saved score and withholds 3-seed claims.
+    # An incomplete local refresh retains archived scores, including precise seed data.
     snapshots = {view: read_csv(destination / f'{view}_summary.csv') for view in old_views}
     last_name = Path(matrix['cl_reler', 2026][1]['config']['output_dir']).name
     last = staged / last_name / 'model/revision/Task0.json'
     last.unlink()
     driver.summarize(matrix, destination, catalog, staged)
-    payload = json.loads((destination / 'cl_to_reler_results.json').read_text())
-    assert all(r['mean'] is None and r['sample_sd'] is None
-               for r in payload['groups'] if r['method'] == 'cl_reler')
-    assert all(r['mean'] is None for r in payload['paired'] if r['seed'] == 'all')
+    payload = json.loads((destination / 'seeds/results.json').read_text())
+    assert all(r['completed'] == 3 and r['mean'] is not None
+               for r in payload['groups'] if r['recipe'] == 'cl_reler')
     for view in old_views:
         rows = read_csv(destination / f'{view}_summary.csv')
         assert [r for r in rows if r['run'] == last_name] == [
             r for r in snapshots[view] if r['run'] == last_name]
         assert len(rows) == len(snapshots[view])
+    # Without an archive, two complete seeds cannot produce a three-seed mean.
+    incomplete = tmp_path / 'incomplete'
+    driver.summarize(matrix, incomplete, catalog, staged)
+    payload = json.loads((incomplete / 'seeds/results.json').read_text())
+    assert all(r['mean'] is None and r['sample_sd'] is None
+               for r in payload['groups'] if r['recipe'] == 'cl_reler')
+    assert all(r['mean'] is None for r in payload['paired']
+               if r['seed'] == 'all' and r['comparison'] == 'cl_reler_minus_infonce')
     last.write_text('{broken')
     with pytest.raises(ValueError, match='invalid MTEB results'):
         driver.summarize(matrix, destination, catalog, staged)
+
+
+def test_two_entry_points_share_nine_runs_and_keep_precise_three_way_differences(tmp_path):
+    catalog = {f'Task{i}': driver.TYPES[min(i // 5, 6)] for i in range(41)}
+    runs, tasks = [], []
+    offsets = {'infonce': 0.123456789, 'reler': 0.223456789, 'cl_reler': 0.423456789}
+    for recipe, offset in offsets.items():
+        for index, seed in enumerate(driver.SEEDS):
+            values = {t: i * 0.17 + (index + 1) * offset for i, t in enumerate(catalog)}
+            types = {kind: statistics.mean(v for t, v in values.items() if catalog[t] == kind)
+                     for kind in driver.TYPES}
+            runs.append(dict(recipe=recipe, seed=seed, run=f'{recipe}-{seed}',
+                             init_from=f'infonce-{seed}' if recipe == 'cl_reler' else None,
+                             source=str(tmp_path / f'{recipe}-{seed}'), tasks_found=41,
+                             mean_task_score=statistics.mean(values.values()),
+                             mean_type_score=statistics.mean(types.values()), **types))
+            tasks.extend(dict(recipe=recipe, seed=seed, task=t, type=catalog[t], score=v)
+                         for t, v in values.items())
+    destination = tmp_path / 'summary'
+    for selected in [('infonce', 'reler'), ('infonce', 'cl_reler')]:
+        shared_summary.write_summary(destination,
+            [r for r in runs if r['recipe'] in selected],
+            [t for t in tasks if t['recipe'] in selected], catalog)
+    data = json.loads((destination / 'seeds/results.json').read_text())
+    assert data['runs'] == runs
+    assert len(data['tasks']) == 369
+    assert len(read_csv(destination / 'run_summary.csv')) == 9
+    assert len(read_csv(destination / 'task_summary.csv')) == 369
+    for reference, expected_mean, expected_sd in [('infonce', 0.6, 0.3), ('reler', 0.4, 0.2)]:
+        paired = next(r for r in data['paired'] if r['comparison'] == f'cl_reler_minus_{reference}'
+                      and r['metric'] == 'mean_task_score' and r['seed'] == 'all')
+        assert paired['mean'] == pytest.approx(expected_mean)
+        assert paired['sample_sd'] == pytest.approx(expected_sd)
+
+    # Reject inconsistent numerical imports before touching any saved view.
+    before = {p: p.read_bytes() for p in destination.rglob('*') if p.is_file()}
+    bad = copy.deepcopy(tasks)
+    bad[0]['score'] += 1
+    with pytest.raises(ValueError, match='aggregate mismatch'):
+        shared_summary.write_summary(destination, runs, bad, catalog)
+    assert all(p.read_bytes() == contents for p, contents in before.items())

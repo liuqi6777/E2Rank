@@ -42,6 +42,8 @@ BRIGHT，`summary` 汇总三 seed 的均值/标准差/最差成绩。无时间�
 | `run_g2_rl_r2.sh` / `run_g2_reasonembed_rl_r2.sh` | 新协议 E2Rank / ReasonEmbed 的单 seed 42 CP/G64/0.80 队列；各三条 RL，与对应 D/E/W CL 配对，见 [G2-RL-R2 计划](../paper/G2_RL_R2_PLAN.md) |
 | `run_g2_rl_r2_k0.py` | 从 `Qwen/Qwen3-0.6B` 直接训练单条 E2Rank RL，采用当前 G1 K=0 + pairwise 主配方；支持预检、训练和最终 MTEB 补评，见[实验说明](../docs/g2_r2_k0_direct_rl.md) |
 | `run_g2_table12_seeds.py` | Rebuttal Table 12：原 InfoNCE（D-CL-Strong）与 K0 RELER 补 seed3407/2026，共4次训练；支持查看、预检、训练、最终 MTEB 补评及三seed汇总，见[说明](../docs/g2_table12_seeds.md) |
+| `run_g2_cl_to_reler.py` | 三个 seed 各自从 CL-Strong 继续 K0 RELER，自动评测 MTEB v2 并合并 G2 汇总，见[说明](../docs/g2_cl_to_reler.md) |
+| `run_g2_cl_to_cl.py` | 三个 seed 各自从同一 CL-Strong 起点继续 Strong CL，匹配 CL→RELER 第二阶段预算，自动评测与汇总配对差值，见[说明](../docs/g2_cl_to_cl.md) |
 | `rag_pipeline.sh` | RAG 数据准备、编码、NQ/HotpotQA qrels 构造、候选挖掘、底层训练与评测 |
 | `rag_acceptance.sh` / `rag_toy_distributed.py` | RAG 分布式索引和端到端验收 |
 | `measure_score_gaps.py` | embedding 分数间隔诊断 |

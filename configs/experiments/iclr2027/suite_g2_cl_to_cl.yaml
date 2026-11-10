@@ -1,0 +1,58 @@
+version: 1
+plan: docs/g2_cl_to_cl.md
+seed: 42
+output_root: checkpoints/iclr2027-g2-cl-r2
+pending: {}
+
+profiles:
+  G2:
+    config: g2_cl_r2.yaml
+    dataset: e2rank
+    dataset_manifest: data/manifest.json
+    selection: fixed_budget_final_checkpoint
+    final_evaluation: [mteb_eng_v2]
+    requirements: []
+    protocol:
+      labels: pos_index_binary
+      sampling: per_source_epoch_shuffle_retained_tail_v1
+      tokenization_version: 2
+      pooling_compute_dtype: float32
+      training_budget: fixed_steps
+      max_steps: 1200
+      learning_rate: 0.000005
+      eval_steps: 200
+      global_batch_size: 128
+      micro_batch_size: 16
+
+execution_stages:
+  - name: Existing Strong CL checkpoints (never trained here)
+    runs: [G2-R2-D-CL-Strong, G2-R2-D-CL-Strong-Seed3407, G2-R2-D-CL-Strong-Seed2026]
+  - name: Continue each Strong CL seed with Strong CL
+    runs: [G2-R2-CLStrong-CL, G2-R2-CLStrong-CL-Seed3407, G2-R2-CLStrong-CL-Seed2026]
+
+runs:
+  G2-R2-D-CL-Strong: {group: G2, kind: reuse, scope: reference}
+  G2-R2-D-CL-Strong-Seed3407: {group: G2, kind: reuse, scope: reference, seed: 3407}
+  G2-R2-D-CL-Strong-Seed2026: {group: G2, kind: reuse, scope: reference, seed: 2026}
+  # Load weights only; use a new optimizer/scheduler, as in CL-to-RELER.
+  # Preserve the original D-CL-Strong loss, negatives, and document gradients.
+  G2-R2-CLStrong-CL: &cl_to_cl
+    group: G2
+    objective: infonce
+    scope: joint
+    control: G2-R2-D-CL-Strong
+    init_from: G2-R2-D-CL-Strong
+    overrides:
+      baseline_in_batch_include_negatives: true
+      baseline_cross_device_negatives: true
+      baseline_detach_in_batch_documents: false
+  G2-R2-CLStrong-CL-Seed3407:
+    <<: *cl_to_cl
+    seed: 3407
+    control: G2-R2-D-CL-Strong-Seed3407
+    init_from: G2-R2-D-CL-Strong-Seed3407
+  G2-R2-CLStrong-CL-Seed2026:
+    <<: *cl_to_cl
+    seed: 2026
+    control: G2-R2-D-CL-Strong-Seed2026
+    init_from: G2-R2-D-CL-Strong-Seed2026

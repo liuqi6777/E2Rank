@@ -48,15 +48,20 @@ python scripts/run_g2_table12_seeds.py summary
 四舍五入 CSV 只用于确认方法身份，汇总不以它替代原始评测。
 
 `summary` 始终读取六条运行的 `mteb_eval/final/`，忽略方法/seed选择参数，
-输出到 `outputs/g2_table12_seeds/`（`--summary-dir` 可修改）：
+合并到 [`paper/_summary/g2_r2_mteb_v2/`](../paper/_summary/g2_r2_mteb_v2/README.md)
+（`--summary-dir` 可修改），与 CL → RELER 共用四张全 run 汇总表。
+完整精度数据统一放在 `seeds/`：
 
 - `per_run.csv`：逐seed的七类任务均值、Task avg.、Type avg.及来源路径；
 - `per_task.csv`：全部41个任务的逐seed main score；
-- `grouped.csv`：两方法各指标的三seed均值和样本SD；
-- `paired.csv`：各seed的RELER − InfoNCE及三seed差值均值/样本SD；
+- `grouped.csv`：InfoNCE、direct RELER、CL → RELER、CL → CL 的三seed均值和样本SD；
+- `paired.csv`：原三组配对比较，以及 CL → CL 相对原 CL、CL → RELER 相对 CL → CL 的差值；
 - `results.json`：上述数据的未格式化数值。
 
 分数均为 main score ×100。先对同一任务的 subsets 等权，再按原论文分别计算
-41任务等权与七类型等权。缺失结果留空，只有每个 seed 的41任务均完整才纳入；
-聚合必须三seed齐全，损坏、非有限值或多个含任务结果的目录会报错。
+41任务等权与七类型等权。三个入口均保留其他入口已汇总的结果，避免相互覆盖。
+原始结果缺失或未完成时保留已归档的完整记录并提示；没有完整归档时缺失留空。
+只有每个 seed 的41任务均完整才纳入，聚合必须三seed齐全；损坏、非有限值
+或多个含任务结果的目录会报错。只同步原始评测时可使用
+`--results-root /path/to/final_results`，目录组织为 `<root>/<run-directory>/`。
 三seed完成前不改论文表格或将计划写成已完成证据。

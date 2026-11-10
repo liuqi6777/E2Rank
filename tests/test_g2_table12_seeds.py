@@ -74,7 +74,7 @@ def test_summary_uses_task_and_type_weights_and_requires_three_seeds(tmp_path):
         expected[method, seed] = (statistics.mean(values.values()), statistics.mean(type_means))
     destination = tmp_path / 'summary'
     driver.summarize(matrix, destination, catalog)
-    data = json.loads((destination / 'results.json').read_text())
+    data = json.loads((destination / 'seeds/results.json').read_text())
     assert len(data['tasks']) == 6 * 41
     for row in data['runs']:
         task_mean, type_mean = expected[row['recipe'], row['seed']]
@@ -84,14 +84,16 @@ def test_summary_uses_task_and_type_weights_and_requires_three_seeds(tmp_path):
     aggregate = next(r for r in data['groups']
                      if r['recipe'] == 'reler' and r['metric'] == 'mean_task_score')
     assert aggregate['sample_sd'] == pytest.approx(statistics.stdev(expected['reler', s][0] for s in driver.SEEDS))
-    paired = next(r for r in data['paired'] if r['seed'] == 'all' and r['metric'] == 'mean_task_score')
+    paired = next(r for r in data['paired'] if r['seed'] == 'all'
+                  and r['comparison'] == 'reler_minus_infonce' and r['metric'] == 'mean_task_score')
     assert paired['mean'] == pytest.approx(0.4)
     assert paired['sample_sd'] == pytest.approx(0.2)
 
     last = Path(matrix['reler', 2026][1]['config']['output_dir']) / 'mteb_eval/final/model/revision/Task0.json'
     last.unlink()
-    driver.summarize(matrix, destination, catalog)
-    data = json.loads((destination / 'results.json').read_text())
+    incomplete = tmp_path / 'incomplete'
+    driver.summarize(matrix, incomplete, catalog)
+    data = json.loads((incomplete / 'seeds/results.json').read_text())
     assert all(r['mean'] is None and r['sample_sd'] is None
                for r in data['groups'] if r['recipe'] == 'reler')
     assert all(r['mean'] is None for r in data['paired'] if r['seed'] == 'all')

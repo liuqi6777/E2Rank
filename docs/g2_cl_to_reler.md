@@ -2,7 +2,8 @@
 
 新增 **3 次训练**：分别从 seed **42、3407、2026** 的
 `G2-R2-D-CL-Strong` 最终 checkpoint 加载权重，在同一份 E2Rank
-`train.jsonl` 上继续 RELER。复用原 CL，不新增 CL → CL。
+`train.jsonl` 上继续 RELER。复用原 CL；CL → CL 对照使用
+[独立入口](g2_cl_to_cl.md)。
 
 续训使用现有 direct RELER 的 K0 配方：graded nDCG@10 + pairwise 0.5、
 RLOO + CMP、vMF product、G64、alignment 0.70。LR `5e-6`、global batch
@@ -66,16 +67,21 @@ G2-R2-CLStrong-RL-Align070-ShortlistUniform-K0-T1-Pairwise050-s42/
 `retrieval_summary.csv`，保留其他 run。只替换原始 41 任务结果完整的行；
 缺失或尚未完成的运行不会覆盖已有成绩，损坏结果会报错。
 
-同目录额外生成：
+三 seed 统计统一放在同目录的 `seeds/`，与直接训练的 InfoNCE / RELER 合并：
 
-- `cl_to_reler_grouped.csv`：CL、CL → RELER 的各指标三 seed 均值和样本 SD；
-- `cl_to_reler_paired.csv`：各 seed 的 `(CL → RELER) − CL`，及差值的均值和样本 SD；
-- `cl_to_reler_results.json`：未四舍五入的逐任务成绩、来源、缺失任务和聚合结果。
+- `per_run.csv`、`per_task.csv`：逐 run 的指标、初始化/结果路径和逐任务分数；
+- `grouped.csv`：`infonce`、`reler`、`cl_reler`、`cl_cl` 的三 seed 均值和样本 SD；
+- `paired.csv`：原三组比较，以及 `cl_cl_minus_infonce`、`cl_reler_minus_cl_cl`；
+- `results.json`：以上数据的完整精度记录和任务类型。
 
-三 seed 汇总始终检查两方法 × 三 seed，只有三条完整时才填写对应均值和
-SD；不会把缺失成绩填成 0。差值先逐 seed 相减，再求均值和 SD。分数使用
+旧 `cl_to_reler_*.csv/json` 和 `iclr2027_rebuttal/table12_seeds/` 已合并，
+目录说明与结果解读见 [G2 汇总](../paper/_summary/g2_r2_mteb_v2/README.md)。
+三个训练入口的 `summary` 都更新这一处，保留其他入口已归档的结果。
+原始结果缺失或未完成时保留已有完整记录并打印提示；没有完整归档可复用时，
+只有三条完整才填写对应均值和 SD，不会把缺失成绩填成 0。
+差值先逐 seed 相减，再求均值和 SD。分数使用
 `main_score × 100`；沿用原汇总中任务内 subsets、任务与类型的平均方式。
-配对统计从原始 MTEB JSON 计算，不使用已有 CSV 的两位小数反推。
+配对统计使用原始 MTEB JSON 或已归档的完整精度记录，不使用两位小数反推。
 
 只同步评测 JSON 到本机时，可以把每条最终结果放到
 `/path/to/final_results/<run-directory>/`，然后执行：
@@ -87,8 +93,8 @@ python scripts/run_g2_cl_to_reler.py summary --results-root /path/to/final_resul
 每条目录只放最终结果，允许保留 MTEB 的 model/revision 子目录。
 `--summary-dir` 可改汇总目标，但默认就是现有 G2 目录。
 
-这组比较回答已有 CL 表示在继续 RELER 后如何变化；未做 CL → CL，
-不能单独归因于训练目标而排除额外训练预算。1200 × 128 = 153,600
+这组比较回答已有 CL 表示在继续 RELER 后如何变化；CL → CL 对照已补充运行代码，
+在其结果完成前仍不能排除额外训练预算的影响。1200 × 128 = 153,600
 是第二阶段的 query exposures，不能当作不同 query 的数量。
 
 配置：[suite](../configs/experiments/iclr2027/suite_g2_cl_to_reler.yaml)；
