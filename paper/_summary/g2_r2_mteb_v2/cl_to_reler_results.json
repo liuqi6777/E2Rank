@@ -1,0 +1,717 @@
+{
+  "benchmark": "MTEB(eng, v2)",
+  "score_units": "main_score x 100",
+  "seeds": [
+    42,
+    3407,
+    2026
+  ],
+  "runs": [
+    {
+      "method": "cl",
+      "seed": 42,
+      "run": "G2-R2-D-CL-Strong-s42",
+      "init_from": null,
+      "complete": true,
+      "missing_tasks": [],
+      "result_dir": "/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027-g2-cl-r2/G2-R2-D-CL-Strong-s42/mteb_eval/final/iclr2027-g2-cl-r2__G2-R2-D-CL-Strong-s42__tokens-v2__pool-fp32/no_revision_available",
+      "metrics": {
+        "Classification": 72.84221249999999,
+        "Clustering": 44.187925,
+        "PairClassification": 82.11333333333334,
+        "Reranking": 44.801449999999996,
+        "Retrieval": 51.52319999999999,
+        "STS": 75.9447111111111,
+        "Summarization": 29.486400000000003,
+        "mean_task_score": 60.98548292682926,
+        "mean_type_score": 57.271318849206345
+      },
+      "task_scores": {
+        "AmazonCounterfactualClassification": 71.194,
+        "ArXivHierarchicalClusteringP2P": 55.794200000000004,
+        "ArXivHierarchicalClusteringS2S": 56.038,
+        "ArguAna": 52.712,
+        "AskUbuntuDupQuestions": 59.2247,
+        "BIOSSES": 83.55669999999999,
+        "Banking77Classification": 79.5519,
+        "BiorxivClusteringP2P.v2": 38.099199999999996,
+        "CQADupstackGamingRetrieval": 55.833999999999996,
+        "CQADupstackUnixRetrieval": 38.308,
+        "ClimateFEVERHardNegatives": 31.069999999999997,
+        "FEVERHardNegatives": 78.733,
+        "FiQA2018": 38.312000000000005,
+        "HotpotQAHardNegatives": 63.495999999999995,
+        "ImdbClassification": 68.728,
+        "MTOPDomainClassification": 93.4109,
+        "MassiveIntentClassification": 70.2387,
+        "MassiveScenarioClassification": 74.71759999999999,
+        "MedrxivClusteringP2P.v2": 34.4813,
+        "MedrxivClusteringS2S.v2": 31.6606,
+        "MindSmallReranking": 30.3782,
+        "SCIDOCS": 17.444000000000003,
+        "SICK-R": 69.2199,
+        "STS12": 65.9384,
+        "STS13": 78.6883,
+        "STS14": 73.6394,
+        "STS15": 83.0653,
+        "STS17": 85.5014,
+        "STS22.v2": 64.5118,
+        "STSBenchmark": 79.38119999999999,
+        "SprintDuplicateQuestions": 95.6429,
+        "StackExchangeClustering.v2": 54.606100000000005,
+        "StackExchangeClusteringP2P.v2": 39.9549,
+        "SummEvalSummarization.v2": 29.486400000000003,
+        "TRECCOVID": 81.928,
+        "Touche2020Retrieval.v3": 57.394999999999996,
+        "ToxicConversationsClassification": 62.8027,
+        "TweetSentimentExtractionClassification": 62.093900000000005,
+        "TwentyNewsgroupsClustering.v2": 42.869099999999996,
+        "TwitterSemEval2015": 65.1352,
+        "TwitterURLCorpus": 85.56190000000001
+      }
+    },
+    {
+      "method": "cl_reler",
+      "seed": 42,
+      "run": "G2-R2-CLStrong-RL-Align070-ShortlistUniform-K0-T1-Pairwise050-s42",
+      "init_from": "/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027-g2-cl-r2/G2-R2-D-CL-Strong-s42",
+      "complete": true,
+      "missing_tasks": [],
+      "result_dir": "/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027-g2-cl-r2/G2-R2-CLStrong-RL-Align070-ShortlistUniform-K0-T1-Pairwise050-s42/mteb_eval/final/iclr2027-g2-cl-r2__G2-R2-CLStrong-RL-Align070-ShortlistUniform-K0-T1-Pairwise050-s42__tokens-v2__pool-fp32/no_revision_available",
+      "metrics": {
+        "Classification": 73.5566375,
+        "Clustering": 45.78685,
+        "PairClassification": 80.72896666666666,
+        "Reranking": 45.1746,
+        "Retrieval": 50.77170000000001,
+        "STS": 77.10616666666667,
+        "Summarization": 26.316699999999997,
+        "mean_task_score": 61.34812682926827,
+        "mean_type_score": 57.06308869047619
+      },
+      "task_scores": {
+        "AmazonCounterfactualClassification": 68.6418,
+        "ArXivHierarchicalClusteringP2P": 58.8803,
+        "ArXivHierarchicalClusteringS2S": 56.7516,
+        "ArguAna": 48.624,
+        "AskUbuntuDupQuestions": 60.1469,
+        "BIOSSES": 83.4338,
+        "Banking77Classification": 81.0292,
+        "BiorxivClusteringP2P.v2": 39.380900000000004,
+        "CQADupstackGamingRetrieval": 54.345,
+        "CQADupstackUnixRetrieval": 37.768,
+        "ClimateFEVERHardNegatives": 30.092000000000002,
+        "FEVERHardNegatives": 77.069,
+        "FiQA2018": 36.077,
+        "HotpotQAHardNegatives": 65.549,
+        "ImdbClassification": 74.8784,
+        "MTOPDomainClassification": 93.8486,
+        "MassiveIntentClassification": 70.2959,
+        "MassiveScenarioClassification": 74.5864,
+        "MedrxivClusteringP2P.v2": 35.7577,
+        "MedrxivClusteringS2S.v2": 33.6359,
+        "MindSmallReranking": 30.202299999999997,
+        "SCIDOCS": 18.674,
+        "SICK-R": 71.02579999999999,
+        "STS12": 66.049,
+        "STS13": 82.9156,
+        "STS14": 74.90639999999999,
+        "STS15": 82.3275,
+        "STS17": 86.0566,
+        "STS22.v2": 67.0437,
+        "STSBenchmark": 80.1971,
+        "SprintDuplicateQuestions": 95.96430000000001,
+        "StackExchangeClustering.v2": 56.916900000000005,
+        "StackExchangeClusteringP2P.v2": 40.5453,
+        "SummEvalSummarization.v2": 26.316699999999997,
+        "TRECCOVID": 84.65899999999999,
+        "Touche2020Retrieval.v3": 54.86,
+        "ToxicConversationsClassification": 63.2373,
+        "TweetSentimentExtractionClassification": 61.9355,
+        "TwentyNewsgroupsClustering.v2": 44.4262,
+        "TwitterSemEval2015": 61.4889,
+        "TwitterURLCorpus": 84.7337
+      }
+    },
+    {
+      "method": "cl",
+      "seed": 3407,
+      "run": "G2-R2-D-CL-Strong-Seed3407-s3407",
+      "init_from": null,
+      "complete": true,
+      "missing_tasks": [],
+      "result_dir": "/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027-g2-cl-r2/G2-R2-D-CL-Strong-Seed3407-s3407/mteb_eval/final/iclr2027-g2-cl-r2__G2-R2-D-CL-Strong-Seed3407-s3407__tokens-v2__pool-fp32/no_revision_available",
+      "metrics": {
+        "Classification": 72.4419875,
+        "Clustering": 44.483062499999996,
+        "PairClassification": 82.10576666666668,
+        "Reranking": 44.763549999999995,
+        "Retrieval": 51.72319999999999,
+        "STS": 75.99490000000002,
+        "Summarization": 28.615800000000004,
+        "mean_task_score": 61.00113902439024,
+        "mean_type_score": 57.16118095238096
+      },
+      "task_scores": {
+        "AmazonCounterfactualClassification": 71.3433,
+        "ArXivHierarchicalClusteringP2P": 56.7803,
+        "ArXivHierarchicalClusteringS2S": 55.0702,
+        "ArguAna": 52.286,
+        "AskUbuntuDupQuestions": 59.2298,
+        "BIOSSES": 83.46940000000001,
+        "Banking77Classification": 79.75,
+        "BiorxivClusteringP2P.v2": 38.5333,
+        "CQADupstackGamingRetrieval": 55.730999999999995,
+        "CQADupstackUnixRetrieval": 38.47,
+        "ClimateFEVERHardNegatives": 30.958000000000002,
+        "FEVERHardNegatives": 79.582,
+        "FiQA2018": 38.062000000000005,
+        "HotpotQAHardNegatives": 63.928,
+        "ImdbClassification": 67.31479999999999,
+        "MTOPDomainClassification": 93.2718,
+        "MassiveIntentClassification": 69.75789999999999,
+        "MassiveScenarioClassification": 74.4486,
+        "MedrxivClusteringP2P.v2": 34.7404,
+        "MedrxivClusteringS2S.v2": 31.9037,
+        "MindSmallReranking": 30.2973,
+        "SCIDOCS": 17.288999999999998,
+        "SICK-R": 69.2685,
+        "STS12": 65.9204,
+        "STS13": 78.5689,
+        "STS14": 73.7662,
+        "STS15": 83.0416,
+        "STS17": 85.2125,
+        "STS22.v2": 65.1255,
+        "STSBenchmark": 79.5811,
+        "SprintDuplicateQuestions": 95.4931,
+        "StackExchangeClustering.v2": 55.2578,
+        "StackExchangeClusteringP2P.v2": 40.4187,
+        "SummEvalSummarization.v2": 28.615800000000004,
+        "TRECCOVID": 83.61,
+        "Touche2020Retrieval.v3": 57.316,
+        "ToxicConversationsClassification": 61.8555,
+        "TweetSentimentExtractionClassification": 61.794000000000004,
+        "TwentyNewsgroupsClustering.v2": 43.1601,
+        "TwitterSemEval2015": 65.3695,
+        "TwitterURLCorpus": 85.45469999999999
+      }
+    },
+    {
+      "method": "cl_reler",
+      "seed": 3407,
+      "run": "G2-R2-CLStrong-RL-Align070-ShortlistUniform-K0-T1-Pairwise050-Seed3407-s3407",
+      "init_from": "/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027-g2-cl-r2/G2-R2-D-CL-Strong-Seed3407-s3407",
+      "complete": true,
+      "missing_tasks": [],
+      "result_dir": "/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027-g2-cl-r2/G2-R2-CLStrong-RL-Align070-ShortlistUniform-K0-T1-Pairwise050-Seed3407-s3407/mteb_eval/final/iclr2027-g2-cl-r2__G2-R2-CLStrong-RL-Align070-ShortlistUniform-K0-T1-Pairwise050-Seed3407-s3407__tokens-v2__pool-fp32/no_revision_available",
+      "metrics": {
+        "Classification": 73.54665,
+        "Clustering": 45.886125,
+        "PairClassification": 80.71683333333333,
+        "Reranking": 44.95045,
+        "Retrieval": 51.0097,
+        "STS": 77.01467777777779,
+        "Summarization": 26.482099999999996,
+        "mean_task_score": 61.395726829268305,
+        "mean_type_score": 57.08664801587301
+      },
+      "task_scores": {
+        "AmazonCounterfactualClassification": 69.0,
+        "ArXivHierarchicalClusteringP2P": 58.931599999999996,
+        "ArXivHierarchicalClusteringS2S": 57.0267,
+        "ArguAna": 48.241,
+        "AskUbuntuDupQuestions": 59.8418,
+        "BIOSSES": 82.1157,
+        "Banking77Classification": 81.16879999999999,
+        "BiorxivClusteringP2P.v2": 39.6772,
+        "CQADupstackGamingRetrieval": 54.156000000000006,
+        "CQADupstackUnixRetrieval": 37.103,
+        "ClimateFEVERHardNegatives": 30.464999999999996,
+        "FEVERHardNegatives": 78.886,
+        "FiQA2018": 36.268,
+        "HotpotQAHardNegatives": 65.77300000000001,
+        "ImdbClassification": 75.4932,
+        "MTOPDomainClassification": 93.7848,
+        "MassiveIntentClassification": 69.7478,
+        "MassiveScenarioClassification": 74.5595,
+        "MedrxivClusteringP2P.v2": 35.8684,
+        "MedrxivClusteringS2S.v2": 33.758700000000005,
+        "MindSmallReranking": 30.0591,
+        "SCIDOCS": 18.816,
+        "SICK-R": 71.0573,
+        "STS12": 66.4898,
+        "STS13": 82.5787,
+        "STS14": 74.9885,
+        "STS15": 82.8315,
+        "STS17": 85.9429,
+        "STS22.v2": 66.4227,
+        "STSBenchmark": 80.705,
+        "SprintDuplicateQuestions": 95.7142,
+        "StackExchangeClustering.v2": 57.0085,
+        "StackExchangeClusteringP2P.v2": 40.9478,
+        "SummEvalSummarization.v2": 26.482099999999996,
+        "TRECCOVID": 85.001,
+        "Touche2020Retrieval.v3": 55.388000000000005,
+        "ToxicConversationsClassification": 62.075199999999995,
+        "TweetSentimentExtractionClassification": 62.543899999999994,
+        "TwentyNewsgroupsClustering.v2": 43.8701,
+        "TwitterSemEval2015": 61.636199999999995,
+        "TwitterURLCorpus": 84.8001
+      }
+    },
+    {
+      "method": "cl",
+      "seed": 2026,
+      "run": "G2-R2-D-CL-Strong-Seed2026-s2026",
+      "init_from": null,
+      "complete": true,
+      "missing_tasks": [],
+      "result_dir": "/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027-g2-cl-r2/G2-R2-D-CL-Strong-Seed2026-s2026/mteb_eval/final/iclr2027-g2-cl-r2__G2-R2-D-CL-Strong-Seed2026-s2026__tokens-v2__pool-fp32/no_revision_available",
+      "metrics": {
+        "Classification": 72.48803749999999,
+        "Clustering": 44.4418,
+        "PairClassification": 82.0503,
+        "Reranking": 45.309650000000005,
+        "Retrieval": 51.6362,
+        "STS": 75.72078888888889,
+        "Summarization": 28.8582,
+        "mean_task_score": 60.94917560975609,
+        "mean_type_score": 57.214996626984124
+      },
+      "task_scores": {
+        "AmazonCounterfactualClassification": 70.73129999999999,
+        "ArXivHierarchicalClusteringP2P": 57.590399999999995,
+        "ArXivHierarchicalClusteringS2S": 55.6685,
+        "ArguAna": 52.05,
+        "AskUbuntuDupQuestions": 60.007,
+        "BIOSSES": 84.1826,
+        "Banking77Classification": 79.53569999999999,
+        "BiorxivClusteringP2P.v2": 38.366499999999995,
+        "CQADupstackGamingRetrieval": 55.452,
+        "CQADupstackUnixRetrieval": 37.972,
+        "ClimateFEVERHardNegatives": 31.591,
+        "FEVERHardNegatives": 80.451,
+        "FiQA2018": 38.175,
+        "HotpotQAHardNegatives": 63.885999999999996,
+        "ImdbClassification": 68.38,
+        "MTOPDomainClassification": 93.3425,
+        "MassiveIntentClassification": 69.8184,
+        "MassiveScenarioClassification": 74.4855,
+        "MedrxivClusteringP2P.v2": 34.968700000000005,
+        "MedrxivClusteringS2S.v2": 32.3537,
+        "MindSmallReranking": 30.612299999999998,
+        "SCIDOCS": 17.391000000000002,
+        "SICK-R": 68.93390000000001,
+        "STS12": 65.1297,
+        "STS13": 78.4439,
+        "STS14": 73.5547,
+        "STS15": 82.58250000000001,
+        "STS17": 85.1606,
+        "STS22.v2": 64.8254,
+        "STSBenchmark": 78.6738,
+        "SprintDuplicateQuestions": 95.54,
+        "StackExchangeClustering.v2": 54.6215,
+        "StackExchangeClusteringP2P.v2": 39.0957,
+        "SummEvalSummarization.v2": 28.8582,
+        "TRECCOVID": 82.879,
+        "Touche2020Retrieval.v3": 56.515,
+        "ToxicConversationsClassification": 61.8848,
+        "TweetSentimentExtractionClassification": 61.726099999999995,
+        "TwentyNewsgroupsClustering.v2": 42.8694,
+        "TwitterSemEval2015": 65.21470000000001,
+        "TwitterURLCorpus": 85.3962
+      }
+    },
+    {
+      "method": "cl_reler",
+      "seed": 2026,
+      "run": "G2-R2-CLStrong-RL-Align070-ShortlistUniform-K0-T1-Pairwise050-Seed2026-s2026",
+      "init_from": "/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027-g2-cl-r2/G2-R2-D-CL-Strong-Seed2026-s2026",
+      "complete": true,
+      "missing_tasks": [],
+      "result_dir": "/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027-g2-cl-r2/G2-R2-CLStrong-RL-Align070-ShortlistUniform-K0-T1-Pairwise050-Seed2026-s2026/mteb_eval/final/iclr2027-g2-cl-r2__G2-R2-CLStrong-RL-Align070-ShortlistUniform-K0-T1-Pairwise050-Seed2026-s2026__tokens-v2__pool-fp32/no_revision_available",
+      "metrics": {
+        "Classification": 73.27615,
+        "Clustering": 45.4782375,
+        "PairClassification": 80.80073333333333,
+        "Reranking": 45.420899999999996,
+        "Retrieval": 50.9713,
+        "STS": 77.0518111111111,
+        "Summarization": 26.1614,
+        "mean_task_score": 61.283409756097576,
+        "mean_type_score": 57.02293313492063
+      },
+      "task_scores": {
+        "AmazonCounterfactualClassification": 66.9701,
+        "ArXivHierarchicalClusteringP2P": 58.5446,
+        "ArXivHierarchicalClusteringS2S": 56.3423,
+        "ArguAna": 48.693999999999996,
+        "AskUbuntuDupQuestions": 60.4638,
+        "BIOSSES": 83.0453,
+        "Banking77Classification": 81.20779999999999,
+        "BiorxivClusteringP2P.v2": 39.0522,
+        "CQADupstackGamingRetrieval": 53.574,
+        "CQADupstackUnixRetrieval": 36.759,
+        "ClimateFEVERHardNegatives": 30.680000000000003,
+        "FEVERHardNegatives": 80.074,
+        "FiQA2018": 36.204,
+        "HotpotQAHardNegatives": 65.67699999999999,
+        "ImdbClassification": 74.7564,
+        "MTOPDomainClassification": 93.7779,
+        "MassiveIntentClassification": 70.0706,
+        "MassiveScenarioClassification": 74.48219999999999,
+        "MedrxivClusteringP2P.v2": 35.984899999999996,
+        "MedrxivClusteringS2S.v2": 33.016600000000004,
+        "MindSmallReranking": 30.378,
+        "SCIDOCS": 18.912000000000003,
+        "SICK-R": 71.199,
+        "STS12": 65.9602,
+        "STS13": 82.4415,
+        "STS14": 74.6913,
+        "STS15": 82.4675,
+        "STS17": 85.9978,
+        "STS22.v2": 67.2937,
+        "STSBenchmark": 80.36999999999999,
+        "SprintDuplicateQuestions": 95.7975,
+        "StackExchangeClustering.v2": 56.12160000000001,
+        "StackExchangeClusteringP2P.v2": 40.3012,
+        "SummEvalSummarization.v2": 26.1614,
+        "TRECCOVID": 84.885,
+        "Touche2020Retrieval.v3": 54.254000000000005,
+        "ToxicConversationsClassification": 62.895500000000006,
+        "TweetSentimentExtractionClassification": 62.048700000000004,
+        "TwentyNewsgroupsClustering.v2": 44.4625,
+        "TwitterSemEval2015": 61.9457,
+        "TwitterURLCorpus": 84.65899999999999
+      }
+    }
+  ],
+  "groups": [
+    {
+      "method": "cl",
+      "metric": "Classification",
+      "completed": 3,
+      "mean": 72.59074583333333,
+      "sample_sd": 0.21899032845843194
+    },
+    {
+      "method": "cl_reler",
+      "metric": "Classification",
+      "completed": 3,
+      "mean": 73.4598125,
+      "sample_sd": 0.1591347635457103
+    },
+    {
+      "method": "cl",
+      "metric": "Clustering",
+      "completed": 3,
+      "mean": 44.37092916666666,
+      "sample_sd": 0.1598234721171546
+    },
+    {
+      "method": "cl_reler",
+      "metric": "Clustering",
+      "completed": 3,
+      "mean": 45.71707083333333,
+      "sample_sd": 0.21270849122586452
+    },
+    {
+      "method": "cl",
+      "metric": "PairClassification",
+      "completed": 3,
+      "mean": 82.08980000000001,
+      "sample_sd": 0.034416581920810846
+    },
+    {
+      "method": "cl_reler",
+      "metric": "PairClassification",
+      "completed": 3,
+      "mean": 80.74884444444444,
+      "sample_sd": 0.045344757547448995
+    },
+    {
+      "method": "cl",
+      "metric": "Reranking",
+      "completed": 3,
+      "mean": 44.958216666666665,
+      "sample_sd": 0.3049395732490893
+    },
+    {
+      "method": "cl_reler",
+      "metric": "Reranking",
+      "completed": 3,
+      "mean": 45.18198333333333,
+      "sample_sd": 0.23531189054812598
+    },
+    {
+      "method": "cl",
+      "metric": "Retrieval",
+      "completed": 3,
+      "mean": 51.627533333333325,
+      "sample_sd": 0.10028127109951152
+    },
+    {
+      "method": "cl_reler",
+      "metric": "Retrieval",
+      "completed": 3,
+      "mean": 50.91756666666667,
+      "sample_sd": 0.1277750105980511
+    },
+    {
+      "method": "cl",
+      "metric": "STS",
+      "completed": 3,
+      "mean": 75.88680000000001,
+      "sample_sd": 0.145943475021104
+    },
+    {
+      "method": "cl_reler",
+      "metric": "STS",
+      "completed": 3,
+      "mean": 77.05755185185185,
+      "sample_sd": 0.046013816139498925
+    },
+    {
+      "method": "cl",
+      "metric": "Summarization",
+      "completed": 3,
+      "mean": 28.986800000000002,
+      "sample_sd": 0.44932122139956876
+    },
+    {
+      "method": "cl_reler",
+      "metric": "Summarization",
+      "completed": 3,
+      "mean": 26.320066666666666,
+      "sample_sd": 0.16037650492928368
+    },
+    {
+      "method": "cl",
+      "metric": "mean_task_score",
+      "completed": 3,
+      "mean": 60.978599186991865,
+      "sample_sd": 0.02665686629598336
+    },
+    {
+      "method": "cl_reler",
+      "metric": "mean_task_score",
+      "completed": 3,
+      "mean": 61.342421138211385,
+      "sample_sd": 0.05637550367169397
+    },
+    {
+      "method": "cl",
+      "metric": "mean_type_score",
+      "completed": 3,
+      "mean": 57.215832142857145,
+      "sample_sd": 0.055073701930779644
+    },
+    {
+      "method": "cl_reler",
+      "metric": "mean_type_score",
+      "completed": 3,
+      "mean": 57.05755661375661,
+      "sample_sd": 0.03221567038441956
+    }
+  ],
+  "paired": [
+    {
+      "metric": "Classification",
+      "seed": 42,
+      "cl_reler_minus_cl": 0.7144250000000056
+    },
+    {
+      "metric": "Classification",
+      "seed": 3407,
+      "cl_reler_minus_cl": 1.1046625000000034
+    },
+    {
+      "metric": "Classification",
+      "seed": 2026,
+      "cl_reler_minus_cl": 0.7881125000000111
+    },
+    {
+      "metric": "Classification",
+      "seed": "all",
+      "completed": 3,
+      "mean": 0.8690666666666734,
+      "sample_sd": 0.20733188232175573
+    },
+    {
+      "metric": "Clustering",
+      "seed": 42,
+      "cl_reler_minus_cl": 1.5989250000000013
+    },
+    {
+      "metric": "Clustering",
+      "seed": 3407,
+      "cl_reler_minus_cl": 1.4030625000000043
+    },
+    {
+      "metric": "Clustering",
+      "seed": 2026,
+      "cl_reler_minus_cl": 1.0364374999999981
+    },
+    {
+      "metric": "Clustering",
+      "seed": "all",
+      "completed": 3,
+      "mean": 1.346141666666668,
+      "sample_sd": 0.28553114167212035
+    },
+    {
+      "metric": "PairClassification",
+      "seed": 42,
+      "cl_reler_minus_cl": -1.3843666666666792
+    },
+    {
+      "metric": "PairClassification",
+      "seed": 3407,
+      "cl_reler_minus_cl": -1.3889333333333553
+    },
+    {
+      "metric": "PairClassification",
+      "seed": 2026,
+      "cl_reler_minus_cl": -1.2495666666666665
+    },
+    {
+      "metric": "PairClassification",
+      "seed": "all",
+      "completed": 3,
+      "mean": -1.340955555555567,
+      "sample_sd": 0.07917802959389672
+    },
+    {
+      "metric": "Reranking",
+      "seed": 42,
+      "cl_reler_minus_cl": 0.37315000000000254
+    },
+    {
+      "metric": "Reranking",
+      "seed": 3407,
+      "cl_reler_minus_cl": 0.1869000000000014
+    },
+    {
+      "metric": "Reranking",
+      "seed": 2026,
+      "cl_reler_minus_cl": 0.11124999999999119
+    },
+    {
+      "metric": "Reranking",
+      "seed": "all",
+      "completed": 3,
+      "mean": 0.22376666666666503,
+      "sample_sd": 0.13478600013849604
+    },
+    {
+      "metric": "Retrieval",
+      "seed": 42,
+      "cl_reler_minus_cl": -0.7514999999999787
+    },
+    {
+      "metric": "Retrieval",
+      "seed": 3407,
+      "cl_reler_minus_cl": -0.7134999999999891
+    },
+    {
+      "metric": "Retrieval",
+      "seed": 2026,
+      "cl_reler_minus_cl": -0.6649000000000029
+    },
+    {
+      "metric": "Retrieval",
+      "seed": "all",
+      "completed": 3,
+      "mean": -0.709966666666657,
+      "sample_sd": 0.043407986976272926
+    },
+    {
+      "metric": "STS",
+      "seed": 42,
+      "cl_reler_minus_cl": 1.1614555555555626
+    },
+    {
+      "metric": "STS",
+      "seed": 3407,
+      "cl_reler_minus_cl": 1.019777777777776
+    },
+    {
+      "metric": "STS",
+      "seed": 2026,
+      "cl_reler_minus_cl": 1.3310222222222166
+    },
+    {
+      "metric": "STS",
+      "seed": "all",
+      "completed": 3,
+      "mean": 1.1707518518518516,
+      "sample_sd": 0.1558303304655529
+    },
+    {
+      "metric": "Summarization",
+      "seed": 42,
+      "cl_reler_minus_cl": -3.169700000000006
+    },
+    {
+      "metric": "Summarization",
+      "seed": 3407,
+      "cl_reler_minus_cl": -2.133700000000008
+    },
+    {
+      "metric": "Summarization",
+      "seed": 2026,
+      "cl_reler_minus_cl": -2.6967999999999996
+    },
+    {
+      "metric": "Summarization",
+      "seed": "all",
+      "completed": 3,
+      "mean": -2.666733333333338,
+      "sample_sd": 0.5186540304801766
+    },
+    {
+      "metric": "mean_task_score",
+      "seed": 42,
+      "cl_reler_minus_cl": 0.3626439024390038
+    },
+    {
+      "metric": "mean_task_score",
+      "seed": 3407,
+      "cl_reler_minus_cl": 0.3945878048780642
+    },
+    {
+      "metric": "mean_task_score",
+      "seed": 2026,
+      "cl_reler_minus_cl": 0.33423414634148685
+    },
+    {
+      "metric": "mean_task_score",
+      "seed": "all",
+      "completed": 3,
+      "mean": 0.36382195121951827,
+      "sample_sd": 0.030194070177509993
+    },
+    {
+      "metric": "mean_type_score",
+      "seed": 42,
+      "cl_reler_minus_cl": -0.20823015873015294
+    },
+    {
+      "metric": "mean_type_score",
+      "seed": 3407,
+      "cl_reler_minus_cl": -0.0745329365079499
+    },
+    {
+      "metric": "mean_type_score",
+      "seed": 2026,
+      "cl_reler_minus_cl": -0.1920634920634967
+    },
+    {
+      "metric": "mean_type_score",
+      "seed": "all",
+      "completed": 3,
+      "mean": -0.1582755291005332,
+      "sample_sd": 0.07297230048705626
+    }
+  ]
+}
