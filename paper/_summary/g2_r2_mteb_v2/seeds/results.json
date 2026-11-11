@@ -55,6 +55,7 @@
       "recipe": "infonce",
       "seed": 42,
       "run": "G2-R2-D-CL-Strong-s42",
+      "init_from": null,
       "tasks_found": 41,
       "source": "/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027-g2-cl-r2/G2-R2-D-CL-Strong-s42/mteb_eval/final/iclr2027-g2-cl-r2__G2-R2-D-CL-Strong-s42__tokens-v2__pool-fp32/no_revision_available",
       "Classification": 72.84221249999999,
@@ -65,13 +66,13 @@
       "STS": 75.9447111111111,
       "Summarization": 29.486400000000003,
       "mean_task_score": 60.98548292682926,
-      "mean_type_score": 57.271318849206345,
-      "init_from": null
+      "mean_type_score": 57.271318849206345
     },
     {
       "recipe": "infonce",
       "seed": 3407,
       "run": "G2-R2-D-CL-Strong-Seed3407-s3407",
+      "init_from": null,
       "tasks_found": 41,
       "source": "/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027-g2-cl-r2/G2-R2-D-CL-Strong-Seed3407-s3407/mteb_eval/final/iclr2027-g2-cl-r2__G2-R2-D-CL-Strong-Seed3407-s3407__tokens-v2__pool-fp32/no_revision_available",
       "Classification": 72.4419875,
@@ -82,13 +83,13 @@
       "STS": 75.99490000000002,
       "Summarization": 28.615800000000004,
       "mean_task_score": 61.00113902439024,
-      "mean_type_score": 57.16118095238096,
-      "init_from": null
+      "mean_type_score": 57.16118095238096
     },
     {
       "recipe": "infonce",
       "seed": 2026,
       "run": "G2-R2-D-CL-Strong-Seed2026-s2026",
+      "init_from": null,
       "tasks_found": 41,
       "source": "/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027-g2-cl-r2/G2-R2-D-CL-Strong-Seed2026-s2026/mteb_eval/final/iclr2027-g2-cl-r2__G2-R2-D-CL-Strong-Seed2026-s2026__tokens-v2__pool-fp32/no_revision_available",
       "Classification": 72.48803749999999,
@@ -99,13 +100,13 @@
       "STS": 75.72078888888889,
       "Summarization": 28.8582,
       "mean_task_score": 60.94917560975609,
-      "mean_type_score": 57.214996626984124,
-      "init_from": null
+      "mean_type_score": 57.214996626984124
     },
     {
       "recipe": "reler",
       "seed": 42,
       "run": "G2-R2-D-RL-Align070-ShortlistUniform-K0-T1-Pairwise050-s42",
+      "init_from": null,
       "tasks_found": 41,
       "source": "/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027-g2-cl-r2/G2-R2-D-RL-Align070-ShortlistUniform-K0-T1-Pairwise050-s42/mteb_eval/final/iclr2027-g2-cl-r2__G2-R2-D-RL-Align070-ShortlistUniform-K0-T1-Pairwise050-s42__tokens-v2__pool-fp32/no_revision_available",
       "Classification": 73.4082375,
@@ -116,13 +117,13 @@
       "STS": 76.80692222222221,
       "Summarization": 26.6115,
       "mean_task_score": 61.01367560975609,
-      "mean_type_score": 56.79534543650794,
-      "init_from": null
+      "mean_type_score": 56.79534543650794
     },
     {
       "recipe": "reler",
       "seed": 3407,
       "run": "G2-R2-D-RL-Align070-ShortlistUniform-K0-T1-Pairwise050-Seed3407-s3407",
+      "init_from": null,
       "tasks_found": 41,
       "source": "/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027-g2-cl-r2/G2-R2-D-RL-Align070-ShortlistUniform-K0-T1-Pairwise050-Seed3407-s3407/mteb_eval/final/iclr2027-g2-cl-r2__G2-R2-D-RL-Align070-ShortlistUniform-K0-T1-Pairwise050-Seed3407-s3407__tokens-v2__pool-fp32/no_revision_available",
       "Classification": 72.4986625,
@@ -133,13 +134,13 @@
       "STS": 76.90457777777779,
       "Summarization": 25.653599999999997,
       "mean_task_score": 60.86738048780488,
-      "mean_type_score": 56.59329861111112,
-      "init_from": null
+      "mean_type_score": 56.59329861111112
     },
     {
       "recipe": "reler",
       "seed": 2026,
       "run": "G2-R2-D-RL-Align070-ShortlistUniform-K0-T1-Pairwise050-Seed2026-s2026",
+      "init_from": null,
       "tasks_found": 41,
       "source": "/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027-g2-cl-r2/G2-R2-D-RL-Align070-ShortlistUniform-K0-T1-Pairwise050-Seed2026-s2026/mteb_eval/final/iclr2027-g2-cl-r2__G2-R2-D-RL-Align070-ShortlistUniform-K0-T1-Pairwise050-Seed2026-s2026__tokens-v2__pool-fp32/no_revision_available",
       "Classification": 73.0271125,
@@ -150,8 +151,7 @@
       "STS": 77.22297777777779,
       "Summarization": 25.543599999999998,
       "mean_task_score": 61.1601487804878,
-      "mean_type_score": 56.837959325396824,
-      "init_from": null
+      "mean_type_score": 56.837959325396824
     },
     {
       "recipe": "cl_reler",
@@ -203,6 +203,57 @@
       "Summarization": 26.1614,
       "mean_task_score": 61.283409756097576,
       "mean_type_score": 57.02293313492063
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "run": "G2-R2-CLStrong-CL-s42",
+      "init_from": "/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027-g2-cl-r2/G2-R2-D-CL-Strong-s42",
+      "tasks_found": 41,
+      "source": "/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027-g2-cl-r2/G2-R2-CLStrong-CL-s42/mteb_eval/final/iclr2027-g2-cl-r2__G2-R2-CLStrong-CL-s42__tokens-v2__pool-fp32/no_revision_available",
+      "Classification": 72.5689875,
+      "Clustering": 43.729737500000006,
+      "PairClassification": 81.68936666666666,
+      "Reranking": 45.04785,
+      "Retrieval": 50.70279999999999,
+      "STS": 74.96857777777777,
+      "Summarization": 28.0378,
+      "mean_task_score": 60.37406341463413,
+      "mean_type_score": 56.6778742063492
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "run": "G2-R2-CLStrong-CL-Seed3407-s3407",
+      "init_from": "/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027-g2-cl-r2/G2-R2-D-CL-Strong-Seed3407-s3407",
+      "tasks_found": 41,
+      "source": "/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027-g2-cl-r2/G2-R2-CLStrong-CL-Seed3407-s3407/mteb_eval/final/iclr2027-g2-cl-r2__G2-R2-CLStrong-CL-Seed3407-s3407__tokens-v2__pool-fp32/no_revision_available",
+      "Classification": 72.2042125,
+      "Clustering": 44.043237500000004,
+      "PairClassification": 81.81073333333333,
+      "Reranking": 44.88375,
+      "Retrieval": 50.682300000000005,
+      "STS": 74.94038888888889,
+      "Summarization": 28.717,
+      "mean_task_score": 60.37031219512195,
+      "mean_type_score": 56.754517460317466
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "run": "G2-R2-CLStrong-CL-Seed2026-s2026",
+      "init_from": "/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027-g2-cl-r2/G2-R2-D-CL-Strong-Seed2026-s2026",
+      "tasks_found": 41,
+      "source": "/mnt/tidal-alsh-share2/dataset/liuqi18/E2Rank/checkpoints/iclr2027-g2-cl-r2/G2-R2-CLStrong-CL-Seed2026-s2026/mteb_eval/final/iclr2027-g2-cl-r2__G2-R2-CLStrong-CL-Seed2026-s2026__tokens-v2__pool-fp32/no_revision_available",
+      "Classification": 72.547675,
+      "Clustering": 43.371012500000006,
+      "PairClassification": 81.76450000000001,
+      "Reranking": 45.33315,
+      "Retrieval": 50.823299999999996,
+      "STS": 74.57088888888889,
+      "Summarization": 28.578300000000002,
+      "mean_task_score": 60.27459999999998,
+      "mean_type_score": 56.71268948412699
     }
   ],
   "tasks": [
@@ -2788,6 +2839,867 @@
       "task": "TwitterURLCorpus",
       "type": "PairClassification",
       "score": 84.65899999999999
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "AmazonCounterfactualClassification",
+      "type": "Classification",
+      "score": 73.0597
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "ArXivHierarchicalClusteringP2P",
+      "type": "Clustering",
+      "score": 56.6035
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "ArXivHierarchicalClusteringS2S",
+      "type": "Clustering",
+      "score": 54.020999999999994
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "ArguAna",
+      "type": "Retrieval",
+      "score": 50.683
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "AskUbuntuDupQuestions",
+      "type": "Reranking",
+      "score": 59.53000000000001
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "BIOSSES",
+      "type": "STS",
+      "score": 83.0947
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "Banking77Classification",
+      "type": "Classification",
+      "score": 79.5162
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "BiorxivClusteringP2P.v2",
+      "type": "Clustering",
+      "score": 37.0398
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "CQADupstackGamingRetrieval",
+      "type": "Retrieval",
+      "score": 54.43599999999999
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "CQADupstackUnixRetrieval",
+      "type": "Retrieval",
+      "score": 36.754
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "ClimateFEVERHardNegatives",
+      "type": "Retrieval",
+      "score": 30.183
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "FEVERHardNegatives",
+      "type": "Retrieval",
+      "score": 77.914
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "FiQA2018",
+      "type": "Retrieval",
+      "score": 38.080999999999996
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "HotpotQAHardNegatives",
+      "type": "Retrieval",
+      "score": 64.584
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "ImdbClassification",
+      "type": "Classification",
+      "score": 66.8232
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "MTOPDomainClassification",
+      "type": "Classification",
+      "score": 93.062
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "MassiveIntentClassification",
+      "type": "Classification",
+      "score": 70.1782
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "MassiveScenarioClassification",
+      "type": "Classification",
+      "score": 74.5427
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "MedrxivClusteringP2P.v2",
+      "type": "Clustering",
+      "score": 34.3485
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "MedrxivClusteringS2S.v2",
+      "type": "Clustering",
+      "score": 31.298900000000003
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "MindSmallReranking",
+      "type": "Reranking",
+      "score": 30.5657
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "SCIDOCS",
+      "type": "Retrieval",
+      "score": 16.88
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "SICK-R",
+      "type": "STS",
+      "score": 69.1926
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "STS12",
+      "type": "STS",
+      "score": 63.8042
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "STS13",
+      "type": "STS",
+      "score": 77.4698
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "STS14",
+      "type": "STS",
+      "score": 72.3514
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "STS15",
+      "type": "STS",
+      "score": 82.0349
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "STS17",
+      "type": "STS",
+      "score": 84.6754
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "STS22.v2",
+      "type": "STS",
+      "score": 64.0248
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "STSBenchmark",
+      "type": "STS",
+      "score": 78.0694
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "SprintDuplicateQuestions",
+      "type": "PairClassification",
+      "score": 95.0275
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "StackExchangeClustering.v2",
+      "type": "Clustering",
+      "score": 53.670899999999996
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "StackExchangeClusteringP2P.v2",
+      "type": "Clustering",
+      "score": 39.8429
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "SummEvalSummarization.v2",
+      "type": "Summarization",
+      "score": 28.0378
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "TRECCOVID",
+      "type": "Retrieval",
+      "score": 81.441
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "Touche2020Retrieval.v3",
+      "type": "Retrieval",
+      "score": 56.072
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "ToxicConversationsClassification",
+      "type": "Classification",
+      "score": 62.2607
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "TweetSentimentExtractionClassification",
+      "type": "Classification",
+      "score": 61.109199999999994
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "TwentyNewsgroupsClustering.v2",
+      "type": "Clustering",
+      "score": 43.0124
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "TwitterSemEval2015",
+      "type": "PairClassification",
+      "score": 64.538
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 42,
+      "task": "TwitterURLCorpus",
+      "type": "PairClassification",
+      "score": 85.5026
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "AmazonCounterfactualClassification",
+      "type": "Classification",
+      "score": 73.1194
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "ArXivHierarchicalClusteringP2P",
+      "type": "Clustering",
+      "score": 57.1366
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "ArXivHierarchicalClusteringS2S",
+      "type": "Clustering",
+      "score": 55.4162
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "ArguAna",
+      "type": "Retrieval",
+      "score": 50.454
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "AskUbuntuDupQuestions",
+      "type": "Reranking",
+      "score": 59.197
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "BIOSSES",
+      "type": "STS",
+      "score": 82.24709999999999
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "Banking77Classification",
+      "type": "Classification",
+      "score": 79.7955
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "BiorxivClusteringP2P.v2",
+      "type": "Clustering",
+      "score": 36.9679
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "CQADupstackGamingRetrieval",
+      "type": "Retrieval",
+      "score": 54.838
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "CQADupstackUnixRetrieval",
+      "type": "Retrieval",
+      "score": 37.147000000000006
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "ClimateFEVERHardNegatives",
+      "type": "Retrieval",
+      "score": 29.25
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "FEVERHardNegatives",
+      "type": "Retrieval",
+      "score": 78.199
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "FiQA2018",
+      "type": "Retrieval",
+      "score": 38.105
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "HotpotQAHardNegatives",
+      "type": "Retrieval",
+      "score": 64.68599999999999
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "ImdbClassification",
+      "type": "Classification",
+      "score": 65.90559999999999
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "MTOPDomainClassification",
+      "type": "Classification",
+      "score": 92.9389
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "MassiveIntentClassification",
+      "type": "Classification",
+      "score": 69.5999
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "MassiveScenarioClassification",
+      "type": "Classification",
+      "score": 74.3275
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "MedrxivClusteringP2P.v2",
+      "type": "Clustering",
+      "score": 35.1363
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "MedrxivClusteringS2S.v2",
+      "type": "Clustering",
+      "score": 32.2664
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "MindSmallReranking",
+      "type": "Reranking",
+      "score": 30.5705
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "SCIDOCS",
+      "type": "Retrieval",
+      "score": 16.893
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "SICK-R",
+      "type": "STS",
+      "score": 69.0163
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "STS12",
+      "type": "STS",
+      "score": 63.998999999999995
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "STS13",
+      "type": "STS",
+      "score": 76.9694
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "STS14",
+      "type": "STS",
+      "score": 72.4704
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "STS15",
+      "type": "STS",
+      "score": 82.23089999999999
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "STS17",
+      "type": "STS",
+      "score": 84.6801
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "STS22.v2",
+      "type": "STS",
+      "score": 64.3498
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "STSBenchmark",
+      "type": "STS",
+      "score": 78.50049999999999
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "SprintDuplicateQuestions",
+      "type": "PairClassification",
+      "score": 95.1002
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "StackExchangeClustering.v2",
+      "type": "Clustering",
+      "score": 53.21209999999999
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "StackExchangeClusteringP2P.v2",
+      "type": "Clustering",
+      "score": 39.7982
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "SummEvalSummarization.v2",
+      "type": "Summarization",
+      "score": 28.717
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "TRECCOVID",
+      "type": "Retrieval",
+      "score": 82.301
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "Touche2020Retrieval.v3",
+      "type": "Retrieval",
+      "score": 54.949999999999996
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "ToxicConversationsClassification",
+      "type": "Classification",
+      "score": 60.747099999999996
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "TweetSentimentExtractionClassification",
+      "type": "Classification",
+      "score": 61.1998
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "TwentyNewsgroupsClustering.v2",
+      "type": "Clustering",
+      "score": 42.4122
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "TwitterSemEval2015",
+      "type": "PairClassification",
+      "score": 64.9682
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 3407,
+      "task": "TwitterURLCorpus",
+      "type": "PairClassification",
+      "score": 85.3638
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "AmazonCounterfactualClassification",
+      "type": "Classification",
+      "score": 72.2985
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "ArXivHierarchicalClusteringP2P",
+      "type": "Clustering",
+      "score": 56.69650000000001
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "ArXivHierarchicalClusteringS2S",
+      "type": "Clustering",
+      "score": 54.6783
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "ArguAna",
+      "type": "Retrieval",
+      "score": 50.686
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "AskUbuntuDupQuestions",
+      "type": "Reranking",
+      "score": 59.6306
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "BIOSSES",
+      "type": "STS",
+      "score": 82.3567
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "Banking77Classification",
+      "type": "Classification",
+      "score": 79.48049999999999
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "BiorxivClusteringP2P.v2",
+      "type": "Clustering",
+      "score": 37.8274
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "CQADupstackGamingRetrieval",
+      "type": "Retrieval",
+      "score": 53.665
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "CQADupstackUnixRetrieval",
+      "type": "Retrieval",
+      "score": 36.346000000000004
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "ClimateFEVERHardNegatives",
+      "type": "Retrieval",
+      "score": 30.425
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "FEVERHardNegatives",
+      "type": "Retrieval",
+      "score": 79.946
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "FiQA2018",
+      "type": "Retrieval",
+      "score": 38.083
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "HotpotQAHardNegatives",
+      "type": "Retrieval",
+      "score": 64.13499999999999
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "ImdbClassification",
+      "type": "Classification",
+      "score": 68.3384
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "MTOPDomainClassification",
+      "type": "Classification",
+      "score": 93.233
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "MassiveIntentClassification",
+      "type": "Classification",
+      "score": 69.7714
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "MassiveScenarioClassification",
+      "type": "Classification",
+      "score": 74.62339999999999
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "MedrxivClusteringP2P.v2",
+      "type": "Clustering",
+      "score": 33.8237
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "MedrxivClusteringS2S.v2",
+      "type": "Clustering",
+      "score": 30.9359
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "MindSmallReranking",
+      "type": "Reranking",
+      "score": 31.0357
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "SCIDOCS",
+      "type": "Retrieval",
+      "score": 17.171
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "SICK-R",
+      "type": "STS",
+      "score": 68.7439
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "STS12",
+      "type": "STS",
+      "score": 63.209199999999996
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "STS13",
+      "type": "STS",
+      "score": 77.1593
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "STS14",
+      "type": "STS",
+      "score": 72.09299999999999
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "STS15",
+      "type": "STS",
+      "score": 81.4999
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "STS17",
+      "type": "STS",
+      "score": 84.71170000000001
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "STS22.v2",
+      "type": "STS",
+      "score": 64.1265
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "STSBenchmark",
+      "type": "STS",
+      "score": 77.23780000000001
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "SprintDuplicateQuestions",
+      "type": "PairClassification",
+      "score": 94.9798
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "StackExchangeClustering.v2",
+      "type": "Clustering",
+      "score": 53.2048
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "StackExchangeClusteringP2P.v2",
+      "type": "Clustering",
+      "score": 38.4777
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "SummEvalSummarization.v2",
+      "type": "Summarization",
+      "score": 28.578300000000002
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "TRECCOVID",
+      "type": "Retrieval",
+      "score": 82.396
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "Touche2020Retrieval.v3",
+      "type": "Retrieval",
+      "score": 55.379999999999995
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "ToxicConversationsClassification",
+      "type": "Classification",
+      "score": 61.3232
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "TweetSentimentExtractionClassification",
+      "type": "Classification",
+      "score": 61.312999999999995
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "TwentyNewsgroupsClustering.v2",
+      "type": "Clustering",
+      "score": 41.3238
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "TwitterSemEval2015",
+      "type": "PairClassification",
+      "score": 64.76859999999999
+    },
+    {
+      "recipe": "cl_cl",
+      "seed": 2026,
+      "task": "TwitterURLCorpus",
+      "type": "PairClassification",
+      "score": 85.54509999999999
     }
   ],
   "groups": [
@@ -2979,6 +3891,69 @@
       "completed": 3,
       "mean": 57.05755661375661,
       "sample_sd": 0.03221567038441956
+    },
+    {
+      "recipe": "cl_cl",
+      "metric": "Classification",
+      "completed": 3,
+      "mean": 72.44029166666667,
+      "sample_sd": 0.20472807663968462
+    },
+    {
+      "recipe": "cl_cl",
+      "metric": "Clustering",
+      "completed": 3,
+      "mean": 43.7146625,
+      "sample_sd": 0.33636595305559563
+    },
+    {
+      "recipe": "cl_cl",
+      "metric": "PairClassification",
+      "completed": 3,
+      "mean": 81.75486666666667,
+      "sample_sd": 0.06125412457768368
+    },
+    {
+      "recipe": "cl_cl",
+      "metric": "Reranking",
+      "completed": 3,
+      "mean": 45.08825,
+      "sample_sd": 0.22740758562546046
+    },
+    {
+      "recipe": "cl_cl",
+      "metric": "Retrieval",
+      "completed": 3,
+      "mean": 50.73613333333333,
+      "sample_sd": 0.0761812531620023
+    },
+    {
+      "recipe": "cl_cl",
+      "metric": "STS",
+      "completed": 3,
+      "mean": 74.82661851851852,
+      "sample_sd": 0.22191639409263367
+    },
+    {
+      "recipe": "cl_cl",
+      "metric": "Summarization",
+      "completed": 3,
+      "mean": 28.444366666666667,
+      "sample_sd": 0.35886176075660803
+    },
+    {
+      "recipe": "cl_cl",
+      "metric": "mean_task_score",
+      "completed": 3,
+      "mean": 60.339658536585354,
+      "sample_sd": 0.0563735558478434
+    },
+    {
+      "recipe": "cl_cl",
+      "metric": "mean_type_score",
+      "completed": 3,
+      "mean": 56.71502705026455,
+      "sample_sd": 0.03837506034257878
     }
   ],
   "paired": [
@@ -3683,6 +4658,474 @@
       "completed": 3,
       "mean": 0.31535548941798197,
       "sample_sd": 0.15960598565843506
+    },
+    {
+      "comparison": "cl_cl_minus_infonce",
+      "metric": "Classification",
+      "seed": 42,
+      "delta": -0.2732249999999823
+    },
+    {
+      "comparison": "cl_cl_minus_infonce",
+      "metric": "Classification",
+      "seed": 3407,
+      "delta": -0.23777499999999918
+    },
+    {
+      "comparison": "cl_cl_minus_infonce",
+      "metric": "Classification",
+      "seed": 2026,
+      "delta": 0.059637500000008004
+    },
+    {
+      "comparison": "cl_cl_minus_infonce",
+      "metric": "Classification",
+      "seed": "all",
+      "completed": 3,
+      "mean": -0.1504541666666578,
+      "sample_sd": 0.18280606370436064
+    },
+    {
+      "comparison": "cl_cl_minus_infonce",
+      "metric": "Clustering",
+      "seed": 42,
+      "delta": -0.458187499999994
+    },
+    {
+      "comparison": "cl_cl_minus_infonce",
+      "metric": "Clustering",
+      "seed": 3407,
+      "delta": -0.4398249999999919
+    },
+    {
+      "comparison": "cl_cl_minus_infonce",
+      "metric": "Clustering",
+      "seed": 2026,
+      "delta": -1.0707874999999945
+    },
+    {
+      "comparison": "cl_cl_minus_infonce",
+      "metric": "Clustering",
+      "seed": "all",
+      "completed": 3,
+      "mean": -0.6562666666666601,
+      "sample_sd": 0.3591029605866317
+    },
+    {
+      "comparison": "cl_cl_minus_infonce",
+      "metric": "PairClassification",
+      "seed": 42,
+      "delta": -0.42396666666668636
+    },
+    {
+      "comparison": "cl_cl_minus_infonce",
+      "metric": "PairClassification",
+      "seed": 3407,
+      "delta": -0.29503333333335036
+    },
+    {
+      "comparison": "cl_cl_minus_infonce",
+      "metric": "PairClassification",
+      "seed": 2026,
+      "delta": -0.2857999999999805
+    },
+    {
+      "comparison": "cl_cl_minus_infonce",
+      "metric": "PairClassification",
+      "seed": "all",
+      "completed": 3,
+      "mean": -0.3349333333333391,
+      "sample_sd": 0.07724321617104299
+    },
+    {
+      "comparison": "cl_cl_minus_infonce",
+      "metric": "Reranking",
+      "seed": 42,
+      "delta": 0.24640000000000128
+    },
+    {
+      "comparison": "cl_cl_minus_infonce",
+      "metric": "Reranking",
+      "seed": 3407,
+      "delta": 0.12020000000000408
+    },
+    {
+      "comparison": "cl_cl_minus_infonce",
+      "metric": "Reranking",
+      "seed": 2026,
+      "delta": 0.023499999999998522
+    },
+    {
+      "comparison": "cl_cl_minus_infonce",
+      "metric": "Reranking",
+      "seed": "all",
+      "completed": 3,
+      "mean": 0.13003333333333464,
+      "sample_sd": 0.11177487791688077
+    },
+    {
+      "comparison": "cl_cl_minus_infonce",
+      "metric": "Retrieval",
+      "seed": 42,
+      "delta": -0.8203999999999994
+    },
+    {
+      "comparison": "cl_cl_minus_infonce",
+      "metric": "Retrieval",
+      "seed": 3407,
+      "delta": -1.0408999999999864
+    },
+    {
+      "comparison": "cl_cl_minus_infonce",
+      "metric": "Retrieval",
+      "seed": 2026,
+      "delta": -0.8129000000000062
+    },
+    {
+      "comparison": "cl_cl_minus_infonce",
+      "metric": "Retrieval",
+      "seed": "all",
+      "completed": 3,
+      "mean": -0.8913999999999973,
+      "sample_sd": 0.12952509409376056
+    },
+    {
+      "comparison": "cl_cl_minus_infonce",
+      "metric": "STS",
+      "seed": 42,
+      "delta": -0.9761333333333369
+    },
+    {
+      "comparison": "cl_cl_minus_infonce",
+      "metric": "STS",
+      "seed": 3407,
+      "delta": -1.0545111111111254
+    },
+    {
+      "comparison": "cl_cl_minus_infonce",
+      "metric": "STS",
+      "seed": 2026,
+      "delta": -1.1499000000000024
+    },
+    {
+      "comparison": "cl_cl_minus_infonce",
+      "metric": "STS",
+      "seed": "all",
+      "completed": 3,
+      "mean": -1.0601814814814883,
+      "sample_sd": 0.08702199972543626
+    },
+    {
+      "comparison": "cl_cl_minus_infonce",
+      "metric": "Summarization",
+      "seed": 42,
+      "delta": -1.4486000000000026
+    },
+    {
+      "comparison": "cl_cl_minus_infonce",
+      "metric": "Summarization",
+      "seed": 3407,
+      "delta": 0.10119999999999507
+    },
+    {
+      "comparison": "cl_cl_minus_infonce",
+      "metric": "Summarization",
+      "seed": 2026,
+      "delta": -0.2798999999999978
+    },
+    {
+      "comparison": "cl_cl_minus_infonce",
+      "metric": "Summarization",
+      "seed": "all",
+      "completed": 3,
+      "mean": -0.5424333333333351,
+      "sample_sd": 0.8075659869839326
+    },
+    {
+      "comparison": "cl_cl_minus_infonce",
+      "metric": "mean_task_score",
+      "seed": 42,
+      "delta": -0.611419512195134
+    },
+    {
+      "comparison": "cl_cl_minus_infonce",
+      "metric": "mean_task_score",
+      "seed": 3407,
+      "delta": -0.6308268292682939
+    },
+    {
+      "comparison": "cl_cl_minus_infonce",
+      "metric": "mean_task_score",
+      "seed": 2026,
+      "delta": -0.6745756097561113
+    },
+    {
+      "comparison": "cl_cl_minus_infonce",
+      "metric": "mean_task_score",
+      "seed": "all",
+      "completed": 3,
+      "mean": -0.638940650406513,
+      "sample_sd": 0.03235040548246929
+    },
+    {
+      "comparison": "cl_cl_minus_infonce",
+      "metric": "mean_type_score",
+      "seed": 42,
+      "delta": -0.5934446428571434
+    },
+    {
+      "comparison": "cl_cl_minus_infonce",
+      "metric": "mean_type_score",
+      "seed": 3407,
+      "delta": -0.40666349206349395
+    },
+    {
+      "comparison": "cl_cl_minus_infonce",
+      "metric": "mean_type_score",
+      "seed": 2026,
+      "delta": -0.5023071428571342
+    },
+    {
+      "comparison": "cl_cl_minus_infonce",
+      "metric": "mean_type_score",
+      "seed": "all",
+      "completed": 3,
+      "mean": -0.5008050925925905,
+      "sample_sd": 0.09339963430976544
+    },
+    {
+      "comparison": "cl_reler_minus_cl_cl",
+      "metric": "Classification",
+      "seed": 42,
+      "delta": 0.9876499999999879
+    },
+    {
+      "comparison": "cl_reler_minus_cl_cl",
+      "metric": "Classification",
+      "seed": 3407,
+      "delta": 1.3424375000000026
+    },
+    {
+      "comparison": "cl_reler_minus_cl_cl",
+      "metric": "Classification",
+      "seed": 2026,
+      "delta": 0.7284750000000031
+    },
+    {
+      "comparison": "cl_reler_minus_cl_cl",
+      "metric": "Classification",
+      "seed": "all",
+      "completed": 3,
+      "mean": 1.0195208333333312,
+      "sample_sd": 0.3082195651878441
+    },
+    {
+      "comparison": "cl_reler_minus_cl_cl",
+      "metric": "Clustering",
+      "seed": 42,
+      "delta": 2.0571124999999952
+    },
+    {
+      "comparison": "cl_reler_minus_cl_cl",
+      "metric": "Clustering",
+      "seed": 3407,
+      "delta": 1.8428874999999962
+    },
+    {
+      "comparison": "cl_reler_minus_cl_cl",
+      "metric": "Clustering",
+      "seed": 2026,
+      "delta": 2.1072249999999926
+    },
+    {
+      "comparison": "cl_reler_minus_cl_cl",
+      "metric": "Clustering",
+      "seed": "all",
+      "completed": 3,
+      "mean": 2.002408333333328,
+      "sample_sd": 0.14040294820473997
+    },
+    {
+      "comparison": "cl_reler_minus_cl_cl",
+      "metric": "PairClassification",
+      "seed": 42,
+      "delta": -0.9603999999999928
+    },
+    {
+      "comparison": "cl_reler_minus_cl_cl",
+      "metric": "PairClassification",
+      "seed": 3407,
+      "delta": -1.093900000000005
+    },
+    {
+      "comparison": "cl_reler_minus_cl_cl",
+      "metric": "PairClassification",
+      "seed": 2026,
+      "delta": -0.963766666666686
+    },
+    {
+      "comparison": "cl_reler_minus_cl_cl",
+      "metric": "PairClassification",
+      "seed": "all",
+      "completed": 3,
+      "mean": -1.006022222222228,
+      "sample_sd": 0.07612300231520977
+    },
+    {
+      "comparison": "cl_reler_minus_cl_cl",
+      "metric": "Reranking",
+      "seed": 42,
+      "delta": 0.12675000000000125
+    },
+    {
+      "comparison": "cl_reler_minus_cl_cl",
+      "metric": "Reranking",
+      "seed": 3407,
+      "delta": 0.06669999999999732
+    },
+    {
+      "comparison": "cl_reler_minus_cl_cl",
+      "metric": "Reranking",
+      "seed": 2026,
+      "delta": 0.08774999999999267
+    },
+    {
+      "comparison": "cl_reler_minus_cl_cl",
+      "metric": "Reranking",
+      "seed": "all",
+      "completed": 3,
+      "mean": 0.09373333333333041,
+      "sample_sd": 0.030468850213512998
+    },
+    {
+      "comparison": "cl_reler_minus_cl_cl",
+      "metric": "Retrieval",
+      "seed": 42,
+      "delta": 0.06890000000002061
+    },
+    {
+      "comparison": "cl_reler_minus_cl_cl",
+      "metric": "Retrieval",
+      "seed": 3407,
+      "delta": 0.32739999999999725
+    },
+    {
+      "comparison": "cl_reler_minus_cl_cl",
+      "metric": "Retrieval",
+      "seed": 2026,
+      "delta": 0.14800000000000324
+    },
+    {
+      "comparison": "cl_reler_minus_cl_cl",
+      "metric": "Retrieval",
+      "seed": "all",
+      "completed": 3,
+      "mean": 0.18143333333334036,
+      "sample_sd": 0.1324534006106695
+    },
+    {
+      "comparison": "cl_reler_minus_cl_cl",
+      "metric": "STS",
+      "seed": 42,
+      "delta": 2.1375888888888994
+    },
+    {
+      "comparison": "cl_reler_minus_cl_cl",
+      "metric": "STS",
+      "seed": 3407,
+      "delta": 2.0742888888889013
+    },
+    {
+      "comparison": "cl_reler_minus_cl_cl",
+      "metric": "STS",
+      "seed": 2026,
+      "delta": 2.480922222222219
+    },
+    {
+      "comparison": "cl_reler_minus_cl_cl",
+      "metric": "STS",
+      "seed": "all",
+      "completed": 3,
+      "mean": 2.23093333333334,
+      "sample_sd": 0.2187979797117016
+    },
+    {
+      "comparison": "cl_reler_minus_cl_cl",
+      "metric": "Summarization",
+      "seed": 42,
+      "delta": -1.7211000000000034
+    },
+    {
+      "comparison": "cl_reler_minus_cl_cl",
+      "metric": "Summarization",
+      "seed": 3407,
+      "delta": -2.234900000000003
+    },
+    {
+      "comparison": "cl_reler_minus_cl_cl",
+      "metric": "Summarization",
+      "seed": 2026,
+      "delta": -2.416900000000002
+    },
+    {
+      "comparison": "cl_reler_minus_cl_cl",
+      "metric": "Summarization",
+      "seed": "all",
+      "completed": 3,
+      "mean": -2.124300000000003,
+      "sample_sd": 0.36084439859861966
+    },
+    {
+      "comparison": "cl_reler_minus_cl_cl",
+      "metric": "mean_task_score",
+      "seed": 42,
+      "delta": 0.9740634146341378
+    },
+    {
+      "comparison": "cl_reler_minus_cl_cl",
+      "metric": "mean_task_score",
+      "seed": 3407,
+      "delta": 1.0254146341463581
+    },
+    {
+      "comparison": "cl_reler_minus_cl_cl",
+      "metric": "mean_task_score",
+      "seed": 2026,
+      "delta": 1.0088097560975982
+    },
+    {
+      "comparison": "cl_reler_minus_cl_cl",
+      "metric": "mean_task_score",
+      "seed": "all",
+      "completed": 3,
+      "mean": 1.0027626016260314,
+      "sample_sd": 0.0262042552699042
+    },
+    {
+      "comparison": "cl_reler_minus_cl_cl",
+      "metric": "mean_type_score",
+      "seed": 42,
+      "delta": 0.38521448412699044
+    },
+    {
+      "comparison": "cl_reler_minus_cl_cl",
+      "metric": "mean_type_score",
+      "seed": 3407,
+      "delta": 0.33213055555554405
+    },
+    {
+      "comparison": "cl_reler_minus_cl_cl",
+      "metric": "mean_type_score",
+      "seed": 2026,
+      "delta": 0.31024365079363747
+    },
+    {
+      "comparison": "cl_reler_minus_cl_cl",
+      "metric": "mean_type_score",
+      "seed": "all",
+      "completed": 3,
+      "mean": 0.3425295634920573,
+      "sample_sd": 0.03855205555119074
     }
   ]
 }
